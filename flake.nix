@@ -25,7 +25,16 @@
         treefmtEval = treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs.nixfmt.enable = true;
-          programs.prettier.enable = true;
+          programs.prettier = {
+            enable = true;
+            # design-render owns every generated design.html's exact byte
+            # layout (docs/adr/0002 spirit: one tool owns one artifact's
+            # formatting) — letting prettier reformat it makes
+            # `design-render --check` perpetually report false staleness,
+            # since the check compares its own raw output against whatever
+            # is on disk.
+            excludes = [ "**/design.html" ];
+          };
         };
       in
       {
