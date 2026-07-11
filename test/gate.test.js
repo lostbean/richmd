@@ -69,3 +69,97 @@ describe("richmd render (callout, invalid tint) — fail-closed gate", () => {
     assert.match(result.stderr, /not-a-real-tint/);
   });
 });
+
+// This test proves the "all errors collected, never fail-fast" invariant
+// (design.md §00) with a real multi-error document: TWO independent
+// malformed callout blocks, each with a different bad `tint` value. If the
+// validate phase stopped at the first error, only one of the two distinct
+// tint values would ever appear on stderr.
+describe("richmd render (callout, two independent invalid blocks) — all errors collected", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-render-two-invalid-"));
+    mdPath = path.join(workDir, "callout-two-invalid.md");
+    htmlPath = path.join(workDir, "callout-two-invalid.html");
+    await cp(path.join(fixturesDir, "callout-two-invalid.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.notEqual(result.code, 0);
+  });
+
+  it("writes zero HTML", async () => {
+    await assert.rejects(() => access(htmlPath));
+  });
+
+  it("reports BOTH distinct invalid tint values on stderr in one run", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.match(result.stderr, /not-a-real-tint/);
+    assert.match(result.stderr, /also-not-real/);
+  });
+
+  it("reports two separate error lines, not just one", async () => {
+    const result = await runCli(["render", mdPath]);
+    const errorLines = result.stderr
+      .split("\n")
+      .filter((line) => line.startsWith("richmd: "));
+    assert.equal(
+      errorLines.length,
+      2,
+      `expected 2 error lines, got: ${JSON.stringify(errorLines)}`,
+    );
+  });
+});
+
+// A document mixing one valid callout and one malformed callout: only the
+// malformed block's error should appear, and — because the fail-closed gate
+// is document-wide, not per-block — zero HTML is written at all, even
+// though one of the two blocks was individually valid.
+describe("richmd render (callout, one valid + one invalid) — gate is document-wide", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-render-mixed-"));
+    mdPath = path.join(workDir, "callout-mixed-valid-invalid.md");
+    htmlPath = path.join(workDir, "callout-mixed-valid-invalid.html");
+    await cp(path.join(fixturesDir, "callout-mixed-valid-invalid.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.notEqual(result.code, 0);
+  });
+
+  it("writes zero HTML — the valid callout is not partially rendered", async () => {
+    await assert.rejects(() => access(htmlPath));
+  });
+
+  it("reports only the malformed block's error, not a generic message", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.match(result.stderr, /tint/);
+    assert.match(result.stderr, /not-a-real-tint/);
+
+    const errorLines = result.stderr
+      .split("\n")
+      .filter((line) => line.startsWith("richmd: "));
+    assert.equal(
+      errorLines.length,
+      1,
+      `expected exactly 1 error line (the valid block must not error), got: ${JSON.stringify(errorLines)}`,
+    );
+  });
+});

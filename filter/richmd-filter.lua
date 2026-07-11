@@ -196,6 +196,15 @@ function Pandoc(doc)
     os.exit(1)
   end
 
+  -- `richmd validate` (bin/richmd.js) sets this env var to stop right here,
+  -- after the validate phase has already run to completion with zero
+  -- errors. Same success/failure exit-code contract as render, but the
+  -- render phase below — and therefore any HTML output — is unreachable
+  -- from this branch regardless of validation outcome.
+  if os.getenv("RICHMD_VALIDATE_ONLY") then
+    os.exit(0)
+  end
+
   -- --- Render phase (only reachable because #errors == 0 above) ---
   doc = doc:walk({ Div = render_only_div })
 

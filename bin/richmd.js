@@ -6,6 +6,13 @@
 // resulting HTML to a sibling `.html` file. Exits 0 on success; the Lua
 // filter itself exits non-zero and writes nothing when the validate phase
 // collects any errors (the fail-closed gate, §00).
+//
+// `richmd validate <file>` runs the exact same Lua filter — never a forked
+// copy — but sets RICHMD_VALIDATE_ONLY=1 in the child's environment. The
+// filter (richmd-filter.lua, Pandoc(doc)) checks that variable right after
+// the validate phase and exits before ever reaching the render phase, on
+// both success and failure. Both subcommands share the same exit-code
+// contract: 0 = zero validation errors, 1 = errors collected.
 
 import { spawnSync } from "node:child_process";
 import path from "node:path";
@@ -16,17 +23,28 @@ const filterPath = path.join(__dirname, "..", "filter", "richmd-filter.lua");
 
 function usage() {
   process.stderr.write("usage: richmd render <file>\n");
+  process.stderr.write("       richmd validate <file>\n");
 }
 
-function render(inputPath) {
-  const parsed = path.parse(inputPath);
-  const outputPath = path.join(parsed.dir || ".", `${parsed.name}.html`);
+function runFilter(inputPath, { validateOnly, outputPath }) {
+  const args = ["--lua-filter", filterPath, "--standalone"];
+  if (outputPath) {
+    args.push("-o", outputPath);
+  } else {
+    // No output path: discard stdout, we only care about the exit code and
+    // stderr. Pandoc still needs a sink, so send it to /dev/null-equivalent
+    // via a null output target is not portable — instead just let it print
+    // to stdout and we simply never read/write it anywhere.
+    args.push("-o", "-");
+  }
+  args.push(inputPath);
 
-  const result = spawnSync(
-    "pandoc",
-    ["--lua-filter", filterPath, "--standalone", "-o", outputPath, inputPath],
-    { encoding: "utf8" },
-  );
+  const env = { ...process.env };
+  if (validateOnly) {
+    env.RICHMD_VALIDATE_ONLY = "1";
+  }
+
+  const result = spawnSync("pandoc", args, { encoding: "utf8", env });
 
   if (result.error) {
     process.stderr.write(
@@ -38,21 +56,36 @@ function render(inputPath) {
   if (result.stderr) {
     process.stderr.write(result.stderr);
   }
-  if (result.stdout) {
+  // In validate-only mode, Pandoc's stdout (if any) is discarded rather than
+  // forwarded — `richmd validate` must never produce output artifacts.
+  if (result.stdout && !validateOnly) {
     process.stdout.write(result.stdout);
   }
 
   return result.status ?? 1;
 }
 
+function render(inputPath) {
+  const parsed = path.parse(inputPath);
+  const outputPath = path.join(parsed.dir || ".", `${parsed.name}.html`);
+  return runFilter(inputPath, { validateOnly: false, outputPath });
+}
+
+function validate(inputPath) {
+  return runFilter(inputPath, { validateOnly: true, outputPath: null });
+}
+
 function main(argv) {
   const [command, file] = argv;
 
-  if (command !== "render" || !file) {
+  if (!file || (command !== "render" && command !== "validate")) {
     usage();
     return 1;
   }
 
+  if (command === "validate") {
+    return validate(file);
+  }
   return render(file);
 }
 
