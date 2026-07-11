@@ -394,7 +394,33 @@ silent one. See
 [ADR-0004](../adr/0004-cdn-default-offline-bundling-opt-in.md#adr-0004).
 :::
 
-## 08 End-to-end walkthrough
+## 08 CI {#08-ci}
+
+**Owns proving the gate on every push, not just on the author's machine.**
+CI mirrors exactly what [lefthook](https://github.com/lostbean/richmd/blob/main/lefthook.yml)
+already runs locally, so a contributor's pre-commit hook and CI can never
+disagree about what "green" means.
+
+- **Responsibility**: run `nix flake check` (formatting plus any flake
+  checks), the full test suite for every deep module (filter core, block
+  kind registry, grammar validators, link resolver/slugifier, theme/diagram
+  runtime), and the design gate
+  (`scripts/design-render --check` on every `design.md`,
+  `scripts/layer-integrity .`) on every push and pull request.
+- **Interface**: a GitHub Actions workflow, using the repo's own
+  [flake.nix](https://github.com/lostbean/richmd/blob/main/flake.nix)
+  devShell so CI's toolchain versions can never drift from a contributor's
+  local `nix develop` shell.
+- **Interacts with**: every component in §02–§07 (it runs their tests) and
+  the design layer itself (it runs the design gate).
+- **Invariants held**: none new — CI is the mechanism that keeps the
+  fail-closed gate (§00) and schema-driven validation (§00) provably true on
+  every change, not just locally.
+- **Failure behavior**: any red check blocks a pull request from being
+  considered mergeable; CI never soft-fails or skips a channel the local
+  gate runs.
+
+## 09 End-to-end walkthrough
 
 **Scenario: an author renders a design document, then fixes a broken
 diagram.**
