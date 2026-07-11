@@ -1,0 +1,52 @@
+/* richmd default theme — the only place visual values are hardcoded.
+   The Lua renderer emits `--richmd-*` custom-property hooks; this
+   stylesheet supplies their default values. A consumer reskins by
+   overriding these variables or swapping this file wholesale. */
+
+:root {
+  --richmd-callout-info-bg: #eef6fc;
+  --richmd-callout-info-border: #4a9edb;
+  --richmd-callout-info-fg: #1b3a4b;
+
+  --richmd-callout-warning-bg: #fdf6e3;
+  --richmd-callout-warning-border: #d9a441;
+  --richmd-callout-warning-fg: #4b3a1b;
+
+  --richmd-callout-danger-bg: #fdecea;
+  --richmd-callout-danger-border: #d9534f;
+  --richmd-callout-danger-fg: #4b1b1b;
+
+  --richmd-callout-default-bg: #f4f4f8;
+  --richmd-callout-default-border: #9a9ab0;
+  --richmd-callout-default-fg: #222222;
+
+  --richmd-callout-radius: 0.375rem;
+  --richmd-callout-padding: 0.75rem 1rem;
+}
+
+.richmd-callout {
+  border-left: 4px solid var(--richmd-callout-default-border);
+  background: var(--richmd-callout-default-bg);
+  color: var(--richmd-callout-default-fg);
+  border-radius: var(--richmd-callout-radius);
+  padding: var(--richmd-callout-padding);
+  margin: 1rem 0;
+}
+
+.richmd-callout--info {
+  border-left-color: var(--richmd-callout-info-border);
+  background: var(--richmd-callout-info-bg);
+  color: var(--richmd-callout-info-fg);
+}
+
+.richmd-callout--warning {
+  border-left-color: var(--richmd-callout-warning-border);
+  background: var(--richmd-callout-warning-bg);
+  color: var(--richmd-callout-warning-fg);
+}
+
+.richmd-callout--danger {
+  border-left-color: var(--richmd-callout-danger-border);
+  background: var(--richmd-callout-danger-bg);
+  color: var(--richmd-callout-danger-fg);
+}
