@@ -1,0 +1,12 @@
+pre-commit:
+  commands:
+    format:
+      run: nix fmt -- {staged_files}
+      stage_fixed: true
+    design-gate:
+      run: |
+        set -e
+        git ls-files '*design.md' | while read -r f; do
+          scripts/design-render --check "$f"
+        done
+        scripts/layer-integrity .

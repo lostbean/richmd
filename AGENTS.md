@@ -33,3 +33,14 @@ layer.
 
 Clean commit messages — no trailers, no attribution, no Co-Authored-By, no
 "Generated with" footers.
+
+## Tooling
+
+- `nix develop` (or direnv, via `.envrc`) — dev shell with Node, Pandoc, and
+  lefthook.
+- `nix fmt` — formats the whole repo (nixfmt for Nix, prettier for
+  JS/TS/JSON/Markdown/YAML) via treefmt.
+- `nix flake check` — fails if the tree is not formatted.
+- Pre-commit (lefthook): formats staged files and re-stages them, then runs
+  the design gate (`scripts/design-render --check` on every `design.md`,
+  `scripts/layer-integrity .`).
