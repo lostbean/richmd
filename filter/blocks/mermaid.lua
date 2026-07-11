@@ -35,9 +35,43 @@ local schema = {
 }
 
 -- MERMAID_CDN_URL: the pinned mermaid.js runtime script, loaded from a CDN
--- by default (ADR-0004: CDN default, --offline bundling is a later chunk,
--- issue #7 — not implemented here).
+-- by default (ADR-0004: CDN default, --offline bundling opt-in via
+-- RICHMD_OFFLINE, issue #7).
 local MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+
+-- MERMAID_OFFLINE_BUNDLE_PATH: the SAME mermaid version pinned above,
+-- already present on disk as the browser-ready UMD bundle the `mermaid` npm
+-- dependency itself ships (node_modules/mermaid/dist/mermaid.min.js) —
+-- resolved relative to script_dir exactly like theme/default.css is
+-- resolved in richmd-filter.lua, so this works identically from the source
+-- checkout and from the Nix-packaged install (verified: buildNpmPackage's
+-- `npm install` step places node_modules/mermaid alongside bin/filter/theme
+-- inside $out/lib/node_modules/richmd). Reading this file directly avoids an
+-- HTTP fetch at render time entirely — no network dependency, no cache
+-- invalidation concern, and it is guaranteed to match the exact version
+-- mermaid-check.js already validates against.
+local MERMAID_OFFLINE_BUNDLE_PATH = script_dir .. "../node_modules/mermaid/dist/mermaid.min.js"
+
+-- read_offline_bundle() -> string
+--
+-- Reads the pinned mermaid.js UMD bundle fresh on every offline render
+-- (design.md §07 "downloads/embeds the pinned versions once" refers to
+-- once-per-render, not a persistent cache across CLI invocations — the
+-- acceptance criteria only require correctness, and re-reading a local file
+-- already on disk is cheap enough that adding a cross-process cache would
+-- be complexity with no measurable benefit). A missing file is a hard
+-- filter failure naming the path, not a silent fallback to the CDN
+-- reference — offline mode must never silently produce a page that still
+-- needs network access.
+local function read_offline_bundle()
+  local file = io.open(MERMAID_OFFLINE_BUNDLE_PATH, "r")
+  if not file then
+    error("richmd: --offline requested but could not open pinned mermaid bundle at " .. MERMAID_OFFLINE_BUNDLE_PATH)
+  end
+  local source = file:read("*a")
+  file:close()
+  return source
+end
 
 -- run_mermaid_check(source) -> valid (bool), reason (string | nil)
 --
@@ -139,19 +173,40 @@ end
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
 -- Embeds the raw mermaid source in a <pre class="mermaid"> container (per
--- design.md §07) and lets the client-side mermaid.js runtime (loaded via
--- the CDN script tag injected alongside it) render the diagram in the
--- reader's browser on page load — never pre-rendered to a static SVG here.
+-- design.md §07) and lets the client-side mermaid.js runtime render the
+-- diagram in the reader's browser on page load — never pre-rendered to a
+-- static SVG here.
+--
+-- Default mode (RICHMD_OFFLINE unset, ADR-0004's default): unchanged from
+-- before this chunk — a CDN <script type="module"> reference.
+--
+-- Offline mode (RICHMD_OFFLINE=1, set by `richmd render --offline` via
+-- bin/richmd.js, the SAME env-var-signal pattern as RICHMD_VALIDATE_ONLY):
+-- the pinned mermaid.js UMD bundle's full source is embedded directly in a
+-- plain inline <script> tag (no `type="module"`, since the UMD build
+-- assigns `globalThis.mermaid` itself rather than exporting an ES module) —
+-- no CDN URL anywhere in the output, so the page is viewable with zero
+-- network access.
 local function render(block, _resolved_attrs)
   local source = block.text or ""
 
   local pre_html = "<pre class=\"mermaid richmd-mermaid\">" .. html_escape(source) .. "</pre>"
-  local script_html = "<script type=\"module\">\n"
-    .. "  import mermaid from '"
-    .. MERMAID_CDN_URL
-    .. "';\n"
-    .. "  mermaid.initialize({ startOnLoad: true });\n"
-    .. "</script>"
+
+  local script_html
+  if os.getenv("RICHMD_OFFLINE") then
+    local bundle_source = read_offline_bundle()
+    script_html = "<script>\n"
+      .. bundle_source
+      .. "\n  mermaid.initialize({ startOnLoad: true });\n"
+      .. "</script>"
+  else
+    script_html = "<script type=\"module\">\n"
+      .. "  import mermaid from '"
+      .. MERMAID_CDN_URL
+      .. "';\n"
+      .. "  mermaid.initialize({ startOnLoad: true });\n"
+      .. "</script>"
+  end
 
   return pandoc.Div({
     pandoc.RawBlock("html", pre_html),
