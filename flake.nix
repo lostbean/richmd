@@ -51,16 +51,13 @@
 
           src = ./.;
 
-          # No real npm dependencies yet (package-lock.json is
-          # dependency-free). buildNpmPackage's npm-deps fetcher refuses to
-          # produce an empty cache implicitly (it assumes an empty cache is
-          # an upstream lockfile mistake); forceEmptyCache opts in
-          # explicitly, since here it's genuinely correct — richmd has no
-          # runtime npm dependencies to vendor. npmDepsHash is still required
-          # (the cache fetch is a fixed-output derivation) and pinned so the
-          # build stays reproducible and network-free after the first fetch.
-          forceEmptyCache = true;
-          npmDepsHash = "sha256-1+/emibSf2SEOG3s61Hd2BnlBPJbCHNf7LIZV76ISF4=";
+          # richmd now has real runtime npm dependencies (mermaid + linkedom,
+          # design.md §05 grammar validator — issue #4/chunk 3): the
+          # package-lock.json is no longer dependency-free, so
+          # forceEmptyCache no longer applies. npmDepsHash is pinned to the
+          # real dependency cache's fixed-output hash so the build stays
+          # reproducible and network-free after the first fetch.
+          npmDepsHash = "sha256-6l5PRRscdKFHUj1P9LrO7EuIg91+xTJqGAj2a2Ob29Q=";
 
           # There's nothing to compile — bin/richmd.js and the Lua filters
           # ship as-is — so skip the default `npm run build`.
