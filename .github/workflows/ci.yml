@@ -1,0 +1,44 @@
+name: CI
+
+# design.md §08: CI mirrors exactly what lefthook already runs locally, so a
+# contributor's pre-commit hook and CI can never disagree about what "green"
+# means. Every step below is the exact command a contributor runs via
+# `nix develop -c <cmd>` — nothing invented here that lefthook.yml doesn't
+# already run, and nothing lefthook.yml runs that's skipped here.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    name: format + design-gate + test + build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: format (nix flake check)
+        run: nix develop -c nix flake check
+
+      - name: build (nix build)
+        run: nix develop -c nix build
+
+      - name: test (npm test)
+        run: nix develop -c npm test
+
+      - name: design-gate (design-render --check, layer-integrity)
+        run: |
+          nix develop -c bash -c '
+            set -e
+            git ls-files "*design.md" | while read -r f; do
+              scripts/design-render --check "$f"
+            done
+            scripts/layer-integrity .
+          '
