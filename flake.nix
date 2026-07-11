@@ -33,7 +33,11 @@
           packages = with pkgs; [
             lefthook
             nodejs
-            pandoc
+            # The top-level `pandoc` attribute is built without Lua support
+            # in this nixpkgs revision; haskellPackages.pandoc-cli is the
+            # same version built through the Haskell package set directly,
+            # with Lua filters enabled (`pandoc --version` reports `+lua`).
+            haskellPackages.pandoc-cli
           ];
         };
 
