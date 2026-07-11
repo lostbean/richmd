@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "richmd": "bin/richmd.js"
+  },
+  "files": [
+    "bin",
+    "filter",
+    "theme"
+  ],
   "scripts": {
     "test": "node --test"
   },
