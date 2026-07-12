@@ -52,12 +52,13 @@
           src = ./.;
 
           # richmd now has real runtime npm dependencies (mermaid + linkedom,
-          # design.md §05 grammar validator — issue #4/chunk 3): the
-          # package-lock.json is no longer dependency-free, so
+          # design.md §05 grammar validator — issue #4/chunk 3; ajv, added
+          # for the vega-lite grammar validator's JSON-schema check — issue
+          # #11): the package-lock.json is no longer dependency-free, so
           # forceEmptyCache no longer applies. npmDepsHash is pinned to the
           # real dependency cache's fixed-output hash so the build stays
           # reproducible and network-free after the first fetch.
-          npmDepsHash = "sha256-6l5PRRscdKFHUj1P9LrO7EuIg91+xTJqGAj2a2Ob29Q=";
+          npmDepsHash = "sha256-ZObya7iYidzeM7PEVg61mvVxRAvFEUimpx7Djz54V6g=";
 
           # There's nothing to compile — bin/richmd.js and the Lua filters
           # ship as-is — so skip the default `npm run build`.

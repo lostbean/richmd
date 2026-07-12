@@ -50,3 +50,182 @@
   background: var(--richmd-callout-danger-bg);
   color: var(--richmd-callout-danger-fg);
 }
+
+/* --- cards --- */
+
+:root {
+  --richmd-cards-cols: 3;
+  --richmd-cards-gap: 1rem;
+  --richmd-cards-bg: #f9f9fb;
+  --richmd-cards-border: #e0e0e8;
+  --richmd-cards-radius: 0.5rem;
+  --richmd-cards-padding: 1rem;
+
+  --richmd-cards-sm-padding: 0.625rem;
+  --richmd-cards-sm-font-size: 0.875rem;
+  --richmd-cards-lg-padding: 1.5rem;
+  --richmd-cards-lg-font-size: 1.125rem;
+}
+
+.richmd-cards {
+  display: grid;
+  grid-template-columns: repeat(var(--richmd-cards-cols), 1fr);
+  gap: var(--richmd-cards-gap);
+  margin: 1rem 0;
+}
+
+.richmd-cards > * {
+  background: var(--richmd-cards-bg);
+  border: 1px solid var(--richmd-cards-border);
+  border-radius: var(--richmd-cards-radius);
+  padding: var(--richmd-cards-padding);
+}
+
+.richmd-cards--sm > * {
+  padding: var(--richmd-cards-sm-padding);
+  font-size: var(--richmd-cards-sm-font-size);
+}
+
+.richmd-cards--lg > * {
+  padding: var(--richmd-cards-lg-padding);
+  font-size: var(--richmd-cards-lg-font-size);
+}
+
+/* --- stat tile --- */
+
+:root {
+  --richmd-stat-tile-bg: #f4f4f8;
+  --richmd-stat-tile-border: #9a9ab0;
+  --richmd-stat-tile-radius: 0.5rem;
+  --richmd-stat-tile-padding: 1rem;
+  --richmd-stat-tile-value-fg: #222222;
+  --richmd-stat-tile-value-size: 2rem;
+  --richmd-stat-tile-value-weight: 700;
+  --richmd-stat-tile-label-fg: #55556a;
+  --richmd-stat-tile-label-size: 0.875rem;
+}
+
+.richmd-stat-tile {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  background: var(--richmd-stat-tile-bg);
+  border: 1px solid var(--richmd-stat-tile-border);
+  border-radius: var(--richmd-stat-tile-radius);
+  padding: var(--richmd-stat-tile-padding);
+  margin: 1rem 0;
+}
+
+.richmd-stat-tile__value {
+  color: var(--richmd-stat-tile-value-fg);
+  font-size: var(--richmd-stat-tile-value-size);
+  font-weight: var(--richmd-stat-tile-value-weight);
+  line-height: 1.1;
+}
+
+.richmd-stat-tile__label {
+  color: var(--richmd-stat-tile-label-fg);
+  font-size: var(--richmd-stat-tile-label-size);
+}
+
+/* --- toc --- */
+
+:root {
+  --richmd-toc-fg: #1b3a4b;
+  --richmd-toc-indent-step: 1rem;
+  --richmd-toc-gap: 0.25rem;
+}
+
+.richmd-toc {
+  display: flex;
+  flex-direction: column;
+  gap: var(--richmd-toc-gap);
+  margin: 1rem 0;
+}
+
+.richmd-toc__item {
+  color: var(--richmd-toc-fg);
+}
+
+.richmd-toc__item--level-1 {
+  padding-left: 0;
+  font-weight: 600;
+}
+.richmd-toc__item--level-2 {
+  padding-left: var(--richmd-toc-indent-step);
+}
+.richmd-toc__item--level-3 {
+  padding-left: calc(var(--richmd-toc-indent-step) * 2);
+}
+.richmd-toc__item--level-4 {
+  padding-left: calc(var(--richmd-toc-indent-step) * 3);
+}
+.richmd-toc__item--level-5 {
+  padding-left: calc(var(--richmd-toc-indent-step) * 4);
+}
+.richmd-toc__item--level-6 {
+  padding-left: calc(var(--richmd-toc-indent-step) * 5);
+}
+
+/* --- labeled block --- */
+
+:root {
+  --richmd-labeled-block-bg: #f4f4f8;
+  --richmd-labeled-block-border: #9a9ab0;
+  --richmd-labeled-block-radius: 0.375rem;
+  --richmd-labeled-block-padding: 0.75rem 1rem;
+  --richmd-labeled-block-label-fg: #222222;
+
+  --richmd-labeled-block-goal-border: #4a9edb;
+  --richmd-labeled-block-goal-badge-bg: #4a9edb;
+  --richmd-labeled-block-invariant-border: #d9534f;
+  --richmd-labeled-block-invariant-badge-bg: #d9534f;
+  --richmd-labeled-block-principle-border: #6a4ac0;
+  --richmd-labeled-block-principle-badge-bg: #6a4ac0;
+  --richmd-labeled-block-no-goal-border: #9a9ab0;
+  --richmd-labeled-block-no-goal-badge-bg: #9a9ab0;
+}
+
+.richmd-labeled-block {
+  border-left: 4px solid var(--richmd-labeled-block-border);
+  background: var(--richmd-labeled-block-bg);
+  border-radius: var(--richmd-labeled-block-radius);
+  padding: var(--richmd-labeled-block-padding);
+  margin: 1rem 0;
+}
+
+.richmd-labeled-block__label {
+  color: var(--richmd-labeled-block-label-fg);
+  font-weight: 700;
+  margin-bottom: 0.375rem;
+}
+
+.richmd-labeled-block--goal {
+  border-left-color: var(--richmd-labeled-block-goal-border);
+}
+.richmd-labeled-block--invariant {
+  border-left-color: var(--richmd-labeled-block-invariant-border);
+}
+.richmd-labeled-block--principle {
+  border-left-color: var(--richmd-labeled-block-principle-border);
+}
+.richmd-labeled-block--no-goal {
+  border-left-color: var(--richmd-labeled-block-no-goal-border);
+}
+
+/* --- embedded svg --- */
+
+:root {
+  --richmd-embedded-svg-margin: 1rem 0;
+  --richmd-embedded-svg-max-width: 100%;
+}
+
+.richmd-embedded-svg {
+  margin: var(--richmd-embedded-svg-margin);
+}
+
+.richmd-embedded-svg svg {
+  max-width: var(--richmd-embedded-svg-max-width);
+  height: auto;
+}

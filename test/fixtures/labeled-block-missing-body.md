@@ -1,0 +1,2 @@
+::: {.labeled-block type="goal"}
+:::

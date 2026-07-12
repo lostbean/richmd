@@ -16,8 +16,8 @@
     "test": "node --test"
   },
   "dependencies": {
+    "ajv": "^8.20.0",
     "linkedom": "^0.18.5",
     "mermaid": "11.6.0"
-  },
-  "devDependencies": {}
+  }
 }

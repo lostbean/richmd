@@ -26,6 +26,12 @@ local registry = Registry.new()
 -- Built-in kinds register themselves into the shared registry at startup.
 require("blocks.callout").register(registry)
 require("blocks.mermaid").register(registry)
+require("blocks.vega-lite").register(registry)
+require("blocks.cards").register(registry)
+require("blocks.stat-tile").register(registry)
+require("blocks.toc").register(registry)
+require("blocks.labeled-block").register(registry)
+require("blocks.embedded-svg").register(registry)
 
 -- The current document's own directory, used to resolve relative `.md`
 -- link targets against the filesystem (§06 link resolver). Pandoc exposes
