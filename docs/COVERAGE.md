@@ -16,5 +16,6 @@ section describes it), `standard` (plain infrastructure, reason given), or
 | npm thin-wrapper package                            | captured     | [ADR-0001](adr/0001-nix-flake-primary-npm-thin-wrapper.md#adr-0001)                 |
 | Node helper dependency lockfile                     | standard     | conventional `package-lock.json`, pinned and committed; no bespoke logic            |
 | CI / pre-commit wiring                              | captured     | [design.md §08](design/design.md#08-ci)                                             |
+| Example doc + CI hash regression check              | captured     | [design.md §08](design/design.md#08-ci)                                             |
 | README.md / USAGE_RULES.md / banner (consumer docs) | standard     | plain project documentation restating the design/block vocabulary; no bespoke logic |
 | Hosting/publishing the rendered HTML                | out-of-scope | explicit no-goal — richmd only produces the `.html` file                            |

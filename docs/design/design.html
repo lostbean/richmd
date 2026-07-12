@@ -1442,9 +1442,13 @@ disagree about what &quot;green&quot; means.</p>
 <li><strong>Responsibility</strong>: run <code>nix flake check</code> (formatting plus any flake
 checks), the full test suite for every deep module (filter core, block
 kind registry, grammar validators, link resolver/slugifier, theme/diagram
-runtime), and the design gate
+runtime), the design gate
 (<code>scripts/design-render --check</code> on every <code>design.md</code>,
-<code>scripts/layer-integrity .</code>) on every push and pull request.</li>
+<code>scripts/layer-integrity .</code>), and the example-doc regression check
+(<code>examples/</code> — render the golden example, diff its output hash against
+the committed one; a mismatch fails the build, since output only changes
+on a deliberate markup/theme change, never silently) on every push and
+pull request.</li>
 <li><strong>Interface</strong>: a GitHub Actions workflow, using the repo's own
 <a href="https://github.com/lostbean/richmd/blob/main/flake.nix">flake.nix</a>
 devShell so CI's toolchain versions can never drift from a contributor's
