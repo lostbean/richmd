@@ -283,7 +283,9 @@ info/warning/danger tinted panels
 
 ### cards / grid
 
-the workhorse enumeration block
+the workhorse enumeration block, each card's `###` title optionally paired
+with a small badge/tag (e.g. `client`, `owns: schema registry`) — visual
+metadata, never a substitute for the title text itself
 
 ### stat tile
 
@@ -303,7 +305,8 @@ goal/invariant/principle-style typed statement
 
 ### embedded SVG
 
-inline a sibling `.svg` file
+inline a sibling `.svg` file, with an optional caption rendered as a real
+`<figure>`/`<figcaption>` pair
 :::
 
 ## 05 Grammar validators {#05-grammar-validators}
