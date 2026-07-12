@@ -162,14 +162,6 @@ pair. Modifying richmd's own core source is never the extension path. See
 [ADR-0003](../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003).
 :::
 
-## Pending updates
-
-:::pending {kind=build since=2026-07-11}
-Nothing is built yet — this is a fresh design. Every component in §02–§07
-below is designed, not implemented.
-[ADR-0001](../adr/0001-nix-flake-primary-npm-thin-wrapper.md#adr-0001)
-:::
-
 ## 01 System at a glance
 
 richmd is one pipeline: parse, validate, gate, render. The
