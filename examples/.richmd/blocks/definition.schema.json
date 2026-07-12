@@ -1,0 +1,10 @@
+{
+  "kind": "definition",
+  "attrs": {
+    "term": {
+      "required": true,
+      "type": "string"
+    }
+  },
+  "body": "required"
+}

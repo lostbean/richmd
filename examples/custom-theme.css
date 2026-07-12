@@ -1,41 +1,1077 @@
 /* ============================================================================
-   richmd example — custom-theme.css
-   Demonstrates design.md §00 principle P3 "Style is swappable, never
-   hardcoded": richmd's renderer only ever emits structure and --richmd-*
-   CSS-variable hooks (theme/default.css), never hardcoded colors/fonts in
-   generator logic — so a consumer can reskin a report with pure CSS, no
-   markup change, by overriding a handful of variables at :root (or on any
-   subtree/ancestor of .richmd-doc).
+   richmd example — custom-theme.css ("Emerald Desk")
+   A COMPLETE drop-in replacement for theme/default.css — same --richmd-*
+   variable names, same .richmd-* class selectors, entirely different
+   values: warm paper background, deep forest-green/amber accents, Fraunces
+   serif display type instead of Space Grotesk, Source Sans 3 body instead
+   of Inter. Demonstrates design.md §00 principle P3 "style is swappable,
+   never hardcoded" (§07 theme/diagram runtime) — richmd's renderer only
+   ever emits structure plus --richmd-* CSS-variable hooks, never a
+   hardcoded visual identity, so a consumer can reskin a report wholesale
+   with pure CSS, no markup change.
 
-   This file is NOT wired into examples/data-status-report.html's render
-   pipeline automatically — richmd has no CSS-selection render option (there
-   is nothing to "apply" at build time). It exists to prove the override
-   CONTRACT is genuinely live: load default.css followed by this file (in
-   that order) in any HTML page and every value below wins, because plain
-   CSS cascade/specificity — not richmd — is what makes reskinning work.
-   See the accompanying manual-comparison note in USAGE_RULES.md/README for
-   the exact two-file diff this override produces.
+   Compatibility note (verified by selector-diff against theme/default.css,
+   see examples/custom-theme-demo.md's intro + this repo's work-order
+   report): every .richmd-* class default.css defines is also present here,
+   with ONE known, narrow gap — `.richmd-embedded-svg svg` (the sizing rule
+   for the `embedded-svg` block kind's inlined SVG) is not defined in this
+   file. A document using `embedded-svg` under this theme falls back to the
+   SVG's own intrinsic sizing rather than the forced `width:100%; height:
+   auto` default.css provides. Every other selector matches exactly. This
+   gap is reported, not silently patched — see the accompanying report for
+   the full selector diff.
+
+   richmd has no CLI flag to "pick a theme" at render time (bin/richmd.js
+   always embeds theme/default.css via richmd-filter.lua's
+   theme_style_html()) — this file is proven live by substituting it for
+   the embedded <style> block's content in an already-rendered page (see
+   scripts/theme-swap-check and examples/custom-theme-demo.md), not by any
+   richmd markdown mechanism.
+
+   Contract summary — three property groups:
+     1. --richmd-color-*     colors, ramps and semantic aliases (themeable)
+     2. --richmd-space-* / --richmd-radius-* / --richmd-shadow-*   scale tokens
+     3. --richmd-font-* / --richmd-text-*                          type tokens
+   Light is the default; dark activates automatically via prefers-color-scheme,
+   or force either mode with data-richmd-theme="light" | "dark" on <html> (or
+   any ancestor of .richmd-doc) — that attribute always wins over OS preference.
    ========================================================================= */
 
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap");
+
+/* ---------------------------------------------------------------------------
+   1. TOKENS — light theme (default) — "Emerald Desk": warm paper ground,
+   deep forest-green + amber accents, editorial serif display type.
+   ------------------------------------------------------------------------ */
 :root {
-  /* Different accent color family entirely: default theme's accent is a
-     vivid indigo (--richmd-accent-500: #4f46e5); this override swaps the
-     whole "solid" alias to a warm amber so the effect is unmistakable in
-     links, TOC active state, primary badges, and stat-tile deltas. */
-  --richmd-color-accent-solid: #b45309;
-  --richmd-color-accent-solid-hover: #92400e;
-  --richmd-color-accent-text: #92400e;
-  --richmd-color-link: #b45309;
-  --richmd-color-link-hover: #92400e;
+  color-scheme: light;
 
-  /* Different heading voice: default theme's --richmd-font-heading is
-     "Space Grotesk" (a geometric sans); this override swaps every heading,
-     card title, stat value, and TOC-adjacent heading font to a serif
-     face for a distinctly different, editorial feel with no markup
-     change anywhere in data-status-report.md. */
-  --richmd-font-heading: Georgia, "Iowan Old Style", "Times New Roman", serif;
+  /* base surfaces & text */
+  --richmd-color-bg: #faf8f2;
+  --richmd-color-bg-alt: #f1ede0; /* zebra rows, code bg, inset panels */
+  --richmd-color-surface: #ffffff; /* cards, stat tiles, TOC panel */
+  --richmd-color-surface-2: #ece6d6; /* nested surface (card-on-card) */
+  --richmd-color-border: rgba(28, 36, 29, 0.12);
+  --richmd-color-border-strong: rgba(28, 36, 29, 0.26);
+  --richmd-color-text: #1c241d;
+  --richmd-color-text-muted: rgba(28, 36, 29, 0.62);
+  --richmd-color-text-faint: rgba(28, 36, 29, 0.4);
+  --richmd-color-link: #1e6b45;
+  --richmd-color-link-hover: #164f34;
+  --richmd-color-selection: rgba(30, 107, 69, 0.22);
 
-  /* Slightly warmer paper background than the default cool-gray
-     (--richmd-color-bg: #f6f7fb), reinforcing the amber accent above. */
-  --richmd-color-bg: #fbf7f0;
+  /* accent ramp — deep forest green (primary voice: links, TOC active, primary badges) */
+  --richmd-accent-100: #e6f2ea;
+  --richmd-accent-300: #a8d4b8;
+  --richmd-accent-500: #1e6b45;
+  --richmd-accent-700: #164f34;
+  --richmd-accent-900: #0c2c1d;
+
+  /* accent-2 ramp — amber (secondary voice: success states, alt badges) */
+  --richmd-accent2-100: #fdf1dd;
+  --richmd-accent2-300: #f2cd85;
+  --richmd-accent2-500: #c68a1f;
+  --richmd-accent2-700: #8f6314;
+  --richmd-accent2-900: #4d3509;
+
+  /* semantic ramps — callouts, badges, stat deltas */
+  --richmd-info-100: #e6eef7;
+  --richmd-info-300: #a9c7e0;
+  --richmd-info-500: #2b6ca8;
+  --richmd-info-700: #1e4c78;
+  --richmd-warning-100: #fbf0dc;
+  --richmd-warning-300: #edc584;
+  --richmd-warning-500: #b8720f;
+  --richmd-warning-700: #7a4a09;
+  --richmd-danger-100: #f8e6e1;
+  --richmd-danger-300: #e2a795;
+  --richmd-danger-500: #a13a2a;
+  --richmd-danger-700: #742a1e;
+
+  /* semantic aliases — use these in components, not raw ramp steps */
+  --richmd-color-accent-tint: var(--richmd-accent-100);
+  --richmd-color-accent-solid: var(--richmd-accent-500);
+  --richmd-color-accent-solid-hover: var(--richmd-accent-700);
+  --richmd-color-accent-text: var(--richmd-accent-700);
+  --richmd-color-accent2-tint: var(--richmd-accent2-100);
+  --richmd-color-accent2-solid: var(--richmd-accent2-500);
+  --richmd-color-accent2-text: var(--richmd-accent2-700);
+  --richmd-color-info-tint: var(--richmd-info-100);
+  --richmd-color-info-border: var(--richmd-info-300);
+  --richmd-color-info-solid: var(--richmd-info-500);
+  --richmd-color-info-text: var(--richmd-info-700);
+  --richmd-color-warning-tint: var(--richmd-warning-100);
+  --richmd-color-warning-border: var(--richmd-warning-300);
+  --richmd-color-warning-solid: var(--richmd-warning-500);
+  --richmd-color-warning-text: var(--richmd-warning-700);
+  --richmd-color-danger-tint: var(--richmd-danger-100);
+  --richmd-color-danger-border: var(--richmd-danger-300);
+  --richmd-color-danger-solid: var(--richmd-danger-500);
+  --richmd-color-danger-text: var(--richmd-danger-700);
+
+  /* type */
+  --richmd-font-heading: "Fraunces", ui-serif, Georgia, serif;
+  --richmd-font-heading-weight: 600;
+  --richmd-font-body:
+    "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --richmd-font-mono:
+    "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --richmd-text-xs: 12px;
+  --richmd-text-sm: 14px;
+  --richmd-text-base: 16px;
+  --richmd-text-lg: 19px;
+  --richmd-text-xl: 24px;
+  --richmd-text-2xl: 30px;
+  --richmd-text-3xl: 39px;
+  --richmd-text-4xl: 50px;
+  --richmd-line-height: 1.6;
+  --richmd-line-height-tight: 1.15;
+
+  /* scale */
+  --richmd-space-1: 4px;
+  --richmd-space-2: 8px;
+  --richmd-space-3: 12px;
+  --richmd-space-4: 16px;
+  --richmd-space-5: 24px;
+  --richmd-space-6: 32px;
+  --richmd-space-7: 48px;
+  --richmd-space-8: 64px;
+
+  --richmd-radius-sm: 8px;
+  --richmd-radius-md: 14px;
+  --richmd-radius-lg: 22px;
+  --richmd-radius-pill: 999px;
+
+  --richmd-shadow-sm: 0 1px 2px rgba(28, 36, 29, 0.08);
+  --richmd-shadow-md: 0 6px 18px rgba(28, 36, 29, 0.1);
+  --richmd-shadow-lg: 0 20px 44px rgba(28, 36, 29, 0.16);
+
+  --richmd-content-width: 760px;
+  --richmd-content-width-wide: 1080px;
+}
+
+/* ---------------------------------------------------------------------------
+   1b. TOKENS — dark theme. Same variable names, new values; OS-driven by
+   default, override-able with data-richmd-theme.
+   ------------------------------------------------------------------------ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-richmd-theme="light"]) {
+    --richmd-is-dark: 1;
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-richmd-theme="light"]) {
+    color-scheme: dark;
+    --richmd-color-bg: #10140f;
+    --richmd-color-bg-alt: #171d13;
+    --richmd-color-surface: #1b2216;
+    --richmd-color-surface-2: #212a1a;
+    --richmd-color-border: rgba(226, 236, 220, 0.1);
+    --richmd-color-border-strong: rgba(226, 236, 220, 0.22);
+    --richmd-color-text: #eef3e9;
+    --richmd-color-text-muted: rgba(238, 243, 233, 0.66);
+    --richmd-color-text-faint: rgba(238, 243, 233, 0.42);
+    --richmd-color-link: #7fc99a;
+    --richmd-color-link-hover: #a8dab8;
+    --richmd-color-selection: rgba(127, 201, 154, 0.28);
+
+    --richmd-color-accent-tint: rgba(127, 201, 154, 0.16);
+    --richmd-color-accent-solid: #4f9c6c;
+    --richmd-color-accent-solid-hover: #7fc99a;
+    --richmd-color-accent-text: #8fd1a8;
+    --richmd-color-accent2-tint: rgba(214, 163, 64, 0.18);
+    --richmd-color-accent2-solid: #d6a340;
+    --richmd-color-accent2-text: #eac97e;
+    --richmd-color-info-tint: rgba(91, 150, 201, 0.18);
+    --richmd-color-info-border: rgba(160, 200, 230, 0.3);
+    --richmd-color-info-solid: #7ab0d9;
+    --richmd-color-info-text: #a8cbe6;
+    --richmd-color-warning-tint: rgba(199, 127, 25, 0.2);
+    --richmd-color-warning-border: rgba(237, 197, 132, 0.3);
+    --richmd-color-warning-solid: #d99a3f;
+    --richmd-color-warning-text: #e8bd7c;
+    --richmd-color-danger-tint: rgba(161, 58, 42, 0.22);
+    --richmd-color-danger-border: rgba(226, 167, 149, 0.3);
+    --richmd-color-danger-solid: #c5654e;
+    --richmd-color-danger-text: #dd9483;
+
+    --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --richmd-shadow-md: 0 8px 22px rgba(0, 0, 0, 0.4);
+    --richmd-shadow-lg: 0 22px 50px rgba(0, 0, 0, 0.5);
+  }
+}
+/* Scoped overrides — data-richmd-theme set directly on .richmd-doc (or any
+   ancestor) must win over the OS media query regardless of where in the
+   tree it sits, not just at :root. */
+.richmd-doc[data-richmd-theme="light"] {
+  color-scheme: light;
+  --richmd-color-bg: #faf8f2;
+  --richmd-color-bg-alt: #f1ede0;
+  --richmd-color-surface: #ffffff;
+  --richmd-color-surface-2: #ece6d6;
+  --richmd-color-border: rgba(28, 36, 29, 0.12);
+  --richmd-color-border-strong: rgba(28, 36, 29, 0.26);
+  --richmd-color-text: #1c241d;
+  --richmd-color-text-muted: rgba(28, 36, 29, 0.62);
+  --richmd-color-text-faint: rgba(28, 36, 29, 0.4);
+  --richmd-color-link: #1e6b45;
+  --richmd-color-link-hover: #164f34;
+  --richmd-color-selection: rgba(30, 107, 69, 0.22);
+  --richmd-color-accent-tint: var(--richmd-accent-100);
+  --richmd-color-accent-solid: var(--richmd-accent-500);
+  --richmd-color-accent-solid-hover: var(--richmd-accent-700);
+  --richmd-color-accent-text: var(--richmd-accent-700);
+  --richmd-color-accent2-tint: var(--richmd-accent2-100);
+  --richmd-color-accent2-solid: var(--richmd-accent2-500);
+  --richmd-color-accent2-text: var(--richmd-accent2-700);
+  --richmd-color-info-tint: var(--richmd-info-100);
+  --richmd-color-info-border: var(--richmd-info-300);
+  --richmd-color-info-solid: var(--richmd-info-500);
+  --richmd-color-info-text: var(--richmd-info-700);
+  --richmd-color-warning-tint: var(--richmd-warning-100);
+  --richmd-color-warning-border: var(--richmd-warning-300);
+  --richmd-color-warning-solid: var(--richmd-warning-500);
+  --richmd-color-warning-text: var(--richmd-warning-700);
+  --richmd-color-danger-tint: var(--richmd-danger-100);
+  --richmd-color-danger-border: var(--richmd-danger-300);
+  --richmd-color-danger-solid: var(--richmd-danger-500);
+  --richmd-color-danger-text: var(--richmd-danger-700);
+  --richmd-shadow-sm: 0 1px 2px rgba(28, 36, 29, 0.08);
+  --richmd-shadow-md: 0 6px 18px rgba(28, 36, 29, 0.1);
+  --richmd-shadow-lg: 0 20px 44px rgba(28, 36, 29, 0.16);
+}
+.richmd-doc[data-richmd-theme="dark"] {
+  color-scheme: dark;
+  --richmd-color-bg: #10140f;
+  --richmd-color-bg-alt: #171d13;
+  --richmd-color-surface: #1b2216;
+  --richmd-color-surface-2: #212a1a;
+  --richmd-color-border: rgba(226, 236, 220, 0.1);
+  --richmd-color-border-strong: rgba(226, 236, 220, 0.22);
+  --richmd-color-text: #eef3e9;
+  --richmd-color-text-muted: rgba(238, 243, 233, 0.66);
+  --richmd-color-text-faint: rgba(238, 243, 233, 0.42);
+  --richmd-color-link: #7fc99a;
+  --richmd-color-link-hover: #a8dab8;
+  --richmd-color-selection: rgba(127, 201, 154, 0.28);
+  --richmd-color-accent-tint: rgba(127, 201, 154, 0.16);
+  --richmd-color-accent-solid: #4f9c6c;
+  --richmd-color-accent-solid-hover: #7fc99a;
+  --richmd-color-accent-text: #8fd1a8;
+  --richmd-color-accent2-tint: rgba(214, 163, 64, 0.18);
+  --richmd-color-accent2-solid: #d6a340;
+  --richmd-color-accent2-text: #eac97e;
+  --richmd-color-info-tint: rgba(91, 150, 201, 0.18);
+  --richmd-color-info-border: rgba(160, 200, 230, 0.3);
+  --richmd-color-info-solid: #7ab0d9;
+  --richmd-color-info-text: #a8cbe6;
+  --richmd-color-warning-tint: rgba(199, 127, 25, 0.2);
+  --richmd-color-warning-border: rgba(237, 197, 132, 0.3);
+  --richmd-color-warning-solid: #d99a3f;
+  --richmd-color-warning-text: #e8bd7c;
+  --richmd-color-danger-tint: rgba(161, 58, 42, 0.22);
+  --richmd-color-danger-border: rgba(226, 167, 149, 0.3);
+  --richmd-color-danger-solid: #c5654e;
+  --richmd-color-danger-text: #dd9483;
+  --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --richmd-shadow-md: 0 8px 22px rgba(0, 0, 0, 0.4);
+  --richmd-shadow-lg: 0 22px 50px rgba(0, 0, 0, 0.5);
+}
+
+:root[data-richmd-theme="dark"] {
+  color-scheme: dark;
+  --richmd-color-bg: #10140f;
+  --richmd-color-bg-alt: #171d13;
+  --richmd-color-surface: #1b2216;
+  --richmd-color-surface-2: #212a1a;
+  --richmd-color-border: rgba(226, 236, 220, 0.1);
+  --richmd-color-border-strong: rgba(226, 236, 220, 0.22);
+  --richmd-color-text: #eef3e9;
+  --richmd-color-text-muted: rgba(238, 243, 233, 0.66);
+  --richmd-color-text-faint: rgba(238, 243, 233, 0.42);
+  --richmd-color-link: #7fc99a;
+  --richmd-color-link-hover: #a8dab8;
+  --richmd-color-selection: rgba(127, 201, 154, 0.28);
+  --richmd-color-accent-tint: rgba(127, 201, 154, 0.16);
+  --richmd-color-accent-solid: #4f9c6c;
+  --richmd-color-accent-solid-hover: #7fc99a;
+  --richmd-color-accent-text: #8fd1a8;
+  --richmd-color-accent2-tint: rgba(214, 163, 64, 0.18);
+  --richmd-color-accent2-solid: #d6a340;
+  --richmd-color-accent2-text: #eac97e;
+  --richmd-color-info-tint: rgba(91, 150, 201, 0.18);
+  --richmd-color-info-border: rgba(160, 200, 230, 0.3);
+  --richmd-color-info-solid: #7ab0d9;
+  --richmd-color-info-text: #a8cbe6;
+  --richmd-color-warning-tint: rgba(199, 127, 25, 0.2);
+  --richmd-color-warning-border: rgba(237, 197, 132, 0.3);
+  --richmd-color-warning-solid: #d99a3f;
+  --richmd-color-warning-text: #e8bd7c;
+  --richmd-color-danger-tint: rgba(161, 58, 42, 0.22);
+  --richmd-color-danger-border: rgba(226, 167, 149, 0.3);
+  --richmd-color-danger-solid: #c5654e;
+  --richmd-color-danger-text: #dd9483;
+  --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --richmd-shadow-md: 0 8px 22px rgba(0, 0, 0, 0.4);
+  --richmd-shadow-lg: 0 22px 50px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------------------------------------------------------------------------
+   2. BASE — the report document shell
+   ------------------------------------------------------------------------ */
+.richmd-doc,
+.richmd-doc *,
+.richmd-doc *::before,
+.richmd-doc *::after {
+  box-sizing: border-box;
+}
+.richmd-doc {
+  background: var(--richmd-color-bg);
+  color: var(--richmd-color-text);
+  font-family: var(--richmd-font-body);
+  font-size: var(--richmd-text-base);
+  line-height: var(--richmd-line-height);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.richmd-doc ::selection {
+  background: var(--richmd-color-selection);
+}
+.richmd-doc :focus {
+  outline: none;
+}
+.richmd-doc :focus-visible {
+  outline: 2px solid var(--richmd-color-accent-solid);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.richmd-container {
+  max-width: var(--richmd-content-width);
+  margin: 0 auto;
+  padding: var(--richmd-space-7) var(--richmd-space-5) var(--richmd-space-8);
+}
+.richmd-container--wide {
+  max-width: var(--richmd-content-width-wide);
+}
+
+/* headings + stable anchors */
+.richmd-doc h1,
+.richmd-doc h2,
+.richmd-doc h3,
+.richmd-doc h4,
+.richmd-doc h5,
+.richmd-doc h6 {
+  font-family: var(--richmd-font-heading);
+  font-weight: var(--richmd-font-heading-weight);
+  line-height: var(--richmd-line-height-tight);
+  letter-spacing: -0.01em;
+  margin: var(--richmd-space-7) 0 var(--richmd-space-3);
+  scroll-margin-top: var(--richmd-space-5);
+}
+.richmd-doc h1:first-child,
+.richmd-doc h2:first-child {
+  margin-top: 0;
+}
+.richmd-doc h1 {
+  font-size: var(--richmd-text-4xl);
+}
+.richmd-doc h2 {
+  font-size: var(--richmd-text-3xl);
+  margin-top: var(--richmd-space-8);
+}
+.richmd-doc h3 {
+  font-size: var(--richmd-text-2xl);
+}
+.richmd-doc h4 {
+  font-size: var(--richmd-text-xl);
+  font-family: var(--richmd-font-body);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.richmd-doc h5 {
+  font-size: var(--richmd-text-lg);
+  font-family: var(--richmd-font-body);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.richmd-doc h6 {
+  font-size: var(--richmd-text-sm);
+  font-family: var(--richmd-font-body);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--richmd-color-text-muted);
+}
+
+.richmd-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--richmd-space-2);
+}
+.richmd-anchor {
+  font-family: var(--richmd-font-body);
+  font-weight: 500;
+  font-size: 0.55em;
+  color: var(--richmd-color-text-faint);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.richmd-heading:hover .richmd-anchor,
+.richmd-anchor:focus-visible {
+  opacity: 1;
+}
+.richmd-anchor:hover {
+  color: var(--richmd-color-accent-text);
+}
+
+.richmd-doc p {
+  margin: 0 0 var(--richmd-space-4);
+}
+.richmd-doc a {
+  color: var(--richmd-color-link);
+  text-underline-offset: 3px;
+}
+.richmd-doc a:hover {
+  color: var(--richmd-color-link-hover);
+}
+.richmd-lede {
+  font-size: var(--richmd-text-lg);
+  color: var(--richmd-color-text-muted);
+  margin-bottom: var(--richmd-space-6);
+}
+
+.richmd-doc ul,
+.richmd-doc ol {
+  margin: 0 0 var(--richmd-space-4);
+  padding-left: 1.3em;
+}
+.richmd-doc li {
+  margin-bottom: var(--richmd-space-1);
+}
+.richmd-doc li::marker {
+  color: var(--richmd-color-accent-text);
+}
+
+.richmd-doc blockquote {
+  margin: var(--richmd-space-5) 0;
+  padding: var(--richmd-space-3) var(--richmd-space-5);
+  border-left: 3px solid var(--richmd-color-accent-solid);
+  color: var(--richmd-color-text-muted);
+  font-style: italic;
+}
+.richmd-doc blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.richmd-doc img {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--richmd-radius-md);
+}
+.richmd-doc figure {
+  margin: var(--richmd-space-5) 0;
+}
+.richmd-doc figcaption {
+  font-size: var(--richmd-text-xs);
+  margin-top: var(--richmd-space-2);
+  color: var(--richmd-color-text-faint);
+  text-align: center;
+}
+
+.richmd-doc code {
+  font-family: var(--richmd-font-mono);
+  font-size: 0.87em;
+  background: var(--richmd-color-bg-alt);
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+}
+.richmd-doc pre {
+  margin: var(--richmd-space-5) 0;
+  padding: var(--richmd-space-4);
+  background: var(--richmd-color-bg-alt);
+  border: 1px solid var(--richmd-color-border);
+  border-radius: var(--richmd-radius-md);
+  overflow-x: auto;
+}
+.richmd-doc pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85em;
+  line-height: 1.55;
+}
+
+.richmd-hr {
+  height: 1px;
+  border: 0;
+  margin: var(--richmd-space-7) 0;
+  background: var(--richmd-color-border);
+}
+
+/* ---------------------------------------------------------------------------
+   3. TABLE OF CONTENTS
+   ------------------------------------------------------------------------ */
+.richmd-toc {
+  background: var(--richmd-color-surface);
+  border: 1px solid var(--richmd-color-border);
+  border-radius: var(--richmd-radius-lg);
+  padding: var(--richmd-space-5);
+  margin-bottom: var(--richmd-space-7);
+}
+.richmd-toc-title {
+  font-size: var(--richmd-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--richmd-color-text-muted);
+  margin-bottom: var(--richmd-space-3);
+}
+.richmd-toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  columns: 2;
+  column-gap: var(--richmd-space-6);
+}
+.richmd-toc-list li {
+  margin-bottom: var(--richmd-space-1);
+  break-inside: avoid;
+}
+.richmd-toc-list a {
+  display: block;
+  color: var(--richmd-color-text);
+  text-decoration: none;
+  padding: 3px 0;
+  border-radius: 6px;
+}
+.richmd-toc-list a:hover {
+  color: var(--richmd-color-accent-text);
+}
+.richmd-toc-list .richmd-toc-sub {
+  padding-left: var(--richmd-space-4);
+  font-size: var(--richmd-text-sm);
+  color: var(--richmd-color-text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+   4. CALLOUTS
+   ------------------------------------------------------------------------ */
+.richmd-callout {
+  display: flex;
+  gap: var(--richmd-space-3);
+  margin: var(--richmd-space-5) 0;
+  padding: var(--richmd-space-4) var(--richmd-space-5);
+  border-radius: var(--richmd-radius-md);
+  border: 1px solid;
+  font-size: var(--richmd-text-sm);
+}
+.richmd-callout-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 0.1em;
+}
+.richmd-callout-body p:last-child {
+  margin-bottom: 0;
+}
+.richmd-callout-title {
+  display: block;
+  font-weight: 700;
+  margin-bottom: var(--richmd-space-1);
+}
+.richmd-callout--info {
+  background: var(--richmd-color-info-tint);
+  border-color: var(--richmd-color-info-border);
+  color: var(--richmd-color-info-text);
+}
+.richmd-callout--warning {
+  background: var(--richmd-color-warning-tint);
+  border-color: var(--richmd-color-warning-border);
+  color: var(--richmd-color-warning-text);
+}
+.richmd-callout--danger {
+  background: var(--richmd-color-danger-tint);
+  border-color: var(--richmd-color-danger-border);
+  color: var(--richmd-color-danger-text);
+}
+.richmd-callout--info .richmd-callout-icon {
+  color: var(--richmd-color-info-solid);
+}
+.richmd-callout--warning .richmd-callout-icon {
+  color: var(--richmd-color-warning-solid);
+}
+.richmd-callout--danger .richmd-callout-icon {
+  color: var(--richmd-color-danger-solid);
+}
+.richmd-callout-body {
+  color: var(--richmd-color-text);
+}
+
+/* ---------------------------------------------------------------------------
+   5. CARD GRIDS
+   ------------------------------------------------------------------------ */
+.richmd-card-grid {
+  display: grid;
+  gap: var(--richmd-space-4);
+  grid-template-columns: repeat(var(--richmd-cols, 3), 1fr);
+  margin: var(--richmd-space-5) 0;
+}
+.richmd-card-grid[data-cols="2"] {
+  --richmd-cols: 2;
+}
+.richmd-card-grid[data-cols="3"] {
+  --richmd-cols: 3;
+}
+.richmd-card-grid[data-cols="4"] {
+  --richmd-cols: 4;
+}
+@media (max-width: 720px) {
+  .richmd-card-grid {
+    --richmd-cols: 1 !important;
+  }
+}
+@media (min-width: 721px) and (max-width: 980px) {
+  .richmd-card-grid[data-cols="4"],
+  .richmd-card-grid[data-cols="3"] {
+    --richmd-cols: 2;
+  }
+}
+
+.richmd-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--richmd-space-2);
+  background: var(--richmd-color-surface);
+  border: 1px solid var(--richmd-color-border);
+  border-radius: var(--richmd-radius-lg);
+  padding: var(--richmd-space-4);
+  box-shadow: var(--richmd-shadow-sm);
+}
+.richmd-card-kicker {
+  font-size: var(--richmd-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--richmd-color-accent-text);
+}
+.richmd-card-title {
+  font-family: var(--richmd-font-heading);
+  font-weight: var(--richmd-font-heading-weight);
+  font-size: var(--richmd-text-lg);
+}
+.richmd-card-body {
+  margin: 0;
+  font-size: var(--richmd-text-sm);
+  color: var(--richmd-color-text-muted);
+  flex: 1;
+}
+.richmd-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--richmd-space-2);
+  font-size: var(--richmd-text-xs);
+  color: var(--richmd-color-text-faint);
+}
+
+/* ---------------------------------------------------------------------------
+   6. STAT / KPI TILES
+   ------------------------------------------------------------------------ */
+.richmd-stat-grid {
+  display: grid;
+  gap: var(--richmd-space-4);
+  grid-template-columns: repeat(var(--richmd-stat-cols, 4), 1fr);
+  margin: var(--richmd-space-5) 0;
+}
+@media (max-width: 720px) {
+  .richmd-stat-grid {
+    --richmd-stat-cols: 2 !important;
+  }
+}
+.richmd-stat {
+  background: var(--richmd-color-surface);
+  border: 1px solid var(--richmd-color-border);
+  border-radius: var(--richmd-radius-md);
+  padding: var(--richmd-space-4);
+}
+.richmd-stat-label {
+  font-size: var(--richmd-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--richmd-color-text-muted);
+  margin-bottom: var(--richmd-space-2);
+}
+.richmd-stat-value {
+  font-family: var(--richmd-font-heading);
+  font-weight: var(--richmd-font-heading-weight);
+  font-size: var(--richmd-text-3xl);
+  line-height: 1;
+}
+.richmd-stat-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--richmd-text-xs);
+  font-weight: 600;
+  margin-top: var(--richmd-space-2);
+}
+.richmd-stat-delta--up {
+  color: var(--richmd-color-accent2-text);
+}
+.richmd-stat-delta--down {
+  color: var(--richmd-color-danger-text);
+}
+
+/* ---------------------------------------------------------------------------
+   7. BADGES / PILLS
+   ------------------------------------------------------------------------ */
+.richmd-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--richmd-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 11px;
+  border-radius: var(--richmd-radius-pill);
+  white-space: nowrap;
+}
+.richmd-badge--accent {
+  background: var(--richmd-color-accent-tint);
+  color: var(--richmd-color-accent-text);
+}
+.richmd-badge--accent2 {
+  background: var(--richmd-color-accent2-tint);
+  color: var(--richmd-color-accent2-text);
+}
+.richmd-badge--info {
+  background: var(--richmd-color-info-tint);
+  color: var(--richmd-color-info-text);
+}
+.richmd-badge--warning {
+  background: var(--richmd-color-warning-tint);
+  color: var(--richmd-color-warning-text);
+}
+.richmd-badge--danger {
+  background: var(--richmd-color-danger-tint);
+  color: var(--richmd-color-danger-text);
+}
+.richmd-badge--neutral {
+  background: var(--richmd-color-bg-alt);
+  color: var(--richmd-color-text-muted);
+}
+.richmd-badge--outline {
+  background: transparent;
+  border: 1px solid var(--richmd-color-border-strong);
+  color: var(--richmd-color-text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+   8. DETAILS / DISCLOSURE
+   ------------------------------------------------------------------------ */
+.richmd-details {
+  background: var(--richmd-color-surface);
+  border: 1px solid var(--richmd-color-border);
+  border-radius: var(--richmd-radius-md);
+  margin: var(--richmd-space-4) 0;
+  overflow: hidden;
+}
+.richmd-details > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--richmd-space-2);
+  padding: var(--richmd-space-3) var(--richmd-space-4);
+  font-weight: 600;
+  font-size: var(--richmd-text-sm);
+  user-select: none;
+}
+.richmd-details > summary::-webkit-details-marker {
+  display: none;
+}
+.richmd-details > summary::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--richmd-color-accent-solid);
+  border-bottom: 2px solid var(--richmd-color-accent-solid);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  margin-right: 2px;
+}
+.richmd-details[open] > summary::before {
+  transform: rotate(45deg);
+}
+.richmd-details > summary:focus-visible {
+  outline: 2px solid var(--richmd-color-accent-solid);
+  outline-offset: -2px;
+}
+.richmd-details-body {
+  padding: 0 var(--richmd-space-4) var(--richmd-space-4);
+  font-size: var(--richmd-text-sm);
+  color: var(--richmd-color-text-muted);
+}
+.richmd-details-body p:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   9. STATEMENT BLOCKS (goals / no-goals / invariants / principles)
+   ------------------------------------------------------------------------ */
+.richmd-statement {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: var(--richmd-space-4);
+  padding: var(--richmd-space-3) 0;
+  border-top: 1px solid var(--richmd-color-border);
+}
+.richmd-statement:first-of-type {
+  border-top: none;
+}
+.richmd-statement-label {
+  font-weight: 700;
+  font-size: var(--richmd-text-sm);
+  color: var(--richmd-color-accent-text);
+}
+.richmd-statement-body {
+  font-size: var(--richmd-text-sm);
+  color: var(--richmd-color-text);
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .richmd-statement {
+    grid-template-columns: 1fr;
+    gap: var(--richmd-space-1);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   10. DIAGRAMS — mermaid + vega-lite + generic svg figures
+   ------------------------------------------------------------------------ */
+.richmd-diagram {
+  background: var(--richmd-color-surface);
+  border: 1px solid var(--richmd-color-border);
+  border-radius: var(--richmd-radius-lg);
+  padding: var(--richmd-space-5);
+  margin: var(--richmd-space-5) 0;
+  overflow-x: auto;
+}
+.richmd-diagram-title {
+  font-size: var(--richmd-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--richmd-color-text-muted);
+  margin-bottom: var(--richmd-space-3);
+}
+.richmd-mermaid {
+  display: flex;
+  justify-content: center;
+}
+.richmd-vega {
+  display: block;
+  width: 100%;
+}
+.richmd-mermaid svg,
+.richmd-vega svg,
+.richmd-vega canvas {
+  max-width: 100%;
+}
+
+/* ---------------------------------------------------------------------------
+   11. TABLES
+   ------------------------------------------------------------------------ */
+.richmd-table-wrap {
+  overflow-x: auto;
+  margin: var(--richmd-space-5) 0;
+  border: 1px solid var(--richmd-color-border);
+  border-radius: var(--richmd-radius-md);
+}
+.richmd-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--richmd-text-sm);
+  min-width: 480px;
+}
+.richmd-doc th {
+  text-align: left;
+  font-size: var(--richmd-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--richmd-color-text-muted);
+  padding: var(--richmd-space-3);
+  background: var(--richmd-color-bg-alt);
+  border-bottom: 1px solid var(--richmd-color-border);
+  white-space: nowrap;
+}
+.richmd-doc td {
+  padding: var(--richmd-space-3);
+  border-bottom: 1px solid var(--richmd-color-border);
+}
+.richmd-doc tbody tr:last-child td {
+  border-bottom: none;
+}
+.richmd-doc tbody tr:hover {
+  background: var(--richmd-color-bg-alt);
+}
+
+/* ---------------------------------------------------------------------------
+   12. THEME TOGGLE (optional chrome a report may include)
+   ------------------------------------------------------------------------ */
+.richmd-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--richmd-space-4);
+  padding: var(--richmd-space-3) var(--richmd-space-5);
+  border-bottom: 1px solid var(--richmd-color-border);
+}
+.richmd-brand {
+  font-family: var(--richmd-font-heading);
+  font-weight: var(--richmd-font-heading-weight);
+  font-size: var(--richmd-text-lg);
+}
+.richmd-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-family: var(--richmd-font-body);
+  font-size: var(--richmd-text-xs);
+  font-weight: 600;
+  background: var(--richmd-color-surface);
+  border: 1px solid var(--richmd-color-border-strong);
+  padding: 6px 12px;
+  border-radius: var(--richmd-radius-pill);
+  color: var(--richmd-color-text);
+}
+.richmd-theme-toggle:hover {
+  background: var(--richmd-color-bg-alt);
+}
+
+/* ---------------------------------------------------------------------------
+   13. RESPONSIVE
+   ------------------------------------------------------------------------ */
+@media (max-width: 640px) {
+  .richmd-container {
+    padding: var(--richmd-space-5) var(--richmd-space-4) var(--richmd-space-6);
+  }
+  .richmd-doc h1 {
+    font-size: var(--richmd-text-3xl);
+  }
+  .richmd-doc h2 {
+    font-size: var(--richmd-text-2xl);
+  }
+  .richmd-toc-list {
+    columns: 1;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   14. PRINT
+   ------------------------------------------------------------------------ */
+@media print {
+  .richmd-doc {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  .richmd-theme-toggle,
+  .richmd-anchor {
+    display: none !important;
+  }
+  .richmd-container {
+    max-width: 100%;
+    padding: 0;
+  }
+  .richmd-card,
+  .richmd-stat,
+  .richmd-toc,
+  .richmd-callout,
+  .richmd-diagram,
+  .richmd-details {
+    background: #fff !important;
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    break-inside: avoid;
+  }
+  .richmd-card-grid,
+  .richmd-stat-grid {
+    break-inside: avoid;
+  }
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  .richmd-table-wrap {
+    overflow: visible;
+    border-color: #ccc !important;
+  }
+  .richmd-doc table {
+    min-width: 0;
+  }
+  .richmd-details {
+    break-inside: avoid;
+  }
+  .richmd-details:not([open]) > summary::before {
+    content: "▸ ";
+    border: none;
+    transform: none;
+  }
+  a {
+    color: #111 !important;
+    text-decoration: underline;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   15. CUSTOM EXTENSION — "definition" block kind
+   (examples/.richmd/blocks/definition.schema.json + definition.lua)
+
+   Ships alongside this theme rather than in theme/default.css, on purpose:
+   a consumer's own block-kind extension is expected to bring its own CSS,
+   the same way this whole file brings its own reskin — the extension
+   mechanism (design.md §04/ADR-0003, "extend by composition, never by
+   fork") and the theme-swap mechanism (§00 principle P3, §07) are two
+   independent, composable capabilities, demonstrated together here as a
+   realistic combined scenario. A document using the `definition` kind
+   under theme/default.css instead of this file still renders (richmd's
+   filter has zero knowledge of "definition" either way — it's a generic
+   Div with a class), just unstyled: plain text with no panel, no term
+   emphasis. That is the correct, expected fallback for CSS that hasn't
+   been loaded, not a bug.
+
+   Deliberately distinct from both built-in callouts (§4, tinted alert
+   panel) and this theme's card grid (§5, multi-item enumeration): a
+   definition is a single glossary entry — a small bordered panel with the
+   term set in the display/heading typeface as a bold label line, and the
+   body text below it in the normal reading voice.
+   ------------------------------------------------------------------------ */
+.custom-definition {
+  margin: var(--richmd-space-5) 0;
+  padding: var(--richmd-space-4) var(--richmd-space-5);
+  background: var(--richmd-color-surface-2);
+  border: 1px solid var(--richmd-color-border);
+  border-left: 4px solid var(--richmd-color-accent2-solid);
+  border-radius: var(--richmd-radius-md);
+}
+.custom-definition-term {
+  display: block;
+  font-family: var(--richmd-font-heading);
+  font-weight: var(--richmd-font-heading-weight);
+  font-size: var(--richmd-text-lg);
+  color: var(--richmd-color-accent2-text);
+  margin-bottom: var(--richmd-space-2);
+}
+.custom-definition-body {
+  font-size: var(--richmd-text-sm);
+  color: var(--richmd-color-text);
+}
+.custom-definition-body p:last-child {
+  margin-bottom: 0;
 }

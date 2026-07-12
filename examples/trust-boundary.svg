@@ -1,0 +1,24 @@
+<svg viewBox="0 0 640 200" width="100%" role="img" aria-labelledby="boundary-svg-title">
+  <title id="boundary-svg-title">Trust boundary between client SDKs and the validated ingest zone</title>
+  <rect x="16" y="30" width="220" height="140" rx="18" fill="var(--richmd-color-bg-alt)" stroke="var(--richmd-color-border-strong)" stroke-dasharray="5 4"/>
+  <text x="126" y="20" text-anchor="middle" font-size="12" font-family="Figtree, sans-serif" fill="var(--richmd-color-text-muted)">UNTRUSTED</text>
+  <rect x="40" y="60" width="80" height="36" rx="8" fill="var(--richmd-color-surface)" stroke="var(--richmd-color-border)"/>
+  <text x="80" y="83" text-anchor="middle" font-size="12" font-family="Figtree, sans-serif" fill="var(--richmd-color-text)">Web SDK</text>
+  <rect x="140" y="60" width="80" height="36" rx="8" fill="var(--richmd-color-surface)" stroke="var(--richmd-color-border)"/>
+  <text x="180" y="83" text-anchor="middle" font-size="12" font-family="Figtree, sans-serif" fill="var(--richmd-color-text)">Mobile SDK</text>
+  <rect x="90" y="120" width="80" height="36" rx="8" fill="var(--richmd-color-surface)" stroke="var(--richmd-color-border)"/>
+  <text x="130" y="143" text-anchor="middle" font-size="12" font-family="Figtree, sans-serif" fill="var(--richmd-color-text)">Server SDK</text>
+  <path d="M236 100 L390 100" stroke="var(--richmd-color-accent-solid)" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="313" y="90" text-anchor="middle" font-size="11" font-family="Figtree, sans-serif" fill="var(--richmd-color-accent-text)">TLS + signed payload</text>
+  <rect x="392" y="30" width="232" height="140" rx="18" fill="var(--richmd-color-accent2-tint)" stroke="var(--richmd-color-accent2-solid)"/>
+  <text x="508" y="20" text-anchor="middle" font-size="12" font-family="Figtree, sans-serif" fill="var(--richmd-color-accent2-text)">VALIDATED ZONE</text>
+  <rect x="416" y="70" width="184" height="36" rx="8" fill="var(--richmd-color-surface)" stroke="var(--richmd-color-border)"/>
+  <text x="508" y="93" text-anchor="middle" font-size="12" font-family="Figtree, sans-serif" fill="var(--richmd-color-text)">Edge collector</text>
+  <rect x="416" y="118" width="184" height="36" rx="8" fill="var(--richmd-color-surface)" stroke="var(--richmd-color-border)"/>
+  <text x="508" y="141" text-anchor="middle" font-size="12" font-family="Figtree, sans-serif" fill="var(--richmd-color-text)">Schema validator</text>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="var(--richmd-color-accent-solid)"/>
+    </marker>
+  </defs>
+</svg>

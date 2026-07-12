@@ -7,7 +7,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=yes"
     />
-    <title>data-status-report</title>
+    <title>design-doc</title>
     <style>
       code {
         white-space: pre-wrap;
@@ -43,6 +43,187 @@
         text-align: center;
         margin: 0.5rem auto;
       }
+      /* CSS for syntax highlighting */
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      pre > code.sourceCode {
+        white-space: pre;
+        position: relative;
+      }
+      pre > code.sourceCode > span {
+        display: inline-block;
+        line-height: 1.25;
+      }
+      pre > code.sourceCode > span:empty {
+        height: 1.2em;
+      }
+      .sourceCode {
+        overflow: visible;
+      }
+      code.sourceCode > span {
+        color: inherit;
+        text-decoration: inherit;
+      }
+      div.sourceCode {
+        margin: 1em 0;
+      }
+      pre.sourceCode {
+        margin: 0;
+      }
+      @media screen {
+        div.sourceCode {
+          overflow: auto;
+        }
+      }
+      @media print {
+        pre > code.sourceCode {
+          white-space: pre-wrap;
+        }
+        pre > code.sourceCode > span {
+          text-indent: -5em;
+          padding-left: 5em;
+        }
+      }
+      pre.numberSource code {
+        counter-reset: source-line 0;
+      }
+      pre.numberSource code > span {
+        position: relative;
+        left: -4em;
+        counter-increment: source-line;
+      }
+      pre.numberSource code > span > a:first-child::before {
+        content: counter(source-line);
+        position: relative;
+        left: -1em;
+        text-align: right;
+        vertical-align: baseline;
+        border: none;
+        display: inline-block;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        -khtml-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        padding: 0 4px;
+        width: 4em;
+        color: #aaaaaa;
+      }
+      pre.numberSource {
+        margin-left: 3em;
+        border-left: 1px solid #aaaaaa;
+        padding-left: 4px;
+      }
+      div.sourceCode {
+      }
+      @media screen {
+        pre > code.sourceCode > span > a:first-child::before {
+          text-decoration: underline;
+        }
+      }
+      code span.al {
+        color: #ff0000;
+        font-weight: bold;
+      } /* Alert */
+      code span.an {
+        color: #60a0b0;
+        font-weight: bold;
+        font-style: italic;
+      } /* Annotation */
+      code span.at {
+        color: #7d9029;
+      } /* Attribute */
+      code span.bn {
+        color: #40a070;
+      } /* BaseN */
+      code span.bu {
+        color: #008000;
+      } /* BuiltIn */
+      code span.cf {
+        color: #007020;
+        font-weight: bold;
+      } /* ControlFlow */
+      code span.ch {
+        color: #4070a0;
+      } /* Char */
+      code span.cn {
+        color: #880000;
+      } /* Constant */
+      code span.co {
+        color: #60a0b0;
+        font-style: italic;
+      } /* Comment */
+      code span.cv {
+        color: #60a0b0;
+        font-weight: bold;
+        font-style: italic;
+      } /* CommentVar */
+      code span.do {
+        color: #ba2121;
+        font-style: italic;
+      } /* Documentation */
+      code span.dt {
+        color: #902000;
+      } /* DataType */
+      code span.dv {
+        color: #40a070;
+      } /* DecVal */
+      code span.er {
+        color: #ff0000;
+        font-weight: bold;
+      } /* Error */
+      code span.ex {
+      } /* Extension */
+      code span.fl {
+        color: #40a070;
+      } /* Float */
+      code span.fu {
+        color: #06287e;
+      } /* Function */
+      code span.im {
+        color: #008000;
+        font-weight: bold;
+      } /* Import */
+      code span.in {
+        color: #60a0b0;
+        font-weight: bold;
+        font-style: italic;
+      } /* Information */
+      code span.kw {
+        color: #007020;
+        font-weight: bold;
+      } /* Keyword */
+      code span.op {
+        color: #666666;
+      } /* Operator */
+      code span.ot {
+        color: #007020;
+      } /* Other */
+      code span.pp {
+        color: #bc7a00;
+      } /* Preprocessor */
+      code span.sc {
+        color: #4070a0;
+      } /* SpecialChar */
+      code span.ss {
+        color: #bb6688;
+      } /* SpecialString */
+      code span.st {
+        color: #4070a0;
+      } /* String */
+      code span.va {
+        color: #19177c;
+      } /* Variable */
+      code span.vs {
+        color: #4070a0;
+      } /* VerbatimString */
+      code span.wa {
+        color: #60a0b0;
+        font-weight: bold;
+        font-style: italic;
+      } /* Warning */
     </style>
     <style>
       /* ============================================================================
@@ -1131,499 +1312,312 @@
           ><span class="richmd-theme-toggle-label">Light</span>
         </button>
       </div>
-      <div class="richmd-container richmd-container--wide">
-        <h1 id="q2-platform-status">Q2 Platform Status</h1>
-        <div class="richmd-kicker">
-          <span class="richmd-card-kicker"
-            >INTERNAL — PLATFORM ENGINEERING</span
-          >
-        </div>
+      <div class="richmd-container">
+        <h1 id="notebook-sync-offline-first-editing">
+          Notebook Sync: Offline-First Editing
+        </h1>
         <p>
-          A quarterly look at platform health, reliability, and the work that
-          shaped it. This report covers April through June: uptime, latency,
-          incident load, and where the team is spending its time going into Q3.
+          A design proposal for letting notebook edits made offline reconcile
+          safely once the client reconnects, without a central lock or a rewrite
+          of the sync protocol.
         </p>
         <div class="richmd-toc">
           <div class="richmd-toc-title">Contents</div>
           <ul class="richmd-toc-list">
-            <li><a href="#q2-platform-status">Q2 Platform Status</a></li>
+            <li>
+              <a href="#notebook-sync-offline-first-editing"
+                >Notebook Sync: Offline-First Editing</a
+              >
+            </li>
+            <li class="richmd-toc-sub"><a href="#goals">Goals</a></li>
+            <li class="richmd-toc-sub"><a href="#non-goals">Non-goals</a></li>
+            <li class="richmd-toc-sub"><a href="#invariants">Invariants</a></li>
+            <li class="richmd-toc-sub"><a href="#principles">Principles</a></li>
             <li class="richmd-toc-sub">
-              <a href="#headline-numbers">Headline numbers</a>
+              <a href="#component-breakdown">Component breakdown</a>
             </li>
             <li class="richmd-toc-sub">
-              <a href="#reliability">Reliability</a>
+              <a href="#op-log-writer">Op-log writer</a>
             </li>
             <li class="richmd-toc-sub">
-              <a href="#what-shipped">What shipped</a>
+              <a href="#sync-engine">Sync engine</a>
             </li>
             <li class="richmd-toc-sub">
-              <a href="#operating-principles">Operating principles</a>
+              <a href="#conflict-resolver">Conflict resolver</a>
             </li>
             <li class="richmd-toc-sub">
-              <a href="#trend-at-a-glance">Trend at a glance</a>
+              <a href="#sync-engine-1">Sync engine</a>
             </li>
             <li class="richmd-toc-sub">
-              <a href="#incident-detail">Incident detail</a>
+              <a href="#conflict-resolver-1">Conflict resolver</a>
             </li>
+            <li class="richmd-toc-sub"><a href="#open-risks">Open risks</a></li>
             <li class="richmd-toc-sub">
-              <a href="#looking-ahead-to-q3">Looking ahead to Q3</a>
+              <a href="#rollout-plan">Rollout plan</a>
             </li>
           </ul>
         </div>
-        <h2 id="headline-numbers">Headline numbers</h2>
-        <div class="richmd-stat-grid" data-cols="4">
-          <div class="richmd-stat">
-            <div class="richmd-stat-label">uptime this quarter</div>
-            <div class="richmd-stat-value">99.97%</div>
-            <div class="richmd-stat-delta richmd-stat-delta--up">
-              ↑ 0.04 pts vs Q1
-            </div>
+        <h2 id="goals">Goals</h2>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Offline durability</strong>
           </div>
-          <div class="richmd-stat">
-            <div class="richmd-stat-label">p50 API latency</div>
-            <div class="richmd-stat-value">142ms</div>
-            <div class="richmd-stat-delta richmd-stat-delta--up">
-              ↓ 18ms vs Q1
-            </div>
+          <p class="richmd-statement-body">
+            Edits made with no connection are never lost, and become visible to
+            other clients within one sync cycle of reconnecting.
+          </p>
+        </div>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>No central lock</strong>
           </div>
-          <div class="richmd-stat">
-            <div class="richmd-stat-label">sev-1 incidents</div>
-            <div class="richmd-stat-value">6</div>
-            <div class="richmd-stat-delta richmd-stat-delta--down">
-              ↑ 2 vs Q1
-            </div>
+          <p class="richmd-statement-body">
+            No notebook is ever exclusively checked out to one client — two
+            people editing offline is a supported, non-error case.
+          </p>
+        </div>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Bounded merge cost</strong>
           </div>
-          <div class="richmd-stat">
-            <div class="richmd-stat-label">requests / day (avg)</div>
-            <div class="richmd-stat-value">4.2M</div>
+          <p class="richmd-statement-body">
+            Reconciling a week of offline edits costs roughly the same as
+            reconciling one hour of them.
+          </p>
+        </div>
+        <h2 id="non-goals">Non-goals</h2>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Live cursors</strong>
           </div>
+          <p class="richmd-statement-body">
+            Real-time presence and collaborative cursors are a separate effort
+            layered on top of sync, not part of this proposal.
+          </p>
+        </div>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Cross-notebook moves</strong>
+          </div>
+          <p class="richmd-statement-body">
+            Moving a block between two notebooks while both are edited offline
+            is out of scope; it degrades to a manual re-paste today and will
+            stay that way.
+          </p>
         </div>
         <div class="richmd-callout richmd-callout--warning">
           <div class="richmd-callout-body">
-            <span class="richmd-callout-title">Watch item</span>
+            <span class="richmd-callout-title">Scope check</span>
             <p>
-              Sev-1 incidents ticked up this quarter, concentrated in the
-              billing webhook path (see
-              <a href="#reliability">Reliability</a> below). The root-cause
-              fixes are scoped for early Q3 — tracked as the top reliability
-              priority going into next quarter.
+              Real-time collaborative cursors are out of scope for this
+              iteration — see non-goals above. Revisit once offline sync has
+              shipped and stabilized.
             </p>
           </div>
         </div>
-        <h2 id="reliability">Reliability</h2>
-        <div class="richmd-kicker">
-          <span class="richmd-card-kicker">INCIDENTS &amp; UPTIME</span>
-        </div>
-        <p>
-          Five of the six sev-1s traced back to retry storms against a
-          downstream payments provider during its own degraded periods; the
-          sixth was a bad config push to the edge cache layer that was reverted
-          within nine minutes. Both failure classes now have dedicated
-          mitigation work queued.
-        </p>
-        <div class="richmd-mermaid-wrapper">
-          <div class="richmd-diagram">
-            <pre
-              class="mermaid richmd-mermaid"
-              id="richmd-mermaid-328557047"
-              style="display: none"
-            >
-graph TD
-    A[Request in] --&gt; B{Downstream healthy?}
-    B --&gt;|Yes| C[Serve normally]
-    B --&gt;|No, first failure| D[Retry with backoff]
-    D --&gt; E{Still failing?}
-    E --&gt;|Yes| F[Circuit breaker opens]
-    E --&gt;|No| C
-    F --&gt; G[Fail fast + queue for replay]
-    G --&gt; H[Replay once downstream recovers]</pre
-            >
-            <div
-              class="richmd-mermaid"
-              id="richmd-mermaid-328557047-target"
-            ></div>
+        <h2 id="invariants">Invariants</h2>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>No silent drops</strong>
           </div>
-          <script type="module">
-            if (!window.mermaid) {
-              var mermaidModule =
-                await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
-              window.mermaid = mermaidModule.default;
-            }
-            function renderMermaid_richmd_mermaid_328557047() {
-              var sourceEl = document.getElementById(
-                "richmd-mermaid-328557047",
-              );
-              var targetEl = document.getElementById(
-                "richmd-mermaid-328557047-target",
-              );
-              if (!sourceEl || !targetEl || !window.mermaid) return;
-              var colors = window.richmdDiagramTheme
-                ? window.richmdDiagramTheme()
-                : {};
-              window.mermaid.initialize({
-                startOnLoad: false,
-                theme: "base",
-                themeVariables: (function (c) {
-                  return {
-                    background: c.bg,
-                    primaryColor: c.surface,
-                    primaryTextColor: c.text,
-                    primaryBorderColor: c.border,
-                    lineColor: c.accentSolid,
-                    secondaryColor: c.surface2,
-                    tertiaryColor: c.surface2,
-                    actorBkg: c.surface,
-                    actorBorder: c.border,
-                    actorTextColor: c.text,
-                    signalColor: c.text,
-                    signalTextColor: c.text,
-                    noteBkgColor: c.accentTint,
-                    noteTextColor: c.text,
-                    noteBorderColor: c.border,
-                    fontFamily: c.fontBody,
-                  };
-                })(colors),
-              });
-              window.mermaid
-                .render(
-                  "richmd-mermaid-328557047-target-svg",
-                  sourceEl.textContent,
-                )
-                .then(function (result) {
-                  targetEl.innerHTML = result.svg;
-                });
-            }
-            window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
-            window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_328557047,
-            );
-            renderMermaid_richmd_mermaid_328557047();
-          </script>
+          <p class="richmd-statement-body">
+            A committed edit is never discarded without leaving a recoverable
+            history entry — see conflict resolver.
+          </p>
         </div>
-        <p>
-          The chart below tracks sev-1 count per month against our quarterly
-          budget of two per month — April and May came in under budget; June’s
-          spike is the retry-storm cluster described above.
-        </p>
-        <div class="richmd-diagram-wrapper">
-          <div class="richmd-diagram">
-            <div id="richmd-vega-40121619" class="richmd-vega"></div>
-            <script type="application/json" class="richmd-vega-lite-spec">
-              {
-                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-                "description": "Sev-1 incidents per month vs. budget",
-                "data": {
-                  "values": [
-                    { "month": "Apr", "incidents": 1, "budget": 2 },
-                    { "month": "May", "incidents": 1, "budget": 2 },
-                    { "month": "Jun", "incidents": 4, "budget": 2 }
-                  ]
-                },
-                "mark": "bar",
-                "encoding": {
-                  "x": {
-                    "field": "month",
-                    "type": "ordinal",
-                    "sort": null,
-                    "title": "Month"
-                  },
-                  "y": {
-                    "field": "incidents",
-                    "type": "quantitative",
-                    "title": "Sev-1 incidents"
-                  },
-                  "color": {
-                    "condition": {
-                      "test": "datum.incidents > datum.budget",
-                      "value": "#dc2626"
-                    },
-                    "value": "#4f46e5"
-                  }
-                }
-              }
-            </script>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Monotonic clocks</strong>
           </div>
-          <script src="https://cdn.jsdelivr.net/npm/vega@6"></script>
-          <script src="https://cdn.jsdelivr.net/npm/vega-lite@6"></script>
-          <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
-          <script>
-            (function () {
-              function richmdMergeConfig(base, override) {
-                if (
-                  typeof base !== "object" ||
-                  base === null ||
-                  Array.isArray(base) ||
-                  typeof override !== "object" ||
-                  override === null ||
-                  Array.isArray(override)
-                ) {
-                  return override !== undefined ? override : base;
-                }
-                var result = {};
-                var key;
-                for (key in base) {
-                  result[key] = base[key];
-                }
-                for (key in override) {
-                  result[key] = richmdMergeConfig(base[key], override[key]);
-                }
-                return result;
-              }
-              function richmdMeasureVegaWidth(target) {
-                if (
-                  !target ||
-                  typeof target.getBoundingClientRect !== "function"
-                ) {
-                  return null;
-                }
-                var width = target.getBoundingClientRect().width;
-                return width > 0 ? width : null;
-              }
-              function embedRichmdVega_richmd_vega_40121619() {
-                var containerEl = document.getElementById(
-                  "richmd-vega-40121619",
-                );
-                var specEl = containerEl.nextElementSibling;
-                var spec = JSON.parse(specEl.textContent);
-                var colors = window.richmdDiagramTheme
-                  ? window.richmdDiagramTheme()
-                  : {};
-                var baseConfig = (function (c) {
-                  return {
-                    background: "transparent",
-                    font: c.fontBody,
-                    axis: {
-                      labelColor: c.textMuted,
-                      titleColor: c.textMuted,
-                      gridColor: c.border,
-                      domainColor: c.border,
-                      tickColor: c.border,
-                      labelFontSize: 11,
-                      titleFontSize: 11,
-                    },
-                    legend: {
-                      labelColor: c.textMuted,
-                      titleColor: c.textMuted,
-                      labelFontSize: 11,
-                    },
-                    view: {
-                      stroke: "transparent",
-                    },
-                  };
-                })(colors);
-                var mergedConfig = richmdMergeConfig(
-                  baseConfig,
-                  spec.config || {},
-                );
-                var mergedSpec = Object.assign({}, spec, {
-                  config: mergedConfig,
-                });
-                if (typeof mergedSpec.width === "undefined") {
-                  var measuredWidth = richmdMeasureVegaWidth(containerEl);
-                  if (measuredWidth !== null) {
-                    mergedSpec.width = measuredWidth;
-                  }
-                }
-                vegaEmbed("#richmd-vega-40121619", mergedSpec, {
-                  actions: false,
-                });
-              }
-              window.richmdDiagramRerenders =
-                window.richmdDiagramRerenders || [];
-              window.richmdDiagramRerenders.push(
-                embedRichmdVega_richmd_vega_40121619,
-              );
-              embedRichmdVega_richmd_vega_40121619();
-              var resizeRaf_richmd_vega_40121619 = null;
-              window.addEventListener("resize", function () {
-                if (resizeRaf_richmd_vega_40121619 !== null) {
-                  cancelAnimationFrame(resizeRaf_richmd_vega_40121619);
-                }
-                resizeRaf_richmd_vega_40121619 = requestAnimationFrame(
-                  function () {
-                    resizeRaf_richmd_vega_40121619 = null;
-                    embedRichmdVega_richmd_vega_40121619();
-                  },
-                );
-              });
-            })();
-          </script>
+          <p class="richmd-statement-body">
+            A client’s Lamport clock only moves forward; any regression is
+            treated as corruption, not a valid state.
+          </p>
         </div>
-        <h2 id="what-shipped">What shipped</h2>
-        <div class="richmd-kicker">
-          <span class="richmd-card-kicker">Q2 DELIVERY</span>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Idempotent replay</strong>
+          </div>
+          <p class="richmd-statement-body">
+            Re-applying the same op twice is a no-op — required for
+            at-least-once delivery over flaky connections.
+          </p>
         </div>
+        <div class="richmd-callout richmd-callout--danger">
+          <div class="richmd-callout-body">
+            <span class="richmd-callout-title">Hard constraint</span>
+            <p>
+              Any resolver change that can silently drop a committed edit is a
+              launch blocker, full stop — see
+              <a href="#conflict-resolver-1">Conflict resolver</a>.
+            </p>
+          </div>
+        </div>
+        <h2 id="principles">Principles</h2>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Boring resolution</strong>
+          </div>
+          <p class="richmd-statement-body">
+            Prefer last-writer-wins with recoverable history over cleverness
+            that’s hard to reason about in an incident.
+          </p>
+        </div>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Field, not document</strong>
+          </div>
+          <p class="richmd-statement-body">
+            Resolve conflicts at the smallest unit that has independent meaning
+            to a user — a field, not the whole note.
+          </p>
+        </div>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Fail loud, recover soft</strong>
+          </div>
+          <p class="richmd-statement-body">
+            Corruption is rejected outright; ordinary conflicts always resolve
+            to something, never an error state a user has to unblock.
+          </p>
+        </div>
+        <h2 id="component-breakdown">Component breakdown</h2>
+        <p>Three cooperating pieces, each independently testable:</p>
         <div class="richmd-card-grid" data-cols="3">
           <div class="richmd-card">
-            <div class="richmd-card-title">Retry budget enforcement</div>
+            <div class="richmd-card-title">Op-log writer</div>
             <div class="richmd-card-body">
               <p>
-                Downstream calls now carry a shared retry budget instead of
-                per-request unbounded backoff — the mechanism directly
-                responsible for containing what would otherwise have been a
-                seventh sev-1 in late June.
+                Batches local mutations, assigns Lamport clocks, and persists
+                them durably before attempting to send.
               </p>
             </div>
           </div>
           <div class="richmd-card">
-            <div class="richmd-card-title">Read-replica autoscaling</div>
+            <div class="richmd-card-title">Sync engine</div>
             <div class="richmd-card-body">
               <p>
-                The read path now scales replica count off real query latency
-                rather than a fixed schedule, cutting p50 API latency by 18ms
-                quarter over quarter.
+                Streams queued ops when connectivity returns and applies
+                incoming ops from other clients in causal order.
               </p>
             </div>
           </div>
           <div class="richmd-card">
-            <div class="richmd-card-title">Config push canarying</div>
+            <div class="richmd-card-title">Conflict resolver</div>
             <div class="richmd-card-body">
               <p>
-                Edge cache config changes now roll out to a single canary region
-                first and auto-revert on an error-rate spike, the direct fix for
-                the June config-push incident.
+                Applies the per-field resolution table and writes a history
+                entry for every overwritten value.
               </p>
             </div>
           </div>
         </div>
-        <h2 id="operating-principles">Operating principles</h2>
-        <div class="richmd-kicker">
-          <span class="richmd-card-kicker">HOW WE DECIDE</span>
-        </div>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Fail closed, not open</strong>
-          </div>
-          <p class="richmd-statement-body">
-            When a downstream dependency is unhealthy, the platform must degrade
-            to a safe, explicit failure rather than silently serving stale or
-            incorrect data.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong
-              >Every sev-1 gets a mitigation, not just a postmortem</strong
-            >
-          </div>
-          <p class="richmd-statement-body">
-            A sev-1 incident review is not considered closed until at least one
-            concrete mitigation (a code change, an alert, or a runbook update)
-            has shipped — a retrospective alone is not sufficient.
-          </p>
-        </div>
-        <h2 id="trend-at-a-glance">Trend at a glance</h2>
-        <div class="richmd-embedded-svg">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 240 120"
-            width="240"
-            height="120"
-            role="img"
-            aria-labelledby="richmd-example-svg-title"
-          >
-            <title id="richmd-example-svg-title">
-              Uptime trending upward across the quarter
-            </title>
-            <rect
-              x="1"
-              y="1"
-              width="238"
-              height="118"
-              rx="12"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              opacity="0.25"
-            />
-            <polyline
-              points="16,96 60,80 104,88 148,52 192,40 224,18"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-            <circle cx="16" cy="96" r="4" fill="currentColor" />
-            <circle cx="60" cy="80" r="4" fill="currentColor" />
-            <circle cx="104" cy="88" r="4" fill="currentColor" />
-            <circle cx="148" cy="52" r="4" fill="currentColor" />
-            <circle cx="192" cy="40" r="4" fill="currentColor" />
-            <circle cx="224" cy="18" r="5" fill="currentColor" />
-            <line
-              x1="16"
-              y1="108"
-              x2="224"
-              y2="108"
-              stroke="currentColor"
-              stroke-width="2"
-              opacity="0.3"
-            />
-          </svg>
-        </div>
-        <h2 id="incident-detail">Incident detail</h2>
-        <p>Full sev-1 log for the quarter (6 incidents):</p>
-        <table>
-          <colgroup>
-            <col style="width: 8%" />
-            <col style="width: 11%" />
-            <col style="width: 43%" />
-            <col style="width: 35%" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Duration</th>
-              <th>Cause</th>
-              <th>Mitigation</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Apr 08</td>
-              <td>22 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-            <tr>
-              <td>Apr 25</td>
-              <td>14 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-            <tr>
-              <td>May 12</td>
-              <td>31 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-            <tr>
-              <td>Jun 03</td>
-              <td>9 min</td>
-              <td>Bad edge cache config push</td>
-              <td>Config push canarying</td>
-            </tr>
-            <tr>
-              <td>Jun 14</td>
-              <td>41 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-            <tr>
-              <td>Jun 22</td>
-              <td>19 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-          </tbody>
-        </table>
-        <h2 id="looking-ahead-to-q3">Looking ahead to Q3</h2>
+        <h3 id="sync-engine-1">Sync engine</h3>
         <p>
-          Reliability work carries forward as the top priority: the
-          payments-provider retry-storm fixes above should collapse five of this
-          quarter’s six sev-1s into near-zero incidents once fully rolled out.
-          Latency work shifts focus to the write path next, where p50 has been
-          flat while the read path improved.
+          The sync engine batches local mutations into an append-only op-log and
+          ships them as soon as connectivity returns. Each op carries a Lamport
+          clock and the id of the last op it was based on:
+        </p>
+        <div class="sourceCode" id="cb1">
+          <pre
+            class="sourceCode json"
+          ><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;op&quot;</span><span class="fu">:</span> <span class="st">&quot;set&quot;</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;field&quot;</span><span class="fu">:</span> <span class="st">&quot;title&quot;</span><span class="fu">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;value&quot;</span><span class="fu">:</span> <span class="st">&quot;Q3 planning&quot;</span><span class="fu">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clock&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">7</span><span class="ot">,</span> <span class="st">&quot;client-9f2&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;basedOn&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">6</span><span class="ot">,</span> <span class="st">&quot;client-9f2&quot;</span><span class="ot">]</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre>
+        </div>
+        <details class="richmd-details">
+          <summary>Why an op-log instead of a CRDT document</summary>
+          <section class="richmd-details-body">
+            <p>
+              A full CRDT gives stronger automatic merging, but every field in
+              the schema would need a CRDT-compatible encoding, and the team has
+              no operational experience running one at this scale. An op-log
+              with a narrow conflict resolver ships sooner and is easier to
+              reason about in an incident.
+            </p>
+          </section>
+        </details>
+        <h3 id="conflict-resolver-1">Conflict resolver</h3>
+        <p>
+          Conflicts are resolved per-field, not per-document — two edits to
+          different fields of the same note never contend. Same-field conflicts
+          fall back to last-writer-wins by Lamport clock, with the loser
+          preserved in a recoverable history entry.
+        </p>
+        <blockquote>
+          <p>
+            “Last-writer-wins is the boring choice, and boring is correct here —
+            the alternative is a merge UI nobody asked for.” — from the design
+            review
+          </p>
+        </blockquote>
+        <details class="richmd-details">
+          <summary>Field-level resolution table</summary>
+          <section class="richmd-details-body">
+            <table>
+              <colgroup>
+                <col style="width: 20%" />
+                <col style="width: 20%" />
+                <col style="width: 60%" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Field</th>
+                  <th>Strategy</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>title, tags</td>
+                  <td>Last-writer-wins</td>
+                  <td>Loser kept in history, recoverable for 30 days</td>
+                </tr>
+                <tr>
+                  <td>body blocks</td>
+                  <td>Per-block LWW</td>
+                  <td>
+                    Block insertion order merges via position key, not timestamp
+                  </td>
+                </tr>
+                <tr>
+                  <td>checklist item state</td>
+                  <td>OR-Set union</td>
+                  <td>
+                    Checking and unchecking never lose the other client’s toggle
+                  </td>
+                </tr>
+                <tr>
+                  <td>sharing permissions</td>
+                  <td>Server-authoritative</td>
+                  <td>
+                    Never resolved client-side; requires a live round-trip
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </details>
+        <h2 id="open-risks">Open risks</h2>
+        <div class="richmd-callout richmd-callout--info">
+          <div class="richmd-callout-body">
+            <span class="richmd-callout-title">Clock drift</span>
+            <p>
+              Lamport clocks assume monotonic local counters; a client with a
+              corrupted counter could reorder history. Mitigation: counter is
+              persisted with a checksum and rejected on mismatch.
+            </p>
+          </div>
+        </div>
+        <h2 id="rollout-plan">Rollout plan</h2>
+        <p>
+          Staged behind a flag: internal dogfood → 5% of free-tier notebooks →
+          full rollout, with the op-log kept dual-written to the legacy sync
+          path for two weeks as a rollback path.
         </p>
       </div>
       <script>

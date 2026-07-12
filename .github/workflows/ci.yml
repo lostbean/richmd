@@ -45,3 +45,15 @@ jobs:
 
       - name: example-doc regression check (examples/ golden hash)
         run: nix develop -c scripts/example-hash-check
+
+      - name: architecture-report example-doc regression check (examples/ golden hash)
+        run: nix develop -c scripts/example-hash-check architecture-report
+
+      - name: design-doc example-doc regression check (examples/ golden hash)
+        run: nix develop -c scripts/example-hash-check design-doc
+
+      - name: custom-theme-demo example-doc regression check (examples/ golden hash)
+        run: nix develop -c scripts/example-hash-check custom-theme-demo
+
+      - name: custom-theme-demo theme-swap proof (custom-theme.css genuinely reskins the rendered page)
+        run: nix develop -c node scripts/theme-swap-check

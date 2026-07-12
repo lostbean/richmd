@@ -7,7 +7,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=yes"
     />
-    <title>data-status-report</title>
+    <title>architecture-report</title>
     <style>
       code {
         white-space: pre-wrap;
@@ -1132,115 +1132,80 @@
         </button>
       </div>
       <div class="richmd-container richmd-container--wide">
-        <h1 id="q2-platform-status">Q2 Platform Status</h1>
-        <div class="richmd-kicker">
-          <span class="richmd-card-kicker"
-            >INTERNAL — PLATFORM ENGINEERING</span
-          >
-        </div>
+        <h1 id="ingest-pipeline-architecture">Ingest Pipeline Architecture</h1>
         <p>
-          A quarterly look at platform health, reliability, and the work that
-          shaped it. This report covers April through June: uptime, latency,
-          incident load, and where the team is spending its time going into Q3.
+          How events move from client SDKs to queryable storage, and where each
+          stage can degrade gracefully under load.
         </p>
         <div class="richmd-toc">
           <div class="richmd-toc-title">Contents</div>
           <ul class="richmd-toc-list">
-            <li><a href="#q2-platform-status">Q2 Platform Status</a></li>
+            <li>
+              <a href="#ingest-pipeline-architecture"
+                >Ingest Pipeline Architecture</a
+              >
+            </li>
+            <li class="richmd-toc-sub"><a href="#overview">Overview</a></li>
             <li class="richmd-toc-sub">
-              <a href="#headline-numbers">Headline numbers</a>
+              <a href="#request-flow">Request flow</a>
+            </li>
+            <li class="richmd-toc-sub"><a href="#components">Components</a></li>
+            <li class="richmd-toc-sub">
+              <a href="#write-sequence">Write sequence</a>
             </li>
             <li class="richmd-toc-sub">
-              <a href="#reliability">Reliability</a>
+              <a href="#trust-boundary">Trust boundary</a>
             </li>
             <li class="richmd-toc-sub">
-              <a href="#what-shipped">What shipped</a>
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#operating-principles">Operating principles</a>
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#trend-at-a-glance">Trend at a glance</a>
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#incident-detail">Incident detail</a>
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#looking-ahead-to-q3">Looking ahead to Q3</a>
+              <a href="#failure-modes">Failure modes</a>
             </li>
           </ul>
         </div>
-        <h2 id="headline-numbers">Headline numbers</h2>
+        <h2 id="overview">Overview</h2>
+        <p>
+          Four stages: an edge collector absorbs bursts, a durable queue
+          decouples producers from consumers, a stream processor validates and
+          enriches, and a columnar store serves reads. Each stage can be scaled
+          and deployed independently.
+        </p>
         <div class="richmd-stat-grid" data-cols="4">
           <div class="richmd-stat">
-            <div class="richmd-stat-label">uptime this quarter</div>
-            <div class="richmd-stat-value">99.97%</div>
-            <div class="richmd-stat-delta richmd-stat-delta--up">
-              ↑ 0.04 pts vs Q1
-            </div>
+            <div class="richmd-stat-label">Ingest stages</div>
+            <div class="richmd-stat-value">4</div>
           </div>
           <div class="richmd-stat">
-            <div class="richmd-stat-label">p50 API latency</div>
-            <div class="richmd-stat-value">142ms</div>
-            <div class="richmd-stat-delta richmd-stat-delta--up">
-              ↓ 18ms vs Q1
-            </div>
+            <div class="richmd-stat-label">p99 edge latency</div>
+            <div class="richmd-stat-value">38ms</div>
           </div>
           <div class="richmd-stat">
-            <div class="richmd-stat-label">sev-1 incidents</div>
-            <div class="richmd-stat-value">6</div>
-            <div class="richmd-stat-delta richmd-stat-delta--down">
-              ↑ 2 vs Q1
-            </div>
+            <div class="richmd-stat-label">Queue retention</div>
+            <div class="richmd-stat-value">72h</div>
           </div>
           <div class="richmd-stat">
-            <div class="richmd-stat-label">requests / day (avg)</div>
-            <div class="richmd-stat-value">4.2M</div>
+            <div class="richmd-stat-label">Independent deploys</div>
+            <div class="richmd-stat-value">4/4</div>
           </div>
         </div>
-        <div class="richmd-callout richmd-callout--warning">
-          <div class="richmd-callout-body">
-            <span class="richmd-callout-title">Watch item</span>
-            <p>
-              Sev-1 incidents ticked up this quarter, concentrated in the
-              billing webhook path (see
-              <a href="#reliability">Reliability</a> below). The root-cause
-              fixes are scoped for early Q3 — tracked as the top reliability
-              priority going into next quarter.
-            </p>
-          </div>
-        </div>
-        <h2 id="reliability">Reliability</h2>
-        <div class="richmd-kicker">
-          <span class="richmd-card-kicker">INCIDENTS &amp; UPTIME</span>
-        </div>
-        <p>
-          Five of the six sev-1s traced back to retry storms against a
-          downstream payments provider during its own degraded periods; the
-          sixth was a bad config push to the edge cache layer that was reverted
-          within nine minutes. Both failure classes now have dedicated
-          mitigation work queued.
-        </p>
+        <h2 id="request-flow">Request flow</h2>
         <div class="richmd-mermaid-wrapper">
           <div class="richmd-diagram">
+            <div class="richmd-diagram-title">Mermaid — flowchart</div>
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-328557047"
+              id="richmd-mermaid-222628694"
               style="display: none"
             >
-graph TD
-    A[Request in] --&gt; B{Downstream healthy?}
-    B --&gt;|Yes| C[Serve normally]
-    B --&gt;|No, first failure| D[Retry with backoff]
-    D --&gt; E{Still failing?}
-    E --&gt;|Yes| F[Circuit breaker opens]
-    E --&gt;|No| C
-    F --&gt; G[Fail fast + queue for replay]
-    G --&gt; H[Replay once downstream recovers]</pre
+flowchart LR
+  A[Client SDKs] --&gt; B[Edge collector]
+  B --&gt; C[(Durable queue)]
+  C --&gt; D[Stream processor]
+  D --&gt; E[(Columnar store)]
+  D -.enrich.-&gt; F[Schema registry]
+  E --&gt; G[Query API]</pre
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-328557047-target"
+              id="richmd-mermaid-222628694-target"
             ></div>
           </div>
           <script type="module">
@@ -1249,12 +1214,12 @@ graph TD
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_328557047() {
+            function renderMermaid_richmd_mermaid_222628694() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-328557047",
+                "richmd-mermaid-222628694",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-328557047-target",
+                "richmd-mermaid-222628694-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1286,7 +1251,7 @@ graph TD
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-328557047-target-svg",
+                  "richmd-mermaid-222628694-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
@@ -1295,336 +1260,387 @@ graph TD
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_328557047,
+              renderMermaid_richmd_mermaid_222628694,
             );
-            renderMermaid_richmd_mermaid_328557047();
+            renderMermaid_richmd_mermaid_222628694();
           </script>
         </div>
+        <h2 id="components">Components</h2>
+        <div class="richmd-card-grid" data-cols="2">
+          <div class="richmd-card">
+            <div class="richmd-card-title">Edge collector</div>
+            <div class="richmd-card-body">
+              <p>
+                Stateless, horizontally scaled. Validates payload signatures and
+                shape before anything is durable.
+              </p>
+            </div>
+          </div>
+          <div class="richmd-card">
+            <div class="richmd-card-title">Durable queue</div>
+            <div class="richmd-card-body">
+              <p>
+                Retains 72 hours of events, giving downstream stages room to
+                recover from an outage without data loss.
+              </p>
+            </div>
+          </div>
+          <div class="richmd-card">
+            <div class="richmd-card-title">Stream processor</div>
+            <div class="richmd-card-body">
+              <p>
+                Enriches events against the schema registry and de-duplicates by
+                idempotency key.
+              </p>
+            </div>
+          </div>
+          <div class="richmd-card">
+            <div class="richmd-card-title">Columnar store</div>
+            <div class="richmd-card-body">
+              <p>
+                Partitioned by day and tenant; serves the query API that
+                dashboards and this report’s own charts read from.
+              </p>
+            </div>
+          </div>
+        </div>
+        <details class="richmd-details">
+          <summary>Scaling knobs per stage</summary>
+          <table>
+            <colgroup>
+              <col style="width: 22%" />
+              <col style="width: 38%" />
+              <col style="width: 39%" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Stage</th>
+                <th>Scales by</th>
+                <th>Backpressure signal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Edge collector</td>
+                <td>Request rate (HPA on CPU)</td>
+                <td>5xx rate to producers</td>
+              </tr>
+              <tr>
+                <td>Durable queue</td>
+                <td>Partition count</td>
+                <td>Retention headroom &lt; 20%</td>
+              </tr>
+              <tr>
+                <td>Stream processor</td>
+                <td>Consumer group size</td>
+                <td>Consumer lag (events behind)</td>
+              </tr>
+              <tr>
+                <td>Columnar store</td>
+                <td>Shard count per tenant tier</td>
+                <td>Write latency p99</td>
+              </tr>
+            </tbody>
+          </table>
+        </details>
+        <h2 id="write-sequence">Write sequence</h2>
         <p>
-          The chart below tracks sev-1 count per month against our quarterly
-          budget of two per month — April and May came in under budget; June’s
-          spike is the retry-storm cluster described above.
+          Progressive depth — the flowchart above is the map; this sequence is
+          the detail for a single write.
         </p>
-        <div class="richmd-diagram-wrapper">
+        <div class="richmd-mermaid-wrapper">
           <div class="richmd-diagram">
-            <div id="richmd-vega-40121619" class="richmd-vega"></div>
-            <script type="application/json" class="richmd-vega-lite-spec">
-              {
-                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
-                "description": "Sev-1 incidents per month vs. budget",
-                "data": {
-                  "values": [
-                    { "month": "Apr", "incidents": 1, "budget": 2 },
-                    { "month": "May", "incidents": 1, "budget": 2 },
-                    { "month": "Jun", "incidents": 4, "budget": 2 }
-                  ]
-                },
-                "mark": "bar",
-                "encoding": {
-                  "x": {
-                    "field": "month",
-                    "type": "ordinal",
-                    "sort": null,
-                    "title": "Month"
-                  },
-                  "y": {
-                    "field": "incidents",
-                    "type": "quantitative",
-                    "title": "Sev-1 incidents"
-                  },
-                  "color": {
-                    "condition": {
-                      "test": "datum.incidents > datum.budget",
-                      "value": "#dc2626"
-                    },
-                    "value": "#4f46e5"
-                  }
-                }
-              }
-            </script>
+            <div class="richmd-diagram-title">Mermaid — sequence</div>
+            <pre
+              class="mermaid richmd-mermaid"
+              id="richmd-mermaid-79212549"
+              style="display: none"
+            >
+sequenceDiagram
+  participant SDK as Client SDK
+  participant EC as Edge collector
+  participant Q as Durable queue
+  participant SP as Stream processor
+  SDK-&gt;&gt;EC: POST /events (signed)
+  EC-&gt;&gt;EC: validate schema
+  EC-&gt;&gt;Q: enqueue(event)
+  Q--&gt;&gt;EC: ack
+  EC--&gt;&gt;SDK: 202 Accepted
+  SP-&gt;&gt;Q: poll batch
+  Q--&gt;&gt;SP: events[]
+  SP-&gt;&gt;SP: enrich + dedupe
+  SP-&gt;&gt;SP: write to store</pre
+            >
+            <div
+              class="richmd-mermaid"
+              id="richmd-mermaid-79212549-target"
+            ></div>
           </div>
-          <script src="https://cdn.jsdelivr.net/npm/vega@6"></script>
-          <script src="https://cdn.jsdelivr.net/npm/vega-lite@6"></script>
-          <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
-          <script>
-            (function () {
-              function richmdMergeConfig(base, override) {
-                if (
-                  typeof base !== "object" ||
-                  base === null ||
-                  Array.isArray(base) ||
-                  typeof override !== "object" ||
-                  override === null ||
-                  Array.isArray(override)
-                ) {
-                  return override !== undefined ? override : base;
-                }
-                var result = {};
-                var key;
-                for (key in base) {
-                  result[key] = base[key];
-                }
-                for (key in override) {
-                  result[key] = richmdMergeConfig(base[key], override[key]);
-                }
-                return result;
-              }
-              function richmdMeasureVegaWidth(target) {
-                if (
-                  !target ||
-                  typeof target.getBoundingClientRect !== "function"
-                ) {
-                  return null;
-                }
-                var width = target.getBoundingClientRect().width;
-                return width > 0 ? width : null;
-              }
-              function embedRichmdVega_richmd_vega_40121619() {
-                var containerEl = document.getElementById(
-                  "richmd-vega-40121619",
-                );
-                var specEl = containerEl.nextElementSibling;
-                var spec = JSON.parse(specEl.textContent);
-                var colors = window.richmdDiagramTheme
-                  ? window.richmdDiagramTheme()
-                  : {};
-                var baseConfig = (function (c) {
-                  return {
-                    background: "transparent",
-                    font: c.fontBody,
-                    axis: {
-                      labelColor: c.textMuted,
-                      titleColor: c.textMuted,
-                      gridColor: c.border,
-                      domainColor: c.border,
-                      tickColor: c.border,
-                      labelFontSize: 11,
-                      titleFontSize: 11,
-                    },
-                    legend: {
-                      labelColor: c.textMuted,
-                      titleColor: c.textMuted,
-                      labelFontSize: 11,
-                    },
-                    view: {
-                      stroke: "transparent",
-                    },
-                  };
-                })(colors);
-                var mergedConfig = richmdMergeConfig(
-                  baseConfig,
-                  spec.config || {},
-                );
-                var mergedSpec = Object.assign({}, spec, {
-                  config: mergedConfig,
-                });
-                if (typeof mergedSpec.width === "undefined") {
-                  var measuredWidth = richmdMeasureVegaWidth(containerEl);
-                  if (measuredWidth !== null) {
-                    mergedSpec.width = measuredWidth;
-                  }
-                }
-                vegaEmbed("#richmd-vega-40121619", mergedSpec, {
-                  actions: false,
-                });
-              }
-              window.richmdDiagramRerenders =
-                window.richmdDiagramRerenders || [];
-              window.richmdDiagramRerenders.push(
-                embedRichmdVega_richmd_vega_40121619,
+          <script type="module">
+            if (!window.mermaid) {
+              var mermaidModule =
+                await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
+              window.mermaid = mermaidModule.default;
+            }
+            function renderMermaid_richmd_mermaid_79212549() {
+              var sourceEl = document.getElementById("richmd-mermaid-79212549");
+              var targetEl = document.getElementById(
+                "richmd-mermaid-79212549-target",
               );
-              embedRichmdVega_richmd_vega_40121619();
-              var resizeRaf_richmd_vega_40121619 = null;
-              window.addEventListener("resize", function () {
-                if (resizeRaf_richmd_vega_40121619 !== null) {
-                  cancelAnimationFrame(resizeRaf_richmd_vega_40121619);
-                }
-                resizeRaf_richmd_vega_40121619 = requestAnimationFrame(
-                  function () {
-                    resizeRaf_richmd_vega_40121619 = null;
-                    embedRichmdVega_richmd_vega_40121619();
-                  },
-                );
+              if (!sourceEl || !targetEl || !window.mermaid) return;
+              var colors = window.richmdDiagramTheme
+                ? window.richmdDiagramTheme()
+                : {};
+              window.mermaid.initialize({
+                startOnLoad: false,
+                theme: "base",
+                themeVariables: (function (c) {
+                  return {
+                    background: c.bg,
+                    primaryColor: c.surface,
+                    primaryTextColor: c.text,
+                    primaryBorderColor: c.border,
+                    lineColor: c.accentSolid,
+                    secondaryColor: c.surface2,
+                    tertiaryColor: c.surface2,
+                    actorBkg: c.surface,
+                    actorBorder: c.border,
+                    actorTextColor: c.text,
+                    signalColor: c.text,
+                    signalTextColor: c.text,
+                    noteBkgColor: c.accentTint,
+                    noteTextColor: c.text,
+                    noteBorderColor: c.border,
+                    fontFamily: c.fontBody,
+                  };
+                })(colors),
               });
-            })();
+              window.mermaid
+                .render(
+                  "richmd-mermaid-79212549-target-svg",
+                  sourceEl.textContent,
+                )
+                .then(function (result) {
+                  targetEl.innerHTML = result.svg;
+                });
+            }
+            window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
+            window.richmdDiagramRerenders.push(
+              renderMermaid_richmd_mermaid_79212549,
+            );
+            renderMermaid_richmd_mermaid_79212549();
           </script>
         </div>
-        <h2 id="what-shipped">What shipped</h2>
-        <div class="richmd-kicker">
-          <span class="richmd-card-kicker">Q2 DELIVERY</span>
-        </div>
-        <div class="richmd-card-grid" data-cols="3">
-          <div class="richmd-card">
-            <div class="richmd-card-title">Retry budget enforcement</div>
-            <div class="richmd-card-body">
-              <p>
-                Downstream calls now carry a shared retry budget instead of
-                per-request unbounded backoff — the mechanism directly
-                responsible for containing what would otherwise have been a
-                seventh sev-1 in late June.
-              </p>
-            </div>
-          </div>
-          <div class="richmd-card">
-            <div class="richmd-card-title">Read-replica autoscaling</div>
-            <div class="richmd-card-body">
-              <p>
-                The read path now scales replica count off real query latency
-                rather than a fixed schedule, cutting p50 API latency by 18ms
-                quarter over quarter.
-              </p>
-            </div>
-          </div>
-          <div class="richmd-card">
-            <div class="richmd-card-title">Config push canarying</div>
-            <div class="richmd-card-body">
-              <p>
-                Edge cache config changes now roll out to a single canary region
-                first and auto-revert on an error-rate spike, the direct fix for
-                the June config-push incident.
-              </p>
-            </div>
-          </div>
-        </div>
-        <h2 id="operating-principles">Operating principles</h2>
-        <div class="richmd-kicker">
-          <span class="richmd-card-kicker">HOW WE DECIDE</span>
-        </div>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Fail closed, not open</strong>
-          </div>
-          <p class="richmd-statement-body">
-            When a downstream dependency is unhealthy, the platform must degrade
-            to a safe, explicit failure rather than silently serving stale or
-            incorrect data.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong
-              >Every sev-1 gets a mitigation, not just a postmortem</strong
-            >
-          </div>
-          <p class="richmd-statement-body">
-            A sev-1 incident review is not considered closed until at least one
-            concrete mitigation (a code change, an alert, or a runbook update)
-            has shipped — a retrospective alone is not sufficient.
-          </p>
-        </div>
-        <h2 id="trend-at-a-glance">Trend at a glance</h2>
+        <h2 id="trust-boundary">Trust boundary</h2>
+        <p>
+          A hand-authored figure (not a diagramming library) for the one drawing
+          worth pixel control — where untrusted client input crosses into the
+          validated zone.
+        </p>
         <div class="richmd-embedded-svg">
           <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 240 120"
-            width="240"
-            height="120"
+            viewBox="0 0 640 200"
+            width="100%"
             role="img"
-            aria-labelledby="richmd-example-svg-title"
+            aria-labelledby="boundary-svg-title"
           >
-            <title id="richmd-example-svg-title">
-              Uptime trending upward across the quarter
+            <title id="boundary-svg-title">
+              Trust boundary between client SDKs and the validated ingest zone
             </title>
             <rect
-              x="1"
-              y="1"
-              width="238"
-              height="118"
-              rx="12"
-              fill="none"
-              stroke="currentColor"
+              x="16"
+              y="30"
+              width="220"
+              height="140"
+              rx="18"
+              fill="var(--richmd-color-bg-alt)"
+              stroke="var(--richmd-color-border-strong)"
+              stroke-dasharray="5 4"
+            />
+            <text
+              x="126"
+              y="20"
+              text-anchor="middle"
+              font-size="12"
+              font-family="Figtree, sans-serif"
+              fill="var(--richmd-color-text-muted)"
+            >
+              UNTRUSTED
+            </text>
+            <rect
+              x="40"
+              y="60"
+              width="80"
+              height="36"
+              rx="8"
+              fill="var(--richmd-color-surface)"
+              stroke="var(--richmd-color-border)"
+            />
+            <text
+              x="80"
+              y="83"
+              text-anchor="middle"
+              font-size="12"
+              font-family="Figtree, sans-serif"
+              fill="var(--richmd-color-text)"
+            >
+              Web SDK
+            </text>
+            <rect
+              x="140"
+              y="60"
+              width="80"
+              height="36"
+              rx="8"
+              fill="var(--richmd-color-surface)"
+              stroke="var(--richmd-color-border)"
+            />
+            <text
+              x="180"
+              y="83"
+              text-anchor="middle"
+              font-size="12"
+              font-family="Figtree, sans-serif"
+              fill="var(--richmd-color-text)"
+            >
+              Mobile SDK
+            </text>
+            <rect
+              x="90"
+              y="120"
+              width="80"
+              height="36"
+              rx="8"
+              fill="var(--richmd-color-surface)"
+              stroke="var(--richmd-color-border)"
+            />
+            <text
+              x="130"
+              y="143"
+              text-anchor="middle"
+              font-size="12"
+              font-family="Figtree, sans-serif"
+              fill="var(--richmd-color-text)"
+            >
+              Server SDK
+            </text>
+            <path
+              d="M236 100 L390 100"
+              stroke="var(--richmd-color-accent-solid)"
               stroke-width="2"
-              opacity="0.25"
+              marker-end="url(#arrow)"
             />
-            <polyline
-              points="16,96 60,80 104,88 148,52 192,40 224,18"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="4"
-              stroke-linecap="round"
-              stroke-linejoin="round"
+            <text
+              x="313"
+              y="90"
+              text-anchor="middle"
+              font-size="11"
+              font-family="Figtree, sans-serif"
+              fill="var(--richmd-color-accent-text)"
+            >
+              TLS + signed payload
+            </text>
+            <rect
+              x="392"
+              y="30"
+              width="232"
+              height="140"
+              rx="18"
+              fill="var(--richmd-color-accent2-tint)"
+              stroke="var(--richmd-color-accent2-solid)"
             />
-            <circle cx="16" cy="96" r="4" fill="currentColor" />
-            <circle cx="60" cy="80" r="4" fill="currentColor" />
-            <circle cx="104" cy="88" r="4" fill="currentColor" />
-            <circle cx="148" cy="52" r="4" fill="currentColor" />
-            <circle cx="192" cy="40" r="4" fill="currentColor" />
-            <circle cx="224" cy="18" r="5" fill="currentColor" />
-            <line
-              x1="16"
-              y1="108"
-              x2="224"
-              y2="108"
-              stroke="currentColor"
-              stroke-width="2"
-              opacity="0.3"
+            <text
+              x="508"
+              y="20"
+              text-anchor="middle"
+              font-size="12"
+              font-family="Figtree, sans-serif"
+              fill="var(--richmd-color-accent2-text)"
+            >
+              VALIDATED ZONE
+            </text>
+            <rect
+              x="416"
+              y="70"
+              width="184"
+              height="36"
+              rx="8"
+              fill="var(--richmd-color-surface)"
+              stroke="var(--richmd-color-border)"
             />
+            <text
+              x="508"
+              y="93"
+              text-anchor="middle"
+              font-size="12"
+              font-family="Figtree, sans-serif"
+              fill="var(--richmd-color-text)"
+            >
+              Edge collector
+            </text>
+            <rect
+              x="416"
+              y="118"
+              width="184"
+              height="36"
+              rx="8"
+              fill="var(--richmd-color-surface)"
+              stroke="var(--richmd-color-border)"
+            />
+            <text
+              x="508"
+              y="141"
+              text-anchor="middle"
+              font-size="12"
+              font-family="Figtree, sans-serif"
+              fill="var(--richmd-color-text)"
+            >
+              Schema validator
+            </text>
+            <defs>
+              <marker
+                id="arrow"
+                markerWidth="8"
+                markerHeight="8"
+                refX="6"
+                refY="4"
+                orient="auto"
+              >
+                <path
+                  d="M0,0 L8,4 L0,8 z"
+                  fill="var(--richmd-color-accent-solid)"
+                />
+              </marker>
+            </defs>
           </svg>
         </div>
-        <h2 id="incident-detail">Incident detail</h2>
-        <p>Full sev-1 log for the quarter (6 incidents):</p>
-        <table>
-          <colgroup>
-            <col style="width: 8%" />
-            <col style="width: 11%" />
-            <col style="width: 43%" />
-            <col style="width: 35%" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Duration</th>
-              <th>Cause</th>
-              <th>Mitigation</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Apr 08</td>
-              <td>22 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-            <tr>
-              <td>Apr 25</td>
-              <td>14 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-            <tr>
-              <td>May 12</td>
-              <td>31 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-            <tr>
-              <td>Jun 03</td>
-              <td>9 min</td>
-              <td>Bad edge cache config push</td>
-              <td>Config push canarying</td>
-            </tr>
-            <tr>
-              <td>Jun 14</td>
-              <td>41 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-            <tr>
-              <td>Jun 22</td>
-              <td>19 min</td>
-              <td>Payments provider degradation</td>
-              <td>Retry budget enforcement</td>
-            </tr>
-          </tbody>
-        </table>
-        <h2 id="looking-ahead-to-q3">Looking ahead to Q3</h2>
         <p>
-          Reliability work carries forward as the top priority: the
-          payments-provider retry-storm fixes above should collapse five of this
-          quarter’s six sev-1s into near-zero incidents once fully rolled out.
-          Latency work shifts focus to the write path next, where p50 has been
-          flat while the read path improved.
+          <em
+            >Every request is re-validated against the schema at the edge,
+            regardless of which SDK signed it.</em
+          >
         </p>
+        <h2 id="failure-modes">Failure modes</h2>
+        <div class="richmd-callout richmd-callout--warning">
+          <div class="richmd-callout-body">
+            <span class="richmd-callout-title">Queue saturation</span>
+            <p>
+              If the durable queue exceeds 80% retention, the edge collector
+              begins sampling low-priority event types before dropping any
+              high-priority ones.
+            </p>
+          </div>
+        </div>
+        <div class="richmd-callout richmd-callout--danger">
+          <div class="richmd-callout-body">
+            <span class="richmd-callout-title">Schema validator down</span>
+            <p>
+              Writes are rejected, not silently passed through unvalidated — a
+              validator outage is visible to producers immediately rather than
+              corrupting the store.
+            </p>
+          </div>
+        </div>
       </div>
       <script>
         (function () {

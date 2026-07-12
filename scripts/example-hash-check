@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # example-hash-check — design.md §08 CI "example-doc regression check":
-# render examples/data-status-report.md fresh, hash the resulting HTML, and
-# diff that hash against the committed golden hash file
-# (examples/data-status-report.html.sha256). Output only changes on a
-# deliberate markup/theme change, never silently — a mismatch here fails the
-# build (exit 1).
+# render an examples/<name>.md fresh, hash the resulting HTML, and diff that
+# hash against the committed golden hash file (examples/<name>.html.sha256).
+# Output only changes on a deliberate markup/theme change, never silently —
+# a mismatch here fails the build (exit 1).
+#
+# Generic over which example doc to check — defaults to data-status-report
+# (the original example this script was written for) so every existing
+# caller (package.json's example:hash-check/example:update-hash, CI's
+# "example-doc regression check" step) keeps working unchanged. Pass an
+# example name (the file's basename under examples/, no extension) to check
+# a different doc, e.g. `scripts/example-hash-check design-doc`.
 #
 # Determinism note (read before treating a failure as a false positive):
 # filter/blocks/vega-lite.lua's and filter/blocks/mermaid.lua's render_fns
@@ -19,35 +25,52 @@
 # every occurrence of the varying numeric suffix — hyphen-joined or
 # underscore-joined, HTML id or JS identifier — out of the rendered HTML
 # before hashing. This is the ONLY normalization applied; any other diff in
-# the rendered output is a real regression.
+# the rendered output is a real regression. (A doc with no mermaid/vega-lite
+# blocks is simply untouched by these sed passes — normalization is a no-op,
+# not a requirement.)
 #
-# Usage: scripts/example-hash-check [--update]
-#   (no args)  render, hash, compare against the committed golden hash.
-#              exit 0 on match, exit 1 with a clear message on mismatch.
-#   --update   render, hash, and OVERWRITE the committed golden hash file —
-#              the documented one-command path for a contributor who
-#              intentionally changed the example's output (wired to
-#              `npm run example:update-hash`; see package.json).
+# Usage: scripts/example-hash-check [--update] [example-name]
+#   (no args)        render, hash, compare data-status-report against its
+#                    committed golden hash. exit 0 on match, exit 1 with a
+#                    clear message on mismatch.
+#   [example-name]   check examples/<example-name>.md instead of the
+#                    default data-status-report.
+#   --update         render, hash, and OVERWRITE the committed golden hash
+#                    file — the documented one-command path for a
+#                    contributor who intentionally changed the example's
+#                    output (wired to `npm run example:update-hash` /
+#                    `npm run example:design-doc:update-hash`; see
+#                    package.json).
 set -euo pipefail
 
 usage() {
-  echo "usage: $(basename "$0") [--update]" >&2
+  echo "usage: $(basename "$0") [--update] [example-name]" >&2
 }
 
 MODE="check"
-if [ "$#" -eq 1 ] && [ "$1" = "--update" ]; then
-  MODE="update"
-elif [ "$#" -gt 0 ]; then
-  usage
-  exit 2
-fi
+EXAMPLE_NAME="data-status-report"
+
+for arg in "$@"; do
+  case "$arg" in
+    --update)
+      MODE="update"
+      ;;
+    -*)
+      usage
+      exit 2
+      ;;
+    *)
+      EXAMPLE_NAME="$arg"
+      ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
-MD_PATH="$REPO_ROOT/examples/data-status-report.md"
-HTML_PATH="$REPO_ROOT/examples/data-status-report.html"
-GOLDEN_PATH="$REPO_ROOT/examples/data-status-report.html.sha256"
+MD_PATH="$REPO_ROOT/examples/$EXAMPLE_NAME.md"
+HTML_PATH="$REPO_ROOT/examples/$EXAMPLE_NAME.html"
+GOLDEN_PATH="$REPO_ROOT/examples/$EXAMPLE_NAME.html.sha256"
 CLI_PATH="$REPO_ROOT/bin/richmd.js"
 
 if [ ! -f "$MD_PATH" ]; then

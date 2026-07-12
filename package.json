@@ -16,7 +16,17 @@
     "test": "node --test",
     "example:render": "node bin/richmd.js render examples/data-status-report.md",
     "example:hash-check": "scripts/example-hash-check",
-    "example:update-hash": "scripts/example-hash-check --update"
+    "example:update-hash": "scripts/example-hash-check --update",
+    "example:architecture:render": "node bin/richmd.js render examples/architecture-report.md",
+    "example:architecture:hash-check": "scripts/example-hash-check architecture-report",
+    "example:architecture:update-hash": "scripts/example-hash-check --update architecture-report",
+    "example:design-doc:render": "node bin/richmd.js render examples/design-doc.md",
+    "example:design-doc:hash-check": "scripts/example-hash-check design-doc",
+    "example:design-doc:update-hash": "scripts/example-hash-check --update design-doc",
+    "example:custom-theme-demo:render": "node bin/richmd.js render examples/custom-theme-demo.md",
+    "example:custom-theme-demo:hash-check": "scripts/example-hash-check custom-theme-demo",
+    "example:custom-theme-demo:update-hash": "scripts/example-hash-check --update custom-theme-demo",
+    "example:custom-theme-demo:theme-swap-check": "node scripts/theme-swap-check"
   },
   "dependencies": {
     "ajv": "^8.20.0",
