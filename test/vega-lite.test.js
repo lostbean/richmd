@@ -60,9 +60,10 @@ describe("richmd render (vega-lite, valid input)", () => {
     await access(htmlPath); // throws if missing
   });
 
-  it("writes HTML containing the raw vega-lite JSON spec embedded in a recognizable container", async () => {
+  it("writes HTML containing the raw vega-lite JSON spec embedded in a recognizable container with the richmd-vega class", async () => {
     const html = await readFile(htmlPath, "utf8");
-    assert.match(html, /richmd-vega-lite/);
+    assert.match(html, /<div id="[^"]*" class="richmd-vega">/);
+    assert.doesNotMatch(html, /class="richmd-vega-lite"/);
     assert.match(html, /"mark":\s*"bar"/);
     assert.match(html, /"field":\s*"a"/);
   });
@@ -74,6 +75,48 @@ describe("richmd render (vega-lite, valid input)", () => {
       /<script[^>]*src="[^"]*cdn\.jsdelivr\.net\/npm\/vega[^"]*"/,
     );
     assert.match(html, /cdn\.jsdelivr\.net\/npm\/vega-embed/);
+  });
+
+  it("wraps the chart in the shared .richmd-diagram panel, with no title div when no title attr is set", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /<div class="richmd-diagram">/);
+    // No actual title <div> element (the .richmd-diagram-title selector
+    // text legitimately appears in the inlined theme <style> block, so
+    // check for the element itself, not the bare class name substring).
+    assert.doesNotMatch(html, /<div class="richmd-diagram-title">/);
+    assert.match(
+      html,
+      /<div class="richmd-diagram">\s*<div id="[^"]*" class="richmd-vega">/,
+    );
+  });
+});
+
+describe("richmd render (vega-lite, valid input with title attr)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-vega-lite-titled-"),
+    );
+    mdPath = path.join(workDir, "vega-lite-valid-titled.md");
+    htmlPath = path.join(workDir, "vega-lite-valid-titled.html");
+    await cp(path.join(fixturesDir, "vega-lite-valid-titled.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and renders the title in a .richmd-diagram-title div inside .richmd-diagram", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<div class="richmd-diagram">\s*<div class="richmd-diagram-title">Vega-Lite — daily events, last 14 days<\/div>\s*<div id="[^"]*" class="richmd-vega">/,
+    );
   });
 });
 

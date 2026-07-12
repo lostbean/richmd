@@ -67,6 +67,49 @@ describe("richmd render (mermaid, valid input)", () => {
     assert.match(html, /<script[^>]*>/);
     assert.match(html, /cdn\.jsdelivr\.net\/npm\/mermaid/);
   });
+
+  it("wraps the diagram in the shared .richmd-diagram panel, with no title div when no title attr is set", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /<div class="richmd-diagram">/);
+    // No actual title <div> element (the .richmd-diagram-title selector
+    // text legitimately appears in the inlined theme <style> block, so
+    // check for the element itself, not the bare class name substring).
+    assert.doesNotMatch(html, /<div class="richmd-diagram-title">/);
+    // The mermaid <pre> must be inside the .richmd-diagram wrapper.
+    assert.match(
+      html,
+      /<div class="richmd-diagram">\s*<pre class="mermaid richmd-mermaid">/,
+    );
+  });
+});
+
+describe("richmd render (mermaid, valid input with title attr)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-mermaid-titled-"),
+    );
+    mdPath = path.join(workDir, "mermaid-valid-titled.md");
+    htmlPath = path.join(workDir, "mermaid-valid-titled.html");
+    await cp(path.join(fixturesDir, "mermaid-valid-titled.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and renders the title in a .richmd-diagram-title div inside .richmd-diagram", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<div class="richmd-diagram">\s*<div class="richmd-diagram-title">My Diagram<\/div>\s*<pre class="mermaid richmd-mermaid">/,
+    );
+  });
 });
 
 describe("richmd render (mermaid, malformed input) — fail-closed gate", () => {

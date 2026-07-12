@@ -22,7 +22,19 @@ local script_dir = PANDOC_SCRIPT_FILE:match("(.*/)") or "./"
 
 local schema = {
   kind = "mermaid",
-  attrs = {},
+  attrs = {
+    -- Optional caption rendered above the diagram inside the shared
+    -- `.richmd-diagram` panel (theme/default.css §10) — the same
+    -- `.richmd-diagram-title` concept vega-lite.lua's schema also declares.
+    -- Follows the exact optional-string-attr shape every other kind uses
+    -- (e.g. embedded-svg.lua's `file`, required=true there vs. optional
+    -- here) — no special-casing in the generic validate_attrs/render_fn
+    -- pipeline (design.md §00 invariant).
+    title = {
+      required = false,
+      type = "string",
+    },
+  },
   body = "required",
   -- Optional extra validation hook (beyond generic attrs/body schema
   -- checks): the filter core calls `schema.validate(block, kind_name,
@@ -187,7 +199,15 @@ end
 -- assigns `globalThis.mermaid` itself rather than exporting an ES module) —
 -- no CDN URL anywhere in the output, so the page is viewable with zero
 -- network access.
-local function render(block, _resolved_attrs)
+--
+-- The whole diagram (optional title + the <pre class="mermaid
+-- richmd-mermaid"> content) is wrapped in the shared `.richmd-diagram` panel
+-- (theme/default.css §10) — the same outer panel concept vega-lite.lua's
+-- render_fn wraps its own chart target in. The `<pre>` markup and the
+-- CDN-vs-offline script logic are byte-for-byte unchanged from before this
+-- chunk; only the surrounding wrapper markup and the optional title div are
+-- new.
+local function render(block, resolved_attrs)
   local source = block.text or ""
 
   local pre_html = "<pre class=\"mermaid richmd-mermaid\">" .. html_escape(source) .. "</pre>"
@@ -208,8 +228,15 @@ local function render(block, _resolved_attrs)
       .. "</script>"
   end
 
+  local title_html = ""
+  if resolved_attrs.title then
+    title_html = "<div class=\"richmd-diagram-title\">" .. html_escape(resolved_attrs.title) .. "</div>"
+  end
+
+  local panel_html = "<div class=\"richmd-diagram\">" .. title_html .. pre_html .. "</div>"
+
   return pandoc.Div({
-    pandoc.RawBlock("html", pre_html),
+    pandoc.RawBlock("html", panel_html),
     pandoc.RawBlock("html", script_html),
   }, pandoc.Attr("", { "richmd-mermaid-wrapper" }))
 end

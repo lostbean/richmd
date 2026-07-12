@@ -108,7 +108,7 @@ describe(
 
       const html = await readFile(htmlPath, "utf8");
       assert.match(html, /This is a valid callout body\./);
-      assert.match(html, /--richmd-callout-info-bg/);
+      assert.match(html, /--richmd-color-info-tint/);
 
       // Re-run once more with a hostile PATH to prove the wrapper's injected
       // pandoc is really what's being used, not one found on the ambient PATH.

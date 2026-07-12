@@ -56,12 +56,15 @@ end
 
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
--- Renders the label as a visually distinct badge/heading line (class only —
--- the type-specific badge color lives in theme/default.css's
--- `--richmd-labeled-block-*` custom properties, §00 principle P3), followed
--- by the remaining body content untouched.
+-- Renders per theme/default.css §9 STATEMENT BLOCKS: a two-column grid
+-- (`.richmd-statement`) with an accent-colored label on the left
+-- (`.richmd-statement-label`) and the body wrapped in a paragraph on the
+-- right (`.richmd-statement-body`). The new theme applies the SAME accent
+-- color to every statement's label regardless of `type` — there is no
+-- `.richmd-statement--{type}` modifier rule in the CSS — so `type` is kept
+-- only as semantic authoring metadata (schema still requires it) and is no
+-- longer projected into a CSS class.
 local function render(block, resolved_attrs)
-  local stmt_type = resolved_attrs.type
   local label_inlines, remaining = extract_label(block.content)
 
   local inner = {}
@@ -73,16 +76,33 @@ local function render(block, resolved_attrs)
       inner,
       pandoc.Div(
         { pandoc.Plain({ pandoc.Strong(label_inlines) }) },
-        pandoc.Attr("", { "richmd-labeled-block__label" })
+        pandoc.Attr("", { "richmd-statement-label" })
       )
     )
   end
-  for _, b in ipairs(remaining) do
-    table.insert(inner, b)
-  end
 
-  local classes = { "richmd-labeled-block", "richmd-labeled-block--" .. stmt_type }
-  return pandoc.Div(inner, pandoc.Attr("", classes))
+  -- Body content is wrapped in a single <p class="richmd-statement-body">.
+  -- Pandoc's native Para block carries no Attr, so raw HTML markers bracket
+  -- a Para built from the flattened inlines (joined by a soft break where
+  -- multiple blocks existed) to produce a single real <p class="..."> in
+  -- the HTML writer's output, matching the theme's exact markup contract.
+  local body_inlines = {}
+  for i, b in ipairs(remaining) do
+    if i > 1 then
+      table.insert(body_inlines, pandoc.SoftBreak())
+    end
+    for _, inline in ipairs(b.content) do
+      table.insert(body_inlines, inline)
+    end
+  end
+  table.insert(
+    inner,
+    pandoc.RawBlock("html", '<p class="richmd-statement-body">')
+  )
+  table.insert(inner, pandoc.Plain(body_inlines))
+  table.insert(inner, pandoc.RawBlock("html", "</p>"))
+
+  return pandoc.Div(inner, pandoc.Attr("", { "richmd-statement" }))
 end
 
 -- register(registry) — called once at filter startup to add this kind to

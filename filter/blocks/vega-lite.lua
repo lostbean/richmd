@@ -24,7 +24,19 @@ local script_dir = PANDOC_SCRIPT_FILE:match("(.*/)") or "./"
 
 local schema = {
   kind = "vega-lite",
-  attrs = {},
+  attrs = {
+    -- Optional caption rendered above the chart inside the shared
+    -- `.richmd-diagram` panel (theme/default.css §10) — the same
+    -- `.richmd-diagram-title` concept mermaid.lua's schema also declares.
+    -- Follows the exact optional-string-attr shape every other kind uses
+    -- (e.g. embedded-svg.lua's `file`, required=true there vs. optional
+    -- here) — no special-casing in the generic validate_attrs/render_fn
+    -- pipeline (design.md §00 invariant).
+    title = {
+      required = false,
+      type = "string",
+    },
+  },
   body = "required",
   -- Optional extra validation hook (beyond generic attrs/body schema
   -- checks): the filter core calls `schema.validate(block, kind_name,
@@ -156,12 +168,31 @@ end
 
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
--- Embeds the raw vega-lite JSON spec in a <div class="richmd-vega-lite">
+-- Embeds the raw vega-lite JSON spec in a <div class="richmd-vega">
 -- container (a <script type="application/json"> child holds the spec text
 -- itself, so it is never parsed/executed as markup) and lets the
 -- client-side vega-embed runtime render the chart in the reader's browser
 -- on page load — never pre-rendered to a static image here, per design.md
--- §00/§07.
+-- §00/§07. The container's class is `richmd-vega`, matching the actual
+-- selector theme/default.css §10 targets (`.richmd-vega svg, .richmd-vega
+-- canvas { max-width: 100% }`) — NOT `richmd-vega-lite`, which the new CSS
+-- does not reference at all. The `<script type="application/json"
+-- class="richmd-vega-lite-spec">` data-carrier element is unchanged: it is
+-- never styled/selected, only read via getElementById().nextElementSibling
+-- at render time, so renaming it would be a pointless internal-detail
+-- churn (confirmed "richmd-vega-lite-spec" does not appear anywhere in
+-- theme/default.css).
+--
+-- The whole chart (optional title + the .richmd-vega target div) is now
+-- wrapped in the shared `.richmd-diagram` panel (theme/default.css §10) —
+-- the same outer panel concept mermaid.lua's render_fn wraps its own <pre>
+-- in. The outer wrapper Div's own class changes from
+-- `richmd-vega-lite-wrapper` to `richmd-diagram-wrapper`: `.richmd-diagram`
+-- is now the single styled outer panel every diagram kind shares, so the
+-- per-kind wrapper Div class is purely a pandoc-AST grouping device (never
+-- itself selected by the new CSS) and should name the shared concept, not
+-- the old per-kind one, for consistency with mermaid.lua's identical
+-- wrapper-Div role.
 --
 -- Default mode (RICHMD_OFFLINE unset, ADR-0004's default): three CDN
 -- `<script src>` references (vega, vega-lite, vega-embed, in that
@@ -171,16 +202,23 @@ end
 --
 -- Offline bundling (RICHMD_OFFLINE=1) is not yet implemented for
 -- vega-lite in this chunk — see the module-level note below.
-local function render(block, _resolved_attrs)
+local function render(block, resolved_attrs)
   local source = block.text or ""
-  local container_id = "richmd-vega-lite-" .. tostring(math.random(1, 1000000000))
+  local container_id = "richmd-vega-" .. tostring(math.random(1, 1000000000))
 
   local spec_html = "<div id=\""
     .. container_id
-    .. "\" class=\"richmd-vega-lite\"></div>\n"
+    .. "\" class=\"richmd-vega\"></div>\n"
     .. "<script type=\"application/json\" class=\"richmd-vega-lite-spec\">"
     .. html_escape(source)
     .. "</script>"
+
+  local title_html = ""
+  if resolved_attrs.title then
+    title_html = "<div class=\"richmd-diagram-title\">" .. html_escape(resolved_attrs.title) .. "</div>"
+  end
+
+  local panel_html = "<div class=\"richmd-diagram\">" .. title_html .. spec_html .. "</div>"
 
   -- Offline bundling is a follow-up for this kind (see module doc comment
   -- at the top of this file): only the CDN-default path is implemented
@@ -209,9 +247,9 @@ local function render(block, _resolved_attrs)
     .. "</script>"
 
   return pandoc.Div({
-    pandoc.RawBlock("html", spec_html),
+    pandoc.RawBlock("html", panel_html),
     pandoc.RawBlock("html", script_html),
-  }, pandoc.Attr("", { "richmd-vega-lite-wrapper" }))
+  }, pandoc.Attr("", { "richmd-diagram-wrapper" }))
 end
 
 -- register(registry) — called once at filter startup to add this kind to

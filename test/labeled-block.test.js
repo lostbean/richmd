@@ -55,17 +55,19 @@ describe("richmd render (labeled-block, valid input)", () => {
     await access(htmlPath);
   });
 
-  it("writes HTML with the type as a modifier class, the label visually distinct, and the body following", async () => {
+  it("writes HTML with the statement grid wrapper, the label, and the body wrapped in a <p>, with no type-modifier class", async () => {
     const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /class="richmd-statement"/);
+    assert.doesNotMatch(html, /richmd-statement--goal/);
+    assert.doesNotMatch(html, /richmd-labeled-block/);
     assert.match(
       html,
-      /class="richmd-labeled-block richmd-labeled-block--goal"/,
+      /richmd-statement-label"[^>]*>\s*<strong>Ship the thing<\/strong>/,
     );
     assert.match(
       html,
-      /richmd-labeled-block__label"[^>]*>\s*<strong>Ship the thing<\/strong>/,
+      /<p class="richmd-statement-body">\s*Get the feature out the door with clear scope\.\s*<\/p>/,
     );
-    assert.match(html, /Get the feature out the door with clear scope\./);
   });
 });
 

@@ -53,17 +53,27 @@ describe("richmd render (cards, valid input)", () => {
     await access(htmlPath);
   });
 
-  it("writes HTML containing a CSS grid div with the configured column count", async () => {
+  it("writes HTML containing a card-grid div with a data-cols attribute", async () => {
     const html = await readFile(htmlPath, "utf8");
-    assert.match(html, /class="richmd-cards"/);
-    assert.match(html, /--richmd-cards-cols:\s*3/);
+    assert.match(html, /class="richmd-card-grid"[^>]*data-cols="3"/);
   });
 
-  it("writes HTML containing each card's heading and body text", async () => {
+  it("writes HTML containing one .richmd-card per heading, each with its own title and body", async () => {
     const html = await readFile(htmlPath, "utf8");
-    assert.match(html, /First card/);
-    assert.match(html, /Body text for the second card\./);
-    assert.match(html, /Third card/);
+    const cardRe =
+      /<div class="richmd-card">\s*<div class="richmd-card-title">\s*([^<]*?)\s*<\/div>\s*<div class="richmd-card-body">\s*<p>([\s\S]*?)<\/p>\s*<\/div>\s*<\/div>/g;
+    const cards = [...html.matchAll(cardRe)];
+    assert.equal(
+      cards.length,
+      3,
+      `expected 3 .richmd-card divs, found ${cards.length}`,
+    );
+    assert.equal(cards[0][1], "First card");
+    assert.match(cards[0][2], /Body text for the first card\./);
+    assert.equal(cards[1][1], "Second card");
+    assert.match(cards[1][2], /Body text for the second card\./);
+    assert.equal(cards[2][1], "Third card");
+    assert.match(cards[2][2], /Body text for the third card\./);
   });
 });
 

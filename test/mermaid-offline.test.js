@@ -142,6 +142,14 @@ describe("richmd render (mermaid, --offline) — embeds the runtime inline", () 
     assert.match(html, /<pre class="[^"]*mermaid[^"]*"/);
     assert.match(html, /graph TD/);
   });
+
+  it("still wraps the diagram in the shared .richmd-diagram panel", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<div class="richmd-diagram">\s*<pre class="mermaid richmd-mermaid">/,
+    );
+  });
 });
 
 describe("richmd render --offline (malformed input) — fail-closed gate unaffected by the flag", () => {

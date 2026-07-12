@@ -38,10 +38,23 @@ local schema = {
       required = false,
       type = "string",
     },
+    -- The fixed label rendered above the list (`.richmd-toc-title`, theme
+    -- default.css §3). Optional; defaults to "Contents" — following the
+    -- same `{required=false, type="string"}` optional-string-attr shape
+    -- every other kind's authorable text uses (e.g. embedded-svg's `file`,
+    -- but non-required), rather than hardcoding the label, so a document
+    -- that wants a different heading ("On this page", localized text, etc.)
+    -- can author one without richmd needing a special case for it.
+    title = {
+      required = false,
+      type = "string",
+    },
   },
   -- A TOC block is generated, not authored — `::: {.toc}` is written empty.
   body = "forbidden",
 }
+
+local DEFAULT_TITLE = "Contents"
 
 -- current_doc_path() -> string | nil
 --
@@ -88,13 +101,37 @@ local function collect_headings(doc_path)
   return headings, nil
 end
 
+-- html_escape(text) -> string
+--
+-- Escapes the three characters that would otherwise be misinterpreted by
+-- an HTML parser inside the raw <ul>/<li> markup this renderer emits (see
+-- render() below for why raw HTML is needed here). Same rationale and same
+-- three-character set as mermaid.lua's and vega-lite.lua's html_escape.
+local function html_escape(text)
+  return (text:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+end
+
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
--- Builds a list of links (`#slug`) from the collected headings, filtered to
--- `max-depth` levels when given. Each entry carries a per-level modifier
--- class rather than true nested <ul>/<li> structure (see the comment on
--- list_items below for why) — visually indented by the stylesheet
--- according to heading depth.
+-- Builds `<div class="richmd-toc"><div class="richmd-toc-title">...</div>
+-- <ul class="richmd-toc-list">...</ul></div>` (theme default.css §3) from
+-- the collected headings, filtered to `max-depth` levels when given.
+--
+-- The shallowest heading level actually present in the FILTERED set (not
+-- necessarily h1 — a document's real top level, or whatever `max-depth`
+-- left standing) is the "top" tier; anything deeper gets the
+-- `richmd-toc-sub` modifier class on its <li>. This is a simple two-tier
+-- distinction (top vs. sub), not one class per heading level 1-6: the
+-- theme's `.richmd-toc-list .richmd-toc-sub` rule only defines one
+-- "sub" visual treatment, so a third tier would have no stylesheet rule to
+-- land on anyway.
+--
+-- Emitted as raw HTML rather than a native pandoc.BulletList: Pandoc's Lua
+-- AST has no way to put a class on an individual <li>, or on the <ul>
+-- itself (BulletList carries no Attr) — the exact same constraint
+-- embedded-svg.lua/mermaid.lua/vega-lite.lua hit for their own
+-- theme-contract markup, hence the same RawBlock("html", ...) + local
+-- html_escape pattern used there.
 local function render(_block, resolved_attrs)
   local doc_path = current_doc_path()
   if not doc_path then
@@ -114,25 +151,50 @@ local function render(_block, resolved_attrs)
     end
   end
 
+  local title_text = resolved_attrs.title
+  if not title_text or title_text == "" then
+    title_text = DEFAULT_TITLE
+  end
+  local title_html = '<div class="richmd-toc-title">' .. html_escape(title_text) .. "</div>"
+
   if #filtered == 0 then
-    return pandoc.Div({}, pandoc.Attr("", { "richmd-toc" }))
+    return pandoc.Div(
+      { pandoc.RawBlock("html", title_html) },
+      pandoc.Attr("", { "richmd-toc" })
+    )
   end
 
-  -- Each entry is its own Div carrying a per-level modifier class (rather
-  -- than a native <ul>/<li>, which cannot carry a per-item attr in Pandoc's
-  -- AST) — the stylesheet renders the level classes as an indented list
-  -- visually. Simpler than re-deriving true parent/child nesting rules for
-  -- skipped levels (e.g. an H1 followed directly by an H3), and just as
-  -- navigable.
-  local list_items = {}
+  local top_level = filtered[1].level
   for _, h in ipairs(filtered) do
-    local link = pandoc.Link({ pandoc.Str(h.text) }, "#" .. h.slug)
-    local item_attr =
-      pandoc.Attr("", { "richmd-toc__item", "richmd-toc__item--level-" .. tostring(h.level) })
-    table.insert(list_items, pandoc.Div({ pandoc.Plain({ link }) }, item_attr))
+    if h.level < top_level then
+      top_level = h.level
+    end
   end
 
-  return pandoc.Div(list_items, pandoc.Attr("", { "richmd-toc" }))
+  local list_html_parts = { '<ul class="richmd-toc-list">' }
+  for _, h in ipairs(filtered) do
+    local li_class = ""
+    if h.level > top_level then
+      li_class = ' class="richmd-toc-sub"'
+    end
+    table.insert(
+      list_html_parts,
+      "<li"
+        .. li_class
+        .. '><a href="#'
+        .. html_escape(h.slug)
+        .. '">'
+        .. html_escape(h.text)
+        .. "</a></li>"
+    )
+  end
+  table.insert(list_html_parts, "</ul>")
+  local list_html = table.concat(list_html_parts)
+
+  return pandoc.Div(
+    { pandoc.RawBlock("html", title_html), pandoc.RawBlock("html", list_html) },
+    pandoc.Attr("", { "richmd-toc" })
+  )
 end
 
 -- register(registry) — called once at filter startup to add this kind to
