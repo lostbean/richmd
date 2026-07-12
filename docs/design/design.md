@@ -408,9 +408,13 @@ silent one. See
 ## 08 CI {#08-ci}
 
 **Owns proving the gate on every push, not just on the author's machine.**
-CI mirrors exactly what [lefthook](https://github.com/lostbean/richmd/blob/main/lefthook.yml)
-already runs locally, so a contributor's pre-commit hook and CI can never
-disagree about what "green" means.
+CI runs a strict superset of what [lefthook](https://github.com/lostbean/richmd/blob/main/lefthook.yml)
+runs locally: every check lefthook's pre-commit hook runs (format, the design
+gate), plus the slower checks a pre-commit hook can't afford to block a
+commit on (the full test suite, the Nix build, the example-doc regression
+checks, the theme-swap proof). A contributor's local "green" from lefthook is
+never contradicted by CI — it just isn't the whole story until CI's own
+slower checks have run too.
 
 - **Responsibility**: run `nix flake check` (formatting plus any flake
   checks), the full test suite for every deep module (filter core, block

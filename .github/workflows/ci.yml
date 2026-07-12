@@ -1,10 +1,9 @@
 name: CI
 
-# design.md §08: CI mirrors exactly what lefthook already runs locally, so a
-# contributor's pre-commit hook and CI can never disagree about what "green"
-# means. Every step below is the exact command a contributor runs via
-# `nix develop -c <cmd>` — nothing invented here that lefthook.yml doesn't
-# already run, and nothing lefthook.yml runs that's skipped here.
+# design.md §08: CI runs a strict superset of what lefthook runs locally —
+# every check lefthook's pre-commit hook runs, plus the slower checks a
+# pre-commit hook can't afford to block a commit on. Every step below is the
+# exact command a contributor runs via `nix develop -c <cmd>`.
 
 on:
   push:
