@@ -1192,7 +1192,7 @@
             <div class="richmd-diagram-title">Mermaid — flowchart</div>
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-222628694"
+              id="richmd-mermaid-592157335"
               style="display: none"
             >
 flowchart LR
@@ -1205,7 +1205,7 @@ flowchart LR
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-222628694-target"
+              id="richmd-mermaid-592157335-target"
             ></div>
           </div>
           <script type="module">
@@ -1214,12 +1214,12 @@ flowchart LR
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_222628694() {
+            function renderMermaid_richmd_mermaid_592157335() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-222628694",
+                "richmd-mermaid-592157335",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-222628694-target",
+                "richmd-mermaid-592157335-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1251,7 +1251,7 @@ flowchart LR
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-222628694-target-svg",
+                  "richmd-mermaid-592157335-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
@@ -1260,15 +1260,19 @@ flowchart LR
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_222628694,
+              renderMermaid_richmd_mermaid_592157335,
             );
-            renderMermaid_richmd_mermaid_222628694();
+            renderMermaid_richmd_mermaid_592157335();
           </script>
         </div>
         <h2 id="components">Components</h2>
         <div class="richmd-card-grid" data-cols="2">
           <div class="richmd-card">
             <div class="richmd-card-title">Edge collector</div>
+            <div class="richmd-card-meta">
+              <span class="richmd-badge richmd-badge--info">ingest</span>owns:
+              signature validation
+            </div>
             <div class="richmd-card-body">
               <p>
                 Stateless, horizontally scaled. Validates payload signatures and
@@ -1278,6 +1282,10 @@ flowchart LR
           </div>
           <div class="richmd-card">
             <div class="richmd-card-title">Durable queue</div>
+            <div class="richmd-card-meta">
+              <span class="richmd-badge richmd-badge--accent">storage</span
+              >owns: 72h retention
+            </div>
             <div class="richmd-card-body">
               <p>
                 Retains 72 hours of events, giving downstream stages room to
@@ -1287,6 +1295,10 @@ flowchart LR
           </div>
           <div class="richmd-card">
             <div class="richmd-card-title">Stream processor</div>
+            <div class="richmd-card-meta">
+              <span class="richmd-badge richmd-badge--accent2">compute</span
+              >owns: enrich + dedupe
+            </div>
             <div class="richmd-card-body">
               <p>
                 Enriches events against the schema registry and de-duplicates by
@@ -1296,6 +1308,10 @@ flowchart LR
           </div>
           <div class="richmd-card">
             <div class="richmd-card-title">Columnar store</div>
+            <div class="richmd-card-meta">
+              <span class="richmd-badge richmd-badge--accent">storage</span
+              >owns: query API reads
+            </div>
             <div class="richmd-card-body">
               <p>
                 Partitioned by day and tenant; serves the query API that
@@ -1353,7 +1369,7 @@ flowchart LR
             <div class="richmd-diagram-title">Mermaid — sequence</div>
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-79212549"
+              id="richmd-mermaid-990201185"
               style="display: none"
             >
 sequenceDiagram
@@ -1373,7 +1389,7 @@ sequenceDiagram
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-79212549-target"
+              id="richmd-mermaid-990201185-target"
             ></div>
           </div>
           <script type="module">
@@ -1382,10 +1398,12 @@ sequenceDiagram
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_79212549() {
-              var sourceEl = document.getElementById("richmd-mermaid-79212549");
+            function renderMermaid_richmd_mermaid_990201185() {
+              var sourceEl = document.getElementById(
+                "richmd-mermaid-990201185",
+              );
               var targetEl = document.getElementById(
-                "richmd-mermaid-79212549-target",
+                "richmd-mermaid-990201185-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1417,7 +1435,7 @@ sequenceDiagram
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-79212549-target-svg",
+                  "richmd-mermaid-990201185-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
@@ -1426,9 +1444,9 @@ sequenceDiagram
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_79212549,
+              renderMermaid_richmd_mermaid_990201185,
             );
-            renderMermaid_richmd_mermaid_79212549();
+            renderMermaid_richmd_mermaid_990201185();
           </script>
         </div>
         <h2 id="trust-boundary">Trust boundary</h2>
@@ -1437,189 +1455,189 @@ sequenceDiagram
           worth pixel control — where untrusted client input crosses into the
           validated zone.
         </p>
-        <div class="richmd-embedded-svg">
-          <svg
-            viewBox="0 0 640 200"
-            width="100%"
-            role="img"
-            aria-labelledby="boundary-svg-title"
-          >
-            <title id="boundary-svg-title">
-              Trust boundary between client SDKs and the validated ingest zone
-            </title>
-            <rect
-              x="16"
-              y="30"
-              width="220"
-              height="140"
-              rx="18"
-              fill="var(--richmd-color-bg-alt)"
-              stroke="var(--richmd-color-border-strong)"
-              stroke-dasharray="5 4"
-            />
-            <text
-              x="126"
-              y="20"
-              text-anchor="middle"
-              font-size="12"
-              font-family="Figtree, sans-serif"
-              fill="var(--richmd-color-text-muted)"
+        <figure>
+          <div class="richmd-embedded-svg">
+            <svg
+              viewBox="0 0 640 200"
+              width="100%"
+              role="img"
+              aria-labelledby="boundary-svg-title"
             >
-              UNTRUSTED
-            </text>
-            <rect
-              x="40"
-              y="60"
-              width="80"
-              height="36"
-              rx="8"
-              fill="var(--richmd-color-surface)"
-              stroke="var(--richmd-color-border)"
-            />
-            <text
-              x="80"
-              y="83"
-              text-anchor="middle"
-              font-size="12"
-              font-family="Figtree, sans-serif"
-              fill="var(--richmd-color-text)"
-            >
-              Web SDK
-            </text>
-            <rect
-              x="140"
-              y="60"
-              width="80"
-              height="36"
-              rx="8"
-              fill="var(--richmd-color-surface)"
-              stroke="var(--richmd-color-border)"
-            />
-            <text
-              x="180"
-              y="83"
-              text-anchor="middle"
-              font-size="12"
-              font-family="Figtree, sans-serif"
-              fill="var(--richmd-color-text)"
-            >
-              Mobile SDK
-            </text>
-            <rect
-              x="90"
-              y="120"
-              width="80"
-              height="36"
-              rx="8"
-              fill="var(--richmd-color-surface)"
-              stroke="var(--richmd-color-border)"
-            />
-            <text
-              x="130"
-              y="143"
-              text-anchor="middle"
-              font-size="12"
-              font-family="Figtree, sans-serif"
-              fill="var(--richmd-color-text)"
-            >
-              Server SDK
-            </text>
-            <path
-              d="M236 100 L390 100"
-              stroke="var(--richmd-color-accent-solid)"
-              stroke-width="2"
-              marker-end="url(#arrow)"
-            />
-            <text
-              x="313"
-              y="90"
-              text-anchor="middle"
-              font-size="11"
-              font-family="Figtree, sans-serif"
-              fill="var(--richmd-color-accent-text)"
-            >
-              TLS + signed payload
-            </text>
-            <rect
-              x="392"
-              y="30"
-              width="232"
-              height="140"
-              rx="18"
-              fill="var(--richmd-color-accent2-tint)"
-              stroke="var(--richmd-color-accent2-solid)"
-            />
-            <text
-              x="508"
-              y="20"
-              text-anchor="middle"
-              font-size="12"
-              font-family="Figtree, sans-serif"
-              fill="var(--richmd-color-accent2-text)"
-            >
-              VALIDATED ZONE
-            </text>
-            <rect
-              x="416"
-              y="70"
-              width="184"
-              height="36"
-              rx="8"
-              fill="var(--richmd-color-surface)"
-              stroke="var(--richmd-color-border)"
-            />
-            <text
-              x="508"
-              y="93"
-              text-anchor="middle"
-              font-size="12"
-              font-family="Figtree, sans-serif"
-              fill="var(--richmd-color-text)"
-            >
-              Edge collector
-            </text>
-            <rect
-              x="416"
-              y="118"
-              width="184"
-              height="36"
-              rx="8"
-              fill="var(--richmd-color-surface)"
-              stroke="var(--richmd-color-border)"
-            />
-            <text
-              x="508"
-              y="141"
-              text-anchor="middle"
-              font-size="12"
-              font-family="Figtree, sans-serif"
-              fill="var(--richmd-color-text)"
-            >
-              Schema validator
-            </text>
-            <defs>
-              <marker
-                id="arrow"
-                markerWidth="8"
-                markerHeight="8"
-                refX="6"
-                refY="4"
-                orient="auto"
+              <title id="boundary-svg-title">
+                Trust boundary between client SDKs and the validated ingest zone
+              </title>
+              <rect
+                x="16"
+                y="30"
+                width="220"
+                height="140"
+                rx="18"
+                fill="var(--richmd-color-bg-alt)"
+                stroke="var(--richmd-color-border-strong)"
+                stroke-dasharray="5 4"
+              />
+              <text
+                x="126"
+                y="20"
+                text-anchor="middle"
+                font-size="12"
+                font-family="Figtree, sans-serif"
+                fill="var(--richmd-color-text-muted)"
               >
-                <path
-                  d="M0,0 L8,4 L0,8 z"
-                  fill="var(--richmd-color-accent-solid)"
-                />
-              </marker>
-            </defs>
-          </svg>
-        </div>
-        <p>
-          <em
-            >Every request is re-validated against the schema at the edge,
-            regardless of which SDK signed it.</em
-          >
-        </p>
+                UNTRUSTED
+              </text>
+              <rect
+                x="40"
+                y="60"
+                width="80"
+                height="36"
+                rx="8"
+                fill="var(--richmd-color-surface)"
+                stroke="var(--richmd-color-border)"
+              />
+              <text
+                x="80"
+                y="83"
+                text-anchor="middle"
+                font-size="12"
+                font-family="Figtree, sans-serif"
+                fill="var(--richmd-color-text)"
+              >
+                Web SDK
+              </text>
+              <rect
+                x="140"
+                y="60"
+                width="80"
+                height="36"
+                rx="8"
+                fill="var(--richmd-color-surface)"
+                stroke="var(--richmd-color-border)"
+              />
+              <text
+                x="180"
+                y="83"
+                text-anchor="middle"
+                font-size="12"
+                font-family="Figtree, sans-serif"
+                fill="var(--richmd-color-text)"
+              >
+                Mobile SDK
+              </text>
+              <rect
+                x="90"
+                y="120"
+                width="80"
+                height="36"
+                rx="8"
+                fill="var(--richmd-color-surface)"
+                stroke="var(--richmd-color-border)"
+              />
+              <text
+                x="130"
+                y="143"
+                text-anchor="middle"
+                font-size="12"
+                font-family="Figtree, sans-serif"
+                fill="var(--richmd-color-text)"
+              >
+                Server SDK
+              </text>
+              <path
+                d="M236 100 L390 100"
+                stroke="var(--richmd-color-accent-solid)"
+                stroke-width="2"
+                marker-end="url(#arrow)"
+              />
+              <text
+                x="313"
+                y="90"
+                text-anchor="middle"
+                font-size="11"
+                font-family="Figtree, sans-serif"
+                fill="var(--richmd-color-accent-text)"
+              >
+                TLS + signed payload
+              </text>
+              <rect
+                x="392"
+                y="30"
+                width="232"
+                height="140"
+                rx="18"
+                fill="var(--richmd-color-accent2-tint)"
+                stroke="var(--richmd-color-accent2-solid)"
+              />
+              <text
+                x="508"
+                y="20"
+                text-anchor="middle"
+                font-size="12"
+                font-family="Figtree, sans-serif"
+                fill="var(--richmd-color-accent2-text)"
+              >
+                VALIDATED ZONE
+              </text>
+              <rect
+                x="416"
+                y="70"
+                width="184"
+                height="36"
+                rx="8"
+                fill="var(--richmd-color-surface)"
+                stroke="var(--richmd-color-border)"
+              />
+              <text
+                x="508"
+                y="93"
+                text-anchor="middle"
+                font-size="12"
+                font-family="Figtree, sans-serif"
+                fill="var(--richmd-color-text)"
+              >
+                Edge collector
+              </text>
+              <rect
+                x="416"
+                y="118"
+                width="184"
+                height="36"
+                rx="8"
+                fill="var(--richmd-color-surface)"
+                stroke="var(--richmd-color-border)"
+              />
+              <text
+                x="508"
+                y="141"
+                text-anchor="middle"
+                font-size="12"
+                font-family="Figtree, sans-serif"
+                fill="var(--richmd-color-text)"
+              >
+                Schema validator
+              </text>
+              <defs>
+                <marker
+                  id="arrow"
+                  markerWidth="8"
+                  markerHeight="8"
+                  refX="6"
+                  refY="4"
+                  orient="auto"
+                >
+                  <path
+                    d="M0,0 L8,4 L0,8 z"
+                    fill="var(--richmd-color-accent-solid)"
+                  />
+                </marker>
+              </defs>
+            </svg>
+          </div>
+          <figcaption>
+            Every request is re-validated against the schema at the edge,
+            regardless of which SDK signed it.
+          </figcaption>
+        </figure>
         <h2 id="failure-modes">Failure modes</h2>
         <div class="richmd-callout richmd-callout--warning">
           <div class="richmd-callout-body">

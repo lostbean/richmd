@@ -43,22 +43,22 @@ flowchart LR
 
 ::: {.cards cols="2"}
 
-### Edge collector
+### Edge collector {badge="ingest" badge-tint="info" meta="owns: signature validation"}
 
 Stateless, horizontally scaled. Validates payload signatures and shape
 before anything is durable.
 
-### Durable queue
+### Durable queue {badge="storage" badge-tint="accent" meta="owns: 72h retention"}
 
 Retains 72 hours of events, giving downstream stages room to recover from
 an outage without data loss.
 
-### Stream processor
+### Stream processor {badge="compute" badge-tint="accent2" meta="owns: enrich + dedupe"}
 
 Enriches events against the schema registry and de-duplicates by
 idempotency key.
 
-### Columnar store
+### Columnar store {badge="storage" badge-tint="accent" meta="owns: query API reads"}
 
 Partitioned by day and tenant; serves the query API that dashboards and
 this report's own charts read from.
@@ -104,11 +104,8 @@ A hand-authored figure (not a diagramming library) for the one drawing
 worth pixel control — where untrusted client input crosses into the
 validated zone.
 
-::: {.embedded-svg file="trust-boundary.svg"}
+::: {.embedded-svg file="trust-boundary.svg" caption="Every request is re-validated against the schema at the edge, regardless of which SDK signed it."}
 :::
-
-_Every request is re-validated against the schema at the edge, regardless
-of which SDK signed it._
 
 ## Failure modes
 
