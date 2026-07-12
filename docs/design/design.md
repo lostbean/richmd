@@ -253,9 +253,9 @@ table keyed by kind name; each entry is a
 [block kind schema](CONTEXT.md#term-block-kind-schema) (required/optional
 attrs, allowed values, body shape) plus its Lua render function.
 
-- **Responsibility**: load richmd's built-in schemas (callout, cards, TOC,
-  stat tile, labeled block, embedded SVG) and merge in every schema found
-  under the consumer's
+- **Responsibility**: load richmd's built-in schemas (callout, cards, stat
+  tile, stat grid, TOC, labeled block, embedded SVG) and merge in every
+  schema found under the consumer's
   [extension directory](CONTEXT.md#term-extension-directory)
   (`.richmd/blocks/` by default); resolve a block's kind name to its schema
   and renderer for both filter phases.
@@ -288,6 +288,10 @@ the workhorse enumeration block
 ### stat tile
 
 KPI-style number-plus-label
+
+### stat grid
+
+groups sibling stat tiles into one shared row
 
 ### TOC
 

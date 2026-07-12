@@ -1285,9 +1285,9 @@ table keyed by kind name; each entry is a
 <a href="CONTEXT.md#term-block-kind-schema">block kind schema</a> (required/optional
 attrs, allowed values, body shape) plus its Lua render function.</p>
 <ul>
-<li><strong>Responsibility</strong>: load richmd's built-in schemas (callout, cards, TOC,
-stat tile, labeled block, embedded SVG) and merge in every schema found
-under the consumer's
+<li><strong>Responsibility</strong>: load richmd's built-in schemas (callout, cards, stat
+tile, stat grid, TOC, labeled block, embedded SVG) and merge in every
+schema found under the consumer's
 <a href="CONTEXT.md#term-extension-directory">extension directory</a>
 (<code>.richmd/blocks/</code> by default); resolve a block's kind name to its schema
 and renderer for both filter phases.</li>
@@ -1324,6 +1324,12 @@ a broken extension.</li>
 <div class="entry-head"><span class="label">stat tile</span></div>
 <div class="body">
 <p>KPI-style number-plus-label</p>
+</div>
+</article>
+<article class="card" id="stat-grid">
+<div class="entry-head"><span class="label">stat grid</span></div>
+<div class="body">
+<p>groups sibling stat tiles into one shared row</p>
 </div>
 </article>
 <article class="card" id="toc">
