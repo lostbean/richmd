@@ -1,5 +1,7 @@
 # richmd
 
+![richmd — rich markdown, validated](richmd_banner.png)
+
 Rich markdown to validated static HTML, via Pandoc + Lua filters. Convert
 extended-markdown documents — callouts, cards, stat tiles, a table of
 contents, typed labeled statements, embedded SVGs, mermaid diagrams,
