@@ -80,7 +80,7 @@ delivery over flaky connections.
 
 ::: {.callout tint="danger" title="Hard constraint"}
 Any resolver change that can silently drop a committed edit is a launch
-blocker, full stop — see [Conflict resolver](#conflict-resolver-1).
+blocker, full stop — see [Conflict resolver](#conflict-resolver).
 :::
 
 ## Principles

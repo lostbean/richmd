@@ -18,6 +18,7 @@ package.path = script_dir .. "?.lua;" .. package.path
 local Registry = require("registry")
 local Slugify = require("slugify")
 local ExtensionLoader = require("extension-loader")
+local HeadingScope = require("heading-scope")
 
 -- One registry instance, shared across validate and render phases and
 -- across consumer-registered kinds.
@@ -200,10 +201,22 @@ local function target_heading_slugs(resolved_path)
     return nil
   end
 
+  -- Mark internal-only headers (e.g. cards.lua's per-card `### heading`
+  -- titles) BEFORE collecting slugs, exactly like the render phase does
+  -- below (render_only_header) — a `#fragment` link must be checked
+  -- against the SAME set of real headings the target document will
+  -- actually assign ids to, never against a card title that never became
+  -- an addressable heading in the rendered target page (§00 invariant: a
+  -- `#fragment` link and its target heading's id can never disagree).
+  target_doc = HeadingScope.mark(target_doc, registry)
+
   local slugs = {}
   local target_seen_slugs = Slugify.new_seen()
   target_doc:walk({
     Header = function(header)
+      if HeadingScope.is_internal(header) then
+        return -- not a real heading; never contributes a slug
+      end
       local heading_text = pandoc.utils.stringify(header.content)
       local slug = Slugify.slugify(heading_text, target_seen_slugs)
       slugs[slug] = true
@@ -739,7 +752,21 @@ local seen_slugs = Slugify.new_seen()
 -- Assigns the Header's `id` attribute via the single documented slugify
 -- function — the SAME function used by render_only_link below to resolve
 -- `#fragment` targets, so headings and links can never disagree.
+--
+-- A Header carrying HeadingScope's internal-heading marker (applied by the
+-- mark_internal_headers pre-pass below, BEFORE this walk runs, to any
+-- `owns_internal_headers` kind's own body headers — currently only
+-- cards.lua's per-card `### heading` titles) is left completely untouched:
+-- no `id` assigned, and — just as importantly — no mutation of the shared
+-- `seen_slugs` table, which is what previously let a card's own title
+-- silently consume the clean slug a real, same-named heading elsewhere in
+-- the document needed (see filter/heading-scope.lua for the full
+-- investigation of why this couldn't be fixed from inside cards.lua's own
+-- render_fn alone).
 local function render_only_header(header)
+  if HeadingScope.is_internal(header) then
+    return nil
+  end
   local heading_text = pandoc.utils.stringify(header.content)
   header.identifier = Slugify.slugify(heading_text, seen_slugs)
   return header
@@ -774,6 +801,21 @@ end
 -- phase's `#errors > 0` check above it has already fallen through — that
 -- fallthrough IS the fail-closed gate.
 function Pandoc(doc)
+  -- --- Pre-pass: internal-heading scoping ---
+  --
+  -- Runs before validate and before render, over the WHOLE document: tags
+  -- every Header that is a direct child of an `owns_internal_headers`
+  -- kind's body content (currently only cards.lua's per-card `### heading`
+  -- titles) with HeadingScope's marker class, so neither the validate
+  -- phase's link-fragment check (target_heading_slugs, used when THIS
+  -- document is itself the target of another document's `#fragment` link)
+  -- nor the render phase's render_only_header ever mistakes it for a real,
+  -- addressable section heading. See filter/heading-scope.lua for why this
+  -- is a separate pre-pass rather than a change to the render walk's
+  -- traversal order (which filter/blocks/stat-grid.lua depends on staying
+  -- bottom-up).
+  doc = HeadingScope.mark(doc, registry)
+
   -- --- Validate phase ---
   doc = doc:walk({
     Div = validate_only_div,

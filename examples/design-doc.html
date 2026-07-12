@@ -1337,19 +1337,10 @@
               <a href="#component-breakdown">Component breakdown</a>
             </li>
             <li class="richmd-toc-sub">
-              <a href="#op-log-writer">Op-log writer</a>
-            </li>
-            <li class="richmd-toc-sub">
               <a href="#sync-engine">Sync engine</a>
             </li>
             <li class="richmd-toc-sub">
               <a href="#conflict-resolver">Conflict resolver</a>
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#sync-engine-1">Sync engine</a>
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#conflict-resolver-1">Conflict resolver</a>
             </li>
             <li class="richmd-toc-sub"><a href="#open-risks">Open risks</a></li>
             <li class="richmd-toc-sub">
@@ -1449,7 +1440,7 @@
             <p>
               Any resolver change that can silently drop a committed edit is a
               launch blocker, full stop — see
-              <a href="#conflict-resolver-1">Conflict resolver</a>.
+              <a href="#conflict-resolver">Conflict resolver</a>.
             </p>
           </div>
         </div>
@@ -1512,7 +1503,7 @@
             </div>
           </div>
         </div>
-        <h3 id="sync-engine-1">Sync engine</h3>
+        <h3 id="sync-engine">Sync engine</h3>
         <p>
           The sync engine batches local mutations into an append-only op-log and
           ships them as soon as connectivity returns. Each op carries a Lamport
@@ -1541,7 +1532,7 @@
             </p>
           </section>
         </details>
-        <h3 id="conflict-resolver-1">Conflict resolver</h3>
+        <h3 id="conflict-resolver">Conflict resolver</h3>
         <p>
           Conflicts are resolved per-field, not per-document — two edits to
           different fields of the same note never contend. Same-field conflicts

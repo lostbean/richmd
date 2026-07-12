@@ -28,6 +28,18 @@
 local script_dir = PANDOC_SCRIPT_FILE:match("(.*/)") or "./"
 package.path = script_dir .. "../?.lua;" .. package.path
 local Slugify = require("slugify")
+local HeadingScope = require("heading-scope")
+
+-- Captured at register(registry) time (below) — this file's render_fn
+-- signature is deliberately block-scoped only (see this file's own header
+-- comment on why it re-reads/re-parses the document from disk instead of
+-- threading a `doc` parameter through every kind's render_fn), so the
+-- shared registry instance is stashed here, once, at startup, purely so
+-- collect_headings below can run the exact same generic
+-- HeadingScope.mark(doc, registry) pre-pass richmd-filter.lua's own render
+-- phase runs — never a toc-lua-specific or cards-specific rule duplicated
+-- here.
+local registry_ref = nil
 
 local schema = {
   kind = "toc",
@@ -89,10 +101,23 @@ local function collect_headings(doc_path)
     return nil, "could not parse source document '" .. doc_path .. "' to build table of contents"
   end
 
+  -- Same pre-pass richmd-filter.lua's own render phase runs (see
+  -- filter/heading-scope.lua): tags every Header that is really just an
+  -- `owns_internal_headers` kind's own body-content title (currently only
+  -- cards.lua's per-card `### heading`) so it's excluded below, exactly
+  -- like it's excluded from ever getting a real `id` assigned. Without
+  -- this, a card title would appear as a phantom TOC entry pointing at a
+  -- fragment that either doesn't exist or (worse) collides with an
+  -- unrelated real heading's id, per the bug this pre-pass fixes.
+  doc = HeadingScope.mark(doc, registry_ref)
+
   local headings = {}
   local seen_slugs = Slugify.new_seen()
   doc:walk({
     Header = function(header)
+      if HeadingScope.is_internal(header) then
+        return -- not a real heading; never a TOC entry
+      end
       local text = pandoc.utils.stringify(header.content)
       local slug = Slugify.slugify(text, seen_slugs)
       table.insert(headings, { level = header.level, text = text, slug = slug })
@@ -198,8 +223,12 @@ local function render(_block, resolved_attrs)
 end
 
 -- register(registry) — called once at filter startup to add this kind to
--- the shared registry instance.
+-- the shared registry instance. Also stashes the registry instance itself
+-- (see registry_ref above) so collect_headings can run the same generic
+-- HeadingScope.mark pre-pass richmd-filter.lua's own render phase runs,
+-- against its own independently-reparsed copy of the document.
 local function register(registry)
+  registry_ref = registry
   registry:register("toc", schema, render)
 end
 

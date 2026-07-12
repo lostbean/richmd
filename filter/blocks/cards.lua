@@ -17,6 +17,17 @@
 
 local schema = {
   kind = "cards",
+  -- owns_internal_headers: this kind's body content is authored as a run
+  -- of `### heading` Headers, but each one is purely this kind's own
+  -- title-splitting syntax (split_cards below), never a real, independently
+  -- navigable section of the document. Declaring this generic, opt-in
+  -- schema field (checked by filter/heading-scope.lua, never an
+  -- `if kind_name == "cards"` special case in the filter core) is what
+  -- keeps these Headers from being assigned a real `id` or leaking into a
+  -- `::: {.toc}` block's auto-generated entries — see
+  -- filter/heading-scope.lua's own header comment for the full mechanism
+  -- and why it works this way.
+  owns_internal_headers = true,
   attrs = {
     cols = {
       required = false,
