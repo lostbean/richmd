@@ -30,6 +30,9 @@ jobs:
       - name: build (nix build)
         run: nix develop -c nix build
 
+      - name: install (npm ci)
+        run: nix develop -c npm ci
+
       - name: test (npm test)
         run: nix develop -c npm test
 
