@@ -5,8 +5,9 @@
 Rich markdown to validated static HTML, via Pandoc + Lua filters. Convert
 extended-markdown documents — callouts, cards, stat tiles, a table of
 contents, typed labeled statements, embedded SVGs, mermaid diagrams,
-vega-lite charts — into self-contained static HTML, with real grammar
-validation that fails closed _before_ anything is written.
+vega-lite charts, table-driven `chart` blocks — into self-contained static
+HTML, with real grammar validation that fails closed _before_ anything is
+written.
 
 ```
 ::: {.callout tint="warning"}
@@ -61,6 +62,9 @@ self-contained/reproducible per ADR-0001.
 richmd render <file.md>              # writes a sibling <file>.html
 richmd render <file.md> --offline    # same, but embeds diagram/chart
                                       # runtimes instead of CDN references
+richmd render <file.md> --tree=<path>  # repeatable; classifies links to the
+                                        # named sibling .md paths with
+                                        # class="richmd-intree-link"
 richmd validate <file.md>            # runs the same gate, writes nothing
 ```
 
@@ -72,7 +76,13 @@ extension mechanism for adding your own block kinds, and common pitfalls.
 ## What richmd is not
 
 - Not a static-site generator — one document in, one page out; no
-  navigation or search scaffolding.
+  navigation or search scaffolding. `--tree` doesn't change that: it never
+  reads or renders any file beyond the one input document — it only
+  compares that document's own link targets against the path list you
+  pass. Rendering a whole tree with consistent in-tree link marking means
+  _you_ invoke `richmd render` once per file, passing the same full
+  `--tree` list every time; richmd never does that looping itself. See
+  [`USAGE_RULES.md`](USAGE_RULES.md#marking-links-as-in-tree-with---tree).
 - Not a WYSIWYG editor.
 - Not a hosting or publishing tool — its job ends at a written `.html` file.
 - Not a semantic validator — mermaid/vega-lite grammar is checked, but a

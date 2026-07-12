@@ -1,0 +1,279 @@
+// CLI-level (subprocess, execFile against bin/richmd.js) integration tests
+// for the chart built-in block kind (design.md §04.1, ADR-0006). Mirrors
+// test/vega-lite.test.js's pattern exactly: chart is a composition kind that
+// expands a markdown table into a vega-lite spec and must render
+// byte-for-byte the same way a hand-authored ```vega-lite block does — the
+// same .richmd-diagram/.richmd-vega container, the same CDN/offline runtime.
+
+import { describe, it, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, rm, cp, readFile, access } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const execFileAsync = promisify(execFile);
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+const cliPath = path.join(repoRoot, "bin", "richmd.js");
+const fixturesDir = path.join(__dirname, "fixtures");
+
+async function runCli(args) {
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      process.execPath,
+      [cliPath, ...args],
+      { cwd: repoRoot },
+    );
+    return { code: 0, stdout, stderr };
+  } catch (err) {
+    return {
+      code: err.code ?? 1,
+      stdout: err.stdout ?? "",
+      stderr: err.stderr ?? "",
+    };
+  }
+}
+
+describe("richmd render (chart, bar type, 2-column table)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-render-chart-bar-"));
+    mdPath = path.join(workDir, "chart-bar-valid.md");
+    htmlPath = path.join(workDir, "chart-bar-valid.html");
+    await cp(path.join(fixturesDir, "chart-bar-valid.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and writes a sibling .html file", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    await access(htmlPath);
+  });
+
+  it("produces a working vega-lite bar chart with the first column bound to x and the second to y, rendered in the exact same container a hand-authored vega-lite block uses", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /<div class="richmd-diagram">/);
+    assert.match(html, /<div id="[^"]*" class="richmd-vega">/);
+    assert.match(
+      html,
+      /<script type="application\/json" class="richmd-vega-lite-spec">/,
+    );
+    assert.match(html, /"mark":\s*"bar"/);
+    assert.match(html, /"field":\s*"Fruit"/);
+    assert.match(html, /"field":\s*"Count"/);
+    // Values from the table body must appear in the generated spec's data.
+    assert.match(html, /"Apple"/);
+    assert.match(html, /"Pear"/);
+  });
+
+  it("uses the exact same CDN/offline vega runtime as a hand-authored vega-lite block", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<script[^>]*src="[^"]*cdn\.jsdelivr\.net\/npm\/vega[^"]*"/,
+    );
+    assert.match(html, /cdn\.jsdelivr\.net\/npm\/vega-embed/);
+    assert.match(html, /vegaEmbed\(/);
+    assert.match(html, /richmdDiagramTheme/);
+  });
+});
+
+describe("richmd render (chart, line type, 2-column table)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-render-chart-line-"));
+    mdPath = path.join(workDir, "chart-line-valid.md");
+    htmlPath = path.join(workDir, "chart-line-valid.html");
+    await cp(path.join(fixturesDir, "chart-line-valid.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and produces a vega-lite line chart with x/y encoding from the table's first two columns", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /"mark":\s*"line"/);
+    assert.match(html, /"field":\s*"Day"/);
+    assert.match(html, /"field":\s*"Events"/);
+  });
+});
+
+describe("richmd render (chart, pie type, 2-column table)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-render-chart-pie-"));
+    mdPath = path.join(workDir, "chart-pie-valid.md");
+    htmlPath = path.join(workDir, "chart-pie-valid.html");
+    await cp(path.join(fixturesDir, "chart-pie-valid.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and produces a vega-lite arc mark with theta/color encoding (the real pie/donut idiom, not x/y)", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /"mark":\s*"arc"/);
+    assert.match(html, /"theta":\s*\{[^}]*"field":\s*"Share"/);
+    assert.match(html, /"color":\s*\{[^}]*"field":\s*"Browser"/);
+    // pie encoding must NOT use x/y channels.
+    assert.doesNotMatch(html, /"encoding":\s*\{[^}]*"x":/);
+  });
+});
+
+describe("richmd render (chart, 3+ column table, no explicit x=/y=) — fail-closed gate", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-chart-ambiguous-"),
+    );
+    mdPath = path.join(workDir, "chart-ambiguous-columns.md");
+    htmlPath = path.join(workDir, "chart-ambiguous-columns.html");
+    await cp(path.join(fixturesDir, "chart-ambiguous-columns.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.notEqual(result.code, 0);
+  });
+
+  it("names the chart block and the column-binding ambiguity specifically, never guessing or truncating to 2 columns", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.match(result.stderr, /chart/);
+    assert.match(result.stderr, /x=|y=|ambigu|column/i);
+  });
+
+  it("writes no HTML", async () => {
+    await runCli(["render", mdPath]);
+    await assert.rejects(() => access(htmlPath));
+  });
+});
+
+describe("richmd render (chart, 3+ column table WITH explicit x=/y= attrs) — succeeds", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-chart-explicit-xy-"),
+    );
+    mdPath = path.join(workDir, "chart-explicit-xy-columns.md");
+    htmlPath = path.join(workDir, "chart-explicit-xy-columns.html");
+    await cp(path.join(fixturesDir, "chart-explicit-xy-columns.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and binds x/y to the explicitly named columns rather than the first two positionally", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    await access(htmlPath);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /"field":\s*"Fruit"/);
+    assert.match(html, /"field":\s*"Count"/);
+  });
+});
+
+describe("richmd render (chart, invalid type value) — fail-closed gate", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-chart-invalid-type-"),
+    );
+    mdPath = path.join(workDir, "chart-invalid-type.md");
+    htmlPath = path.join(workDir, "chart-invalid-type.html");
+    await cp(path.join(fixturesDir, "chart-invalid-type.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero and writes no HTML", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /chart/);
+    assert.match(result.stderr, /type/);
+    await assert.rejects(() => access(htmlPath));
+  });
+});
+
+describe("richmd validate (chart) — parity with render's validation", () => {
+  let workDir;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-validate-chart-"));
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 for a valid chart block, writes no HTML", async () => {
+    const mdPath = path.join(workDir, "chart-bar-valid.md");
+    await cp(path.join(fixturesDir, "chart-bar-valid.md"), mdPath);
+    const result = await runCli(["validate", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    await assert.rejects(() =>
+      access(path.join(workDir, "chart-bar-valid.html")),
+    );
+  });
+
+  it("exits non-zero for a 3+ column table with no explicit x=/y= binding", async () => {
+    const mdPath = path.join(workDir, "chart-ambiguous-columns.md");
+    await cp(path.join(fixturesDir, "chart-ambiguous-columns.md"), mdPath);
+    const result = await runCli(["validate", mdPath]);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /chart/);
+  });
+
+  it("exits non-zero for an invalid type value", async () => {
+    const mdPath = path.join(workDir, "chart-invalid-type.md");
+    await cp(path.join(fixturesDir, "chart-invalid-type.md"), mdPath);
+    const result = await runCli(["validate", mdPath]);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /chart/);
+    assert.match(result.stderr, /type/);
+  });
+
+  it("exits 0 for a 3+ column table WITH explicit x=/y= attrs", async () => {
+    const mdPath = path.join(workDir, "chart-explicit-xy-columns.md");
+    await cp(path.join(fixturesDir, "chart-explicit-xy-columns.md"), mdPath);
+    const result = await runCli(["validate", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+  });
+});

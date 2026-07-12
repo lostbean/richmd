@@ -196,6 +196,39 @@ vega-lite schema. `--offline` embeds the vega/vega-lite/vega-embed runtimes
 directly in the page, the same as mermaid's own runtime; the default CDN
 mode works for both.
 
+### `chart` (fenced div)
+
+A terser convenience over `vega-lite` for the common case: a two-column
+markdown table expands into a bar, line, or pie chart, rendered through the
+exact same client-side vega-embed runtime a hand-authored `vega-lite` block
+uses (same CDN/`--offline` behavior, same theming).
+
+```
+::: {.chart type="bar"}
+
+| Month | Incidents |
+| ----- | --------- |
+| Apr   | 1         |
+| May   | 1         |
+| Jun   | 4         |
+
+:::
+```
+
+| Attr   | Required | Type   | Allowed values            |
+| ------ | -------- | ------ | ------------------------- |
+| `type` | yes      | enum   | `bar`, `line`, `pie`      |
+| `x`    | no       | string | must name a header column |
+| `y`    | no       | string | must name a header column |
+
+Body: **required** — a markdown table. The first column binds to the
+x/category encoding and the second to the y/value encoding **by position**;
+a table with more than two columns requires explicit `x=`/`y=` attrs naming
+the header columns to use, since position alone becomes ambiguous — richmd
+never guesses or silently truncates to the first two columns. For `pie`,
+the first column becomes the slice color/category and the second becomes
+the slice size (`theta`).
+
 ## Cross-document links and heading anchors
 
 Every relative link ending in `.md` (with or without a `#fragment`) is
@@ -216,6 +249,34 @@ Heading ids are assigned by one documented, pure function (GitHub-flavored
 rules: lowercase, punctuation stripped except hyphens, spaces to hyphens,
 duplicate headings suffixed `-1`, `-2`, ...). The same function resolves
 every `#fragment` link, so headings and links can never disagree.
+
+### Marking links as "in-tree" with `--tree`
+
+`richmd render <file> --tree=<path>` is a repeatable flag (literal `.md`
+paths only — richmd does no glob expansion; expand globs in your shell or
+caller before passing them). Any cross-document link whose resolved `.md`
+target (fragment stripped) matches one of the given paths gets
+`class="richmd-intree-link"` added to its rendered `<a>` tag — with **zero
+default styling**, so a consumer's own theme decides what "in-tree" should
+look like. Omitting `--tree` entirely produces byte-identical output to
+every prior release: the class is never present unless you ask for it.
+
+**richmd still renders exactly one document per invocation — always.**
+`--tree` doesn't make it read, walk, or render any file beyond the one you
+gave it; it only compares that one document's own link targets, as plain
+strings, against the path set you passed. richmd never opens the files
+named in `--tree` — it doesn't know or care whether they exist, what they
+contain, or whether they're part of any "tree" in reality. That's just the
+name of the list you handed it.
+
+Rendering a whole tree of documents with consistent in-tree/out-of-tree
+link marking is entirely the caller's job: invoke `richmd render` once per
+file in the tree, passing the **same, full `--tree=<path>` list** (every
+in-tree path, not just the ones the current file links to) on every single
+call. The recursion — deciding which files make up the tree, looping over
+them, invoking richmd once per file — is 100% your responsibility; richmd
+supplies only the per-link classification primitive, once per document,
+every time you ask.
 
 ## Extending: your own block kinds
 

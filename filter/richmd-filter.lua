@@ -34,6 +34,7 @@ require("blocks.stat-grid").register(registry)
 require("blocks.toc").register(registry)
 require("blocks.labeled-block").register(registry)
 require("blocks.embedded-svg").register(registry)
+require("blocks.chart").register(registry)
 
 -- The current document's own directory, used to resolve relative `.md`
 -- link targets against the filesystem (§06 link resolver). Pandoc exposes
@@ -49,6 +50,48 @@ local function current_doc_dir()
 end
 
 local doc_dir = current_doc_dir()
+
+-- tree_paths: the `--tree=<path>` flag's path set (design.md §02/§06,
+-- ADR-0005), read ONCE at filter startup — same timing convention as
+-- doc_dir above and as RICHMD_VALIDATE_ONLY/RICHMD_OFFLINE elsewhere in this
+-- file, never re-read per-link. bin/richmd.js joins every repeated
+-- `--tree=` occurrence into one RICHMD_TREE env var, comma-delimited (see
+-- that file's own comment for why comma was chosen over a null byte or
+-- other separator); this splits it back into a Lua table used as a set
+-- (`{[path]=true, ...}`) for O(1) membership checks in render_only_link,
+-- below. Absent entirely (os.getenv returns nil, exactly like the other two
+-- env vars when their flag is not passed), tree_paths is an empty table —
+-- membership checks against it always miss, so render_only_link's output is
+-- untouched, satisfying the "byte-identical when --tree is absent"
+-- requirement.
+--
+-- Path-matching convention: a `--tree` value is compared VERBATIM (no
+-- normalization, no re-resolution against doc_dir) against each link's own
+-- resolved path, which IS built as `doc_dir .. "/" .. path_part` — the
+-- exact same resolution validate_only_link already uses for the identical
+-- link target. This means `--tree` values are expected to already be given
+-- in a form that matches that resolution, i.e. either absolute paths, or
+-- paths relative to the same directory doc_dir itself resolves from
+-- (PANDOC_STATE's input file path, which bin/richmd.js passes through
+-- untouched from argv). This mirrors bin/richmd.js's existing convention of
+-- never rewriting a path it's handed (it passes the `<file>` argument
+-- straight to Pandoc as given) — richmd does no cwd-relative path
+-- normalization anywhere else in this codebase, so introducing it only for
+-- `--tree` would be a new, inconsistent behavior. In practice this means a
+-- caller passes `--tree` values in the same shape as the document's own
+-- link targets (both relative to doc_dir) or as absolute paths for both —
+-- either way, the comparison the caller sees is the same string-equality
+-- check they can reason about from the interface alone, with no hidden
+-- resolution step to keep track of.
+local tree_paths = {}
+do
+  local raw = os.getenv("RICHMD_TREE")
+  if raw then
+    for entry in raw:gmatch("[^,]+") do
+      tree_paths[entry] = true
+    end
+  end
+end
 
 -- Consumer-defined kinds (design.md §04, ADR-0003, §00 principle P4 "extend
 -- by composition, never by fork") register into the SAME shared registry
@@ -780,10 +823,28 @@ end
 -- this filter's own slugify output (render_only_header, above), so the two
 -- can never disagree. Non-`.md` targets (external URLs, images, etc.) are
 -- left completely untouched.
+--
+-- Also classifies the link as "in-tree" (design.md §06, ADR-0005,
+-- CONTEXT.md#term-in-tree-link) when `--tree` was passed: the ORIGINAL
+-- `.md` path_part (fragment already stripped by split_target above) is
+-- resolved the SAME way validate_only_link resolves it —
+-- `doc_dir .. "/" .. path_part` — and checked against tree_paths. A match
+-- appends (never overwrites — Attr.classes is a list, and richmd-authored
+-- markdown links never carry any class of their own, but this is written
+-- defensively in case Pandoc ever attaches one) "richmd-intree-link" to the
+-- Link's existing Attr classes. When tree_paths is empty (RICHMD_TREE
+-- unset, i.e. `--tree` absent from argv), this membership check always
+-- misses, so the Link's Attr is never touched at all and output is
+-- byte-identical to before this feature existed.
 local function render_only_link(link)
   local path_part, fragment_part = split_target(link.target)
   if not is_relative_md_link(path_part) then
     return nil -- not a cross-document link; leave untouched
+  end
+
+  local resolved_path = doc_dir .. "/" .. path_part
+  if tree_paths[resolved_path] then
+    link.classes:insert("richmd-intree-link")
   end
 
   local html_path = path_part:gsub("%.md$", ".html")

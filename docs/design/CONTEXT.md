@@ -80,6 +80,16 @@ offending [block](#term-block)'s location, its kind, and a human-readable
 reason. Never causes an immediate exit — the phase collects every error in
 the document before reporting.
 
+### Chart expansion {#term-chart-expansion}
+
+The `chart` [built-in kind](#term-block-kind)'s render step: a markdown
+table body plus a `type` (`bar`/`line`/`pie`) attr expands to a vega-lite
+spec — first table column bound to the `x`/category encoding and second to
+`y`/value by position, or explicitly via `x=`/`y=` attrs on a wider table.
+The expanded spec re-enters the same [grammar validator](#term-grammar-validator)
+and diagram runtime a hand-authored ` ```vega-lite ` block goes through —
+convenience sugar over vega-lite, not a second chart implementation.
+
 ### Grammar validator {#term-grammar-validator}
 
 A small, tightly-scoped Node.js helper script the Lua filter shells out to
@@ -117,9 +127,19 @@ and links always agree.
 
 A relative link in a [document](#term-document) whose target ends in `.md`
 (with or without a `#fragment`). Every such link is rewritten to its sibling
-`.html` target during the [render phase](#term-render-phase) — automatic,
-no special marker syntax required. A target that does not resolve to an
-existing source file is a [validation error](#term-validation-error).
+`.html` target during the [render phase](#term-render-phase) — automatic, no
+authoring-time marker syntax required to make the rewrite itself happen. A
+target that does not resolve to an existing source file is a
+[validation error](#term-validation-error).
+
+### In-tree link {#term-in-tree-link}
+
+A [cross-document link](#term-cross-document-link) whose resolved `.md`
+target (fragment stripped) matches one of the paths named by the render
+call's `--tree` flag. Carries `class="richmd-intree-link"` in the
+[rendered page](#term-rendered-page) with zero default styling (P3) — purely
+a caller-supplied classification, never authored in the source markdown and
+never present when `--tree` is absent.
 
 ### Theme {#term-theme}
 

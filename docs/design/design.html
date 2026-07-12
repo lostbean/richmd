@@ -1081,7 +1081,12 @@ plus renderer — without touching richmd's core source. See
 <div class="body">
 <p>No navigation, search, or multi-page site scaffolding beyond what
 <a href="CONTEXT.md#term-cross-document-link">cross-document link</a> rewriting gives
-for free. One document in, one page out.</p>
+for free. One document in, one page out — a single render call never
+orchestrates or walks a whole tree. The
+<a href="CONTEXT.md#term-in-tree-link">in-tree link marker</a> (§06) narrows this
+without crossing it: it only changes how links already being rewritten in
+that one render are classified, never adds a second document to the call.
+See <a href="../adr/0005-tree-flag-for-in-tree-link-classification.md#adr-0005">ADR-0005</a>.</p>
 </div>
 </div>
 <div class="entry no-goal">
@@ -1242,15 +1247,18 @@ stderr, never touches disk beyond reading input. Built for CI/pre-commit
 gates that should not produce discardable build artifacts.</p>
 </div>
 </article>
-<article class="card" id="richmd-render-file-offline">
-<div class="entry-head"><span class="label"><code>richmd render &lt;file&gt; [--offline]</code></span></div>
+<article class="card" id="richmd-render-file-offline-tree-path">
+<div class="entry-head"><span class="label"><code>richmd render &lt;file&gt; [--offline] [--tree=&lt;path&gt;...]</code></span></div>
 <div class="body">
 <p><strong>Run the full pipeline.</strong> Same filter, both phases. <code>--offline</code> switches
 the <a href="CONTEXT.md#term-render-phase">render phase</a> into
 <a href="CONTEXT.md#term-offline-bundling">offline bundling</a>: downloads and embeds
 the pinned diagram-runtime JavaScript instead of leaving CDN references.
-Writes the sibling <code>.html</code> file only when the validate phase collects zero
-errors.</p>
+Repeatable <code>--tree=&lt;path&gt;</code> names sibling <code>.md</code> paths that count as
+<a href="CONTEXT.md#term-in-tree-link">in-tree</a> for link classification (literal
+paths only — richmd does no glob-expansion; the shell or caller expands
+globs before argv). Writes the sibling <code>.html</code> file only when the validate
+phase collects zero errors.</p>
 </div>
 </article>
 </div>
@@ -1353,7 +1361,47 @@ metadata, never a substitute for the title text itself</p>
 <code>&lt;figure&gt;</code>/<code>&lt;figcaption&gt;</code> pair</p>
 </div>
 </article>
+<article class="card" id="chart">
+<div class="entry-head"><span class="label">chart</span></div>
+<div class="body">
+<p><code>{type=bar|line|pie}</code> convenience block: a markdown table expands to a
+<a href="#term-chart-expansion">vega-lite spec</a> — see §04.1</p>
 </div>
+</article>
+</div>
+<h3 id="04-1-chart-expansion-04-1-chart-expansion">04.1 Chart expansion {#04-1-chart-expansion}</h3>
+<p><strong>Owns table-to-vega-lite expansion for the <code>chart</code> built-in kind.</strong> The
+only built-in kind whose Lua render function emits a different block kind's
+source (a <code>```vega-lite</code> fenced block) rather than final HTML directly —
+composition, not a special case: the expanded spec re-enters the same
+<a href="#05-grammar-validators">grammar validator</a> and
+<a href="#07-theme-and-diagram-runtime">diagram runtime</a> every hand-authored
+vega-lite block already goes through.</p>
+<ul>
+<li><strong>Responsibility</strong>: read the block's markdown-table body and <code>type</code> attr;
+bind the table's first column to the <code>x</code>/category encoding and the second
+to the <code>y</code>/value encoding by position, unless <code>x=</code>/<code>y=</code> attrs name header
+columns explicitly (required once the table carries more than two
+columns); emit a minimal vega-lite spec of the requested mark type.</li>
+<li><strong>Interface</strong>: <code>expand(attrs, table_rows) -&gt; vega_lite_json | validation_error</code>,
+called during the <a href="CONTEXT.md#term-validate-phase">validate phase</a> before
+the expanded spec is handed to <code>vega-lite-check.js</code> (§05) exactly like any
+other vega-lite block.</li>
+<li><strong>Interacts with</strong>: the <a href="#04-block-kind-registry">block kind registry</a>,
+which dispatches <code>chart</code> blocks here instead of straight to HTML; the
+<a href="#05-grammar-validators">grammar validators</a>, which validate the expanded
+output; the <a href="#07-theme-and-diagram-runtime">theme and diagram runtime</a>,
+which renders it identically to a hand-authored chart.</li>
+<li><strong>Invariants held</strong>: schema-driven validation (§00) — a <code>chart</code> block with
+more than two columns and no explicit <code>x=</code>/<code>y=</code> binding is a
+<a href="CONTEXT.md#term-validation-error">validation error</a> naming the ambiguity,
+never a guessed encoding.</li>
+<li><strong>Failure behavior</strong>: an unresolvable column binding, or a <code>type</code> outside
+<code>bar|line|pie</code>, is a validate-phase
+<a href="CONTEXT.md#term-validation-error">validation error</a> naming the block; a
+table too wide for positional binding is rejected before expansion is
+attempted, never silently truncated to two columns.</li>
+</ul>
 <h2 id="05-grammar-validators-05-grammar-validators"><span class="secno">05</span> · Grammar validators {#05-grammar-validators}</h2>
 <p><strong>Owns real grammar checking for mermaid and vega-lite.</strong> Neither has a
 native Lua grammar library, so each gets a small, tightly-scoped Node.js
@@ -1393,12 +1441,18 @@ filesystem/AST walk the validate phase already did.</p>
 <ul>
 <li><strong>Responsibility</strong>: rewrite every relative <code>.md</code> link target (with or
 without a <code>#fragment</code>) to its sibling <code>.html</code> target, automatically, with
-no special marker syntax; assign every heading a
-<a href="CONTEXT.md#term-slug">slug</a> via the documented pure function.</li>
+no special marker syntax required to make rewriting itself work; assign
+every heading a <a href="CONTEXT.md#term-slug">slug</a> via the documented pure
+function; when <code>--tree</code> (§02) is present, classify each rewritten link as
+<a href="CONTEXT.md#term-in-tree-link">in-tree</a> by comparing its resolved <code>.md</code>
+path (fragment stripped) against the flag's path set.</li>
 <li><strong>Interface</strong>: a link-rewrite pass and a slugify pass, both operating on
 the Pandoc AST during the render phase; the slugify function is also
 exported standalone so <code>#fragment</code> link resolution during validate can
-call the identical logic.</li>
+call the identical logic. The link-rewrite pass additionally emits
+<code>class=&quot;richmd-intree-link&quot;</code> on a rewritten <code>&lt;a&gt;</code> when <code>--tree</code> is present
+and the target matches — no class, and identical output to today, when
+<code>--tree</code> is absent.</li>
 <li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>'s render phase;
 every <a href="CONTEXT.md#term-document">document</a> a consumer's corpus links
 between.</li>
@@ -1406,7 +1460,9 @@ between.</li>
 pure documented function (both §00).</li>
 <li><strong>Failure behavior</strong>: a link target that fails to resolve to an existing
 source file was already caught at validate time (§00 invariant) — by
-render time this pass only rewrites, never discovers new failures.</li>
+render time this pass only rewrites and classifies, never discovers new
+failures. A <code>--tree</code> path that does not match any link in the document is
+not an error — silently unused, exactly like an unmatched glob would be.</li>
 </ul>
 <h2 id="07-theme-and-diagram-runtime-07-theme-and-diagram-runtime"><span class="secno">07</span> · Theme and diagram runtime {#07-theme-and-diagram-runtime}</h2>
 <p><strong>Owns the visual identity and how diagrams/charts actually become

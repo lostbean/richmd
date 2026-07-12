@@ -55,7 +55,12 @@ plus renderer — without touching richmd's core source. See
 
 No navigation, search, or multi-page site scaffolding beyond what
 [cross-document link](CONTEXT.md#term-cross-document-link) rewriting gives
-for free. One document in, one page out.
+for free. One document in, one page out — a single render call never
+orchestrates or walks a whole tree. The
+[in-tree link marker](CONTEXT.md#term-in-tree-link) (§06) narrows this
+without crossing it: it only changes how links already being rewritten in
+that one render are classified, never adds a second document to the call.
+See [ADR-0005](../adr/0005-tree-flag-for-in-tree-link-classification.md#adr-0005).
 :::
 
 :::no-goal
@@ -210,14 +215,17 @@ collected [validation errors](CONTEXT.md#term-validation-error) printed to
 stderr, never touches disk beyond reading input. Built for CI/pre-commit
 gates that should not produce discardable build artifacts.
 
-### `richmd render <file> [--offline]`
+### `richmd render <file> [--offline] [--tree=<path>...]`
 
 **Run the full pipeline.** Same filter, both phases. `--offline` switches
 the [render phase](CONTEXT.md#term-render-phase) into
 [offline bundling](CONTEXT.md#term-offline-bundling): downloads and embeds
 the pinned diagram-runtime JavaScript instead of leaving CDN references.
-Writes the sibling `.html` file only when the validate phase collects zero
-errors.
+Repeatable `--tree=<path>` names sibling `.md` paths that count as
+[in-tree](CONTEXT.md#term-in-tree-link) for link classification (literal
+paths only — richmd does no glob-expansion; the shell or caller expands
+globs before argv). Writes the sibling `.html` file only when the validate
+phase collects zero errors.
 :::
 
 ## 03 Filter core {#03-filter-core}
@@ -307,7 +315,46 @@ goal/invariant/principle-style typed statement
 
 inline a sibling `.svg` file, with an optional caption rendered as a real
 `<figure>`/`<figcaption>` pair
+
+### chart
+
+`{type=bar|line|pie}` convenience block: a markdown table expands to a
+[vega-lite spec](#term-chart-expansion) — see §04.1
 :::
+
+### 04.1 Chart expansion {#04-1-chart-expansion}
+
+**Owns table-to-vega-lite expansion for the `chart` built-in kind.** The
+only built-in kind whose Lua render function emits a different block kind's
+source (a ` ```vega-lite ` fenced block) rather than final HTML directly —
+composition, not a special case: the expanded spec re-enters the same
+[grammar validator](#05-grammar-validators) and
+[diagram runtime](#07-theme-and-diagram-runtime) every hand-authored
+vega-lite block already goes through.
+
+- **Responsibility**: read the block's markdown-table body and `type` attr;
+  bind the table's first column to the `x`/category encoding and the second
+  to the `y`/value encoding by position, unless `x=`/`y=` attrs name header
+  columns explicitly (required once the table carries more than two
+  columns); emit a minimal vega-lite spec of the requested mark type.
+- **Interface**: `expand(attrs, table_rows) -> vega_lite_json | validation_error`,
+  called during the [validate phase](CONTEXT.md#term-validate-phase) before
+  the expanded spec is handed to `vega-lite-check.js` (§05) exactly like any
+  other vega-lite block.
+- **Interacts with**: the [block kind registry](#04-block-kind-registry),
+  which dispatches `chart` blocks here instead of straight to HTML; the
+  [grammar validators](#05-grammar-validators), which validate the expanded
+  output; the [theme and diagram runtime](#07-theme-and-diagram-runtime),
+  which renders it identically to a hand-authored chart.
+- **Invariants held**: schema-driven validation (§00) — a `chart` block with
+  more than two columns and no explicit `x=`/`y=` binding is a
+  [validation error](CONTEXT.md#term-validation-error) naming the ambiguity,
+  never a guessed encoding.
+- **Failure behavior**: an unresolvable column binding, or a `type` outside
+  `bar|line|pie`, is a validate-phase
+  [validation error](CONTEXT.md#term-validation-error) naming the block; a
+  table too wide for positional binding is rejected before expansion is
+  attempted, never silently truncated to two columns.
 
 ## 05 Grammar validators {#05-grammar-validators}
 
@@ -348,12 +395,18 @@ filesystem/AST walk the validate phase already did.
 
 - **Responsibility**: rewrite every relative `.md` link target (with or
   without a `#fragment`) to its sibling `.html` target, automatically, with
-  no special marker syntax; assign every heading a
-  [slug](CONTEXT.md#term-slug) via the documented pure function.
+  no special marker syntax required to make rewriting itself work; assign
+  every heading a [slug](CONTEXT.md#term-slug) via the documented pure
+  function; when `--tree` (§02) is present, classify each rewritten link as
+  [in-tree](CONTEXT.md#term-in-tree-link) by comparing its resolved `.md`
+  path (fragment stripped) against the flag's path set.
 - **Interface**: a link-rewrite pass and a slugify pass, both operating on
   the Pandoc AST during the render phase; the slugify function is also
   exported standalone so `#fragment` link resolution during validate can
-  call the identical logic.
+  call the identical logic. The link-rewrite pass additionally emits
+  `class="richmd-intree-link"` on a rewritten `<a>` when `--tree` is present
+  and the target matches — no class, and identical output to today, when
+  `--tree` is absent.
 - **Interacts with**: the [filter core](#03-filter-core)'s render phase;
   every [document](CONTEXT.md#term-document) a consumer's corpus links
   between.
@@ -361,7 +414,9 @@ filesystem/AST walk the validate phase already did.
   pure documented function (both §00).
 - **Failure behavior**: a link target that fails to resolve to an existing
   source file was already caught at validate time (§00 invariant) — by
-  render time this pass only rewrites, never discovers new failures.
+  render time this pass only rewrites and classifies, never discovers new
+  failures. A `--tree` path that does not match any link in the document is
+  not an error — silently unused, exactly like an unmatched glob would be.
 
 ## 07 Theme and diagram runtime {#07-theme-and-diagram-runtime}
 

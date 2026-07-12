@@ -84,6 +84,20 @@ retry-storm cluster described above.
 }
 ```
 
+The same data, authored with the `chart` convenience block instead of a
+hand-written vega-lite spec — a terser way to reach for the common
+two-column comparison case:
+
+::: {.chart type="bar"}
+
+| Month | Incidents |
+| ----- | --------- |
+| Apr   | 1         |
+| May   | 1         |
+| Jun   | 4         |
+
+:::
+
 ## What shipped
 
 ::: {.kicker}
