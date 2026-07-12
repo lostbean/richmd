@@ -144,6 +144,10 @@ local function validate_block(block, kind_name)
   local resolved_attrs = validate_attrs(schema, block.attributes, kind_name, location)
   validate_body(schema, block, kind_name, location)
 
+  if schema.validate then
+    schema.validate(block, kind_name, location, add_error)
+  end
+
   return resolved_attrs, render_fn
 end
 
