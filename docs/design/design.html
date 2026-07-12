@@ -1409,7 +1409,12 @@ vega-lite source becomes a rendered visual in the reader's browser.</p>
 <a href="CONTEXT.md#term-rendered-page">rendered page</a>; embed each mermaid/
 vega-lite block's raw source in a runtime-recognizable container
 (<code>&lt;pre class=&quot;mermaid&quot;&gt;</code> and equivalent) so the diagram renders
-client-side on page load, never at build time.</li>
+client-side on page load, never at build time. A diagram's own colors
+are read from the page's live <code>--richmd-*</code> custom properties at render
+time (via <code>getComputedStyle</code>), never hardcoded — so a diagram matches
+whatever theme (default or a consumer's reskin) is active, and
+re-renders when the theme toggle (§00) flips light/dark, exactly like
+the surrounding page's own colors do.</li>
 <li><strong>Interface</strong>: default mode emits CDN <code>&lt;script&gt;</code> tags for the mermaid.js
 and vega-lite runtimes; <code>--offline</code> (§02) downloads the pinned versions
 once and embeds them directly in the page instead.</li>
