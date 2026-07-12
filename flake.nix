@@ -58,7 +58,7 @@
           # forceEmptyCache no longer applies. npmDepsHash is pinned to the
           # real dependency cache's fixed-output hash so the build stays
           # reproducible and network-free after the first fetch.
-          npmDepsHash = "sha256-ZObya7iYidzeM7PEVg61mvVxRAvFEUimpx7Djz54V6g=";
+          npmDepsHash = "sha256-dnyStPTbB2X77q0ZoHXOu3u/1x6S85hGJRmNej4ztj8=";
 
           # There's nothing to compile — bin/richmd.js and the Lua filters
           # ship as-is — so skip the default `npm run build`.

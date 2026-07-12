@@ -1225,7 +1225,7 @@
           <div class="richmd-diagram">
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-328557047"
+              id="richmd-mermaid-201420363"
               style="display: none"
             >
 graph TD
@@ -1240,7 +1240,7 @@ graph TD
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-328557047-target"
+              id="richmd-mermaid-201420363-target"
             ></div>
           </div>
           <script type="module">
@@ -1249,12 +1249,12 @@ graph TD
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_328557047() {
+            function renderMermaid_richmd_mermaid_201420363() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-328557047",
+                "richmd-mermaid-201420363",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-328557047-target",
+                "richmd-mermaid-201420363-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1286,7 +1286,7 @@ graph TD
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-328557047-target-svg",
+                  "richmd-mermaid-201420363-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
@@ -1295,9 +1295,9 @@ graph TD
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_328557047,
+              renderMermaid_richmd_mermaid_201420363,
             );
-            renderMermaid_richmd_mermaid_328557047();
+            renderMermaid_richmd_mermaid_201420363();
           </script>
         </div>
         <p>
@@ -1307,7 +1307,7 @@ graph TD
         </p>
         <div class="richmd-diagram-wrapper">
           <div class="richmd-diagram">
-            <div id="richmd-vega-40121619" class="richmd-vega"></div>
+            <div id="richmd-vega-313005394" class="richmd-vega"></div>
             <script type="application/json" class="richmd-vega-lite-spec">
               {
                 "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -1345,7 +1345,7 @@ graph TD
           </div>
           <script src="https://cdn.jsdelivr.net/npm/vega@6"></script>
           <script src="https://cdn.jsdelivr.net/npm/vega-lite@6"></script>
-          <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+          <script src="https://cdn.jsdelivr.net/npm/vega-embed@7"></script>
           <script>
             (function () {
               function richmdMergeConfig(base, override) {
@@ -1379,9 +1379,9 @@ graph TD
                 var width = target.getBoundingClientRect().width;
                 return width > 0 ? width : null;
               }
-              function embedRichmdVega_richmd_vega_40121619() {
+              function embedRichmdVega_richmd_vega_313005394() {
                 var containerEl = document.getElementById(
-                  "richmd-vega-40121619",
+                  "richmd-vega-313005394",
                 );
                 var specEl = containerEl.nextElementSibling;
                 var spec = JSON.parse(specEl.textContent);
@@ -1424,25 +1424,25 @@ graph TD
                     mergedSpec.width = measuredWidth;
                   }
                 }
-                vegaEmbed("#richmd-vega-40121619", mergedSpec, {
+                vegaEmbed("#richmd-vega-313005394", mergedSpec, {
                   actions: false,
                 });
               }
               window.richmdDiagramRerenders =
                 window.richmdDiagramRerenders || [];
               window.richmdDiagramRerenders.push(
-                embedRichmdVega_richmd_vega_40121619,
+                embedRichmdVega_richmd_vega_313005394,
               );
-              embedRichmdVega_richmd_vega_40121619();
-              var resizeRaf_richmd_vega_40121619 = null;
+              embedRichmdVega_richmd_vega_313005394();
+              var resizeRaf_richmd_vega_313005394 = null;
               window.addEventListener("resize", function () {
-                if (resizeRaf_richmd_vega_40121619 !== null) {
-                  cancelAnimationFrame(resizeRaf_richmd_vega_40121619);
+                if (resizeRaf_richmd_vega_313005394 !== null) {
+                  cancelAnimationFrame(resizeRaf_richmd_vega_313005394);
                 }
-                resizeRaf_richmd_vega_40121619 = requestAnimationFrame(
+                resizeRaf_richmd_vega_313005394 = requestAnimationFrame(
                   function () {
-                    resizeRaf_richmd_vega_40121619 = null;
-                    embedRichmdVega_richmd_vega_40121619();
+                    resizeRaf_richmd_vega_313005394 = null;
+                    embedRichmdVega_richmd_vega_313005394();
                   },
                 );
               });

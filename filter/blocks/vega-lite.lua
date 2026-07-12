@@ -64,7 +64,61 @@ local schema = {
 -- `import` of a non-module file.
 local VEGA_CDN_URL = "https://cdn.jsdelivr.net/npm/vega@6"
 local VEGA_LITE_CDN_URL = "https://cdn.jsdelivr.net/npm/vega-lite@6"
-local VEGA_EMBED_CDN_URL = "https://cdn.jsdelivr.net/npm/vega-embed@6"
+-- Pinned at major 7, not 6: every vega-embed@6.x release peer-depends on
+-- vega@^5.x (confirmed via `npm view vega-embed@6.29.0 peerDependencies`,
+-- checked across the whole 6.x line), which is incompatible with the
+-- vega@6/vega-lite@6 pinned above (vega-lite@6.4.3 itself peer-depends on
+-- vega@^6.0.0) — vega-embed@6 + vega@6 is not an installable, mutually
+-- coherent combination on npm at all, only an accident of CDN script tags
+-- not enforcing peer-dependency compatibility at load time. vega-embed@7 is
+-- the first line whose peer range (`vega: '*'`) actually tolerates vega@6 —
+-- confirmed by a real `npm install` of vega@6.2.0 + vega-lite@6.4.3 +
+-- vega-embed@7.1.0 resolving cleanly with zero conflicts. The public
+-- `vegaEmbed(target, spec, opts)` call shape this file uses is unchanged
+-- across the 6→7 bump.
+local VEGA_EMBED_CDN_URL = "https://cdn.jsdelivr.net/npm/vega-embed@7"
+
+-- VEGA_OFFLINE_BUNDLE_PATH / VEGA_LITE_OFFLINE_BUNDLE_PATH /
+-- VEGA_EMBED_OFFLINE_BUNDLE_PATH: the SAME three versions pinned above,
+-- already present on disk as the browser-ready UMD builds each npm
+-- dependency itself ships — resolved the exact same way
+-- MERMAID_OFFLINE_BUNDLE_PATH resolves its own bundle (relative to
+-- script_dir, so this works identically from the source checkout and from
+-- the Nix-packaged install). Each path was found by checking that package's
+-- OWN package.json `unpkg`/`jsdelivr` field rather than guessing a
+-- conventional `dist/`-style path — vega/vega-lite/vega-embed all publish
+-- their UMD bundle under `build/<name>.min.js`, NOT `dist/`, which is the
+-- convention mermaid's own package happens to use. Reading these files
+-- directly avoids an HTTP fetch at render time entirely, exactly like
+-- mermaid's own offline path — no network dependency, no cache invalidation
+-- concern, and guaranteed to match the exact versions
+-- vega-lite-check.js's schema validation already targets.
+local VEGA_OFFLINE_BUNDLE_PATH = script_dir .. "../node_modules/vega/build/vega.min.js"
+local VEGA_LITE_OFFLINE_BUNDLE_PATH = script_dir .. "../node_modules/vega-lite/build/vega-lite.min.js"
+local VEGA_EMBED_OFFLINE_BUNDLE_PATH = script_dir .. "../node_modules/vega-embed/build/vega-embed.min.js"
+
+-- read_offline_bundle(path) -> string
+--
+-- Reads a pinned UMD bundle fresh on every offline render — the same
+-- once-per-render (not cross-invocation-cached) tradeoff mermaid.lua's own
+-- read_offline_bundle() already makes, for the same reason: correctness is
+-- the only acceptance criterion here, and re-reading a small local file
+-- already on disk is cheap enough that a cross-process cache would be
+-- complexity with no measurable benefit. A missing file is a hard filter
+-- failure naming the exact path, never a silent fallback to the CDN
+-- reference — offline mode must never silently produce a page that still
+-- needs network access. Takes the path as a parameter (unlike mermaid's
+-- single-bundle version) since this kind must read three separate bundles
+-- in dependency order.
+local function read_offline_bundle(path)
+  local file = io.open(path, "r")
+  if not file then
+    error("richmd: --offline requested but could not open pinned vega-lite runtime bundle at " .. path)
+  end
+  local source = file:read("*a")
+  file:close()
+  return source
+end
 
 -- run_vega_lite_check(source) -> valid (bool), reason (string | nil)
 --
@@ -376,8 +430,23 @@ end
 -- uses (richmdDiagramRerenders), rather than a second, divergent resize-only
 -- code path.
 --
--- Offline bundling (RICHMD_OFFLINE=1) is not yet implemented for
--- vega-lite in this chunk — see the module-level note below.
+-- Offline mode (RICHMD_OFFLINE=1, set by `richmd render --offline` via
+-- bin/richmd.js, the SAME env-var-signal pattern mermaid.lua's own offline
+-- path already uses): the three pinned UMD bundles' full source (vega, then
+-- vega-lite, then vega-embed — dependency order, matching the CDN default
+-- path's own script order, since vega-lite's UMD wrapper expects a global
+-- `vega` to already exist and vega-embed's expects both `vega` and
+-- `vegaLite`) are embedded directly in a single inline <script> tag ahead of
+-- the render logic — no CDN URL anywhere in the output. Each bundle attaches
+-- its own global exactly as the CDN `<script src>` path already relies on
+-- (verified by reading each bundle's own UMD header, not assumed:
+-- `globalThis.vega={}` / `e.vegaLite={}` / `e.vegaEmbed=t(e.vega,e.vegaLite)`),
+-- so the offline path needs no different global-wiring logic from the CDN
+-- path — only how those globals get defined changes. The bundles are only
+-- embedded once per page (a page-level guard checks `window.vegaEmbed` isn't
+-- already set, the same "presence of the last-loaded global" pattern
+-- mermaid.lua's own guard uses) to avoid re-defining the runtime once per
+-- chart on multi-chart pages.
 local function render(block, resolved_attrs)
   local source = block.text or ""
   local container_id = "richmd-vega-" .. tostring(math.random(1, 1000000000))
@@ -397,22 +466,15 @@ local function render(block, resolved_attrs)
 
   local panel_html = "<div class=\"richmd-diagram\">" .. title_html .. spec_html .. "</div>"
 
-  -- Offline bundling is a follow-up for this kind (see module doc comment
-  -- at the top of this file): only the CDN-default path is implemented
-  -- here, matching ADR-0004's default mode. RICHMD_OFFLINE has no effect on
-  -- vega-lite rendering yet — mermaid's own offline path is unaffected and
-  -- continues to work exactly as before.
-  local script_html = "<script src=\""
-    .. VEGA_CDN_URL
-    .. "\"></script>\n"
-    .. "<script src=\""
-    .. VEGA_LITE_CDN_URL
-    .. "\"></script>\n"
-    .. "<script src=\""
-    .. VEGA_EMBED_CDN_URL
-    .. "\"></script>\n"
-    .. "<script>\n"
-    .. "  (function () {\n"
+  -- render_body_js: the actual chart-embedding logic, shared verbatim
+  -- between default (CDN) and offline (bundled) mode — the ONLY thing that
+  -- differs between the two modes is HOW the vega/vegaLite/vegaEmbed
+  -- globals come to exist (CDN <script src> vs. inline bundle source), never
+  -- how they're used once they do. Kept as one string built once so "CDN
+  -- mode" and "offline mode" can never drift into two divergent copies of
+  -- the same render logic (the same discipline mermaid.lua's render_call_js
+  -- already follows for its own single runtime).
+  local render_body_js = "  (function () {\n"
     .. "    "
     .. richmd_merge_config_js()
     .. "\n"
@@ -473,7 +535,36 @@ local function render(block, resolved_attrs)
     .. "      });\n"
     .. "    });\n"
     .. "  })();\n"
-    .. "</script>"
+
+  local script_html
+  if os.getenv("RICHMD_OFFLINE") then
+    local vega_bundle = read_offline_bundle(VEGA_OFFLINE_BUNDLE_PATH)
+    local vega_lite_bundle = read_offline_bundle(VEGA_LITE_OFFLINE_BUNDLE_PATH)
+    local vega_embed_bundle = read_offline_bundle(VEGA_EMBED_OFFLINE_BUNDLE_PATH)
+    script_html = "<script>\n"
+      .. "  if (!window.vegaEmbed) {\n"
+      .. vega_bundle
+      .. "\n"
+      .. vega_lite_bundle
+      .. "\n"
+      .. vega_embed_bundle
+      .. "\n  }\n"
+      .. render_body_js
+      .. "</script>"
+  else
+    script_html = "<script src=\""
+      .. VEGA_CDN_URL
+      .. "\"></script>\n"
+      .. "<script src=\""
+      .. VEGA_LITE_CDN_URL
+      .. "\"></script>\n"
+      .. "<script src=\""
+      .. VEGA_EMBED_CDN_URL
+      .. "\"></script>\n"
+      .. "<script>\n"
+      .. render_body_js
+      .. "</script>"
+  end
 
   return pandoc.Div({
     pandoc.RawBlock("html", panel_html),

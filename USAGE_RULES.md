@@ -192,9 +192,9 @@ JSON vs. valid JSON that doesn't conform to the vega-lite schema.
 ````
 
 No attrs. Body: **required** — must be valid JSON conforming to the
-vega-lite schema. `--offline` bundling for vega-lite is not yet
-implemented (only mermaid's runtime is bundled by `--offline` today); the
-default CDN mode works for both.
+vega-lite schema. `--offline` embeds the vega/vega-lite/vega-embed runtimes
+directly in the page, the same as mermaid's own runtime; the default CDN
+mode works for both.
 
 ## Cross-document links and heading anchors
 
