@@ -267,9 +267,12 @@ attrs, allowed values, body shape) plus its Lua render function.
   [extension directory](CONTEXT.md#term-extension-directory)
   (`.richmd/blocks/` by default); resolve a block's kind name to its schema
   and renderer for both filter phases.
-- **Interface**: `lookup(kind_name) -> {schema, render_fn} | nil`; a missing
-  kind is itself a [validation error](CONTEXT.md#term-validation-error), not
-  a silent pass-through.
+- **Interface**: `lookup(kind_name) -> {schema, render_fn} | nil`; for a
+  [Block](CONTEXT.md#term-block) whose class is always a kind attempt (a
+  fenced div), a missing kind is itself a
+  [validation error](CONTEXT.md#term-validation-error), never a silent
+  pass-through — a fenced code block's unrecognized class is ordinary code,
+  not a validation error, per the Block term's own distinction.
 - **Interacts with**: the [filter core](#03-filter-core), which calls
   `lookup` once per block during validate and again during render; consumer
   repos, which populate the extension directory.

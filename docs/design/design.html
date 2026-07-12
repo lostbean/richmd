@@ -1303,9 +1303,12 @@ under the consumer's
 <a href="CONTEXT.md#term-extension-directory">extension directory</a>
 (<code>.richmd/blocks/</code> by default); resolve a block's kind name to its schema
 and renderer for both filter phases.</li>
-<li><strong>Interface</strong>: <code>lookup(kind_name) -&gt; {schema, render_fn} | nil</code>; a missing
-kind is itself a <a href="CONTEXT.md#term-validation-error">validation error</a>, not
-a silent pass-through.</li>
+<li><strong>Interface</strong>: <code>lookup(kind_name) -&gt; {schema, render_fn} | nil</code>; for a
+<a href="CONTEXT.md#term-block">Block</a> whose class is always a kind attempt (a
+fenced div), a missing kind is itself a
+<a href="CONTEXT.md#term-validation-error">validation error</a>, never a silent
+pass-through — a fenced code block's unrecognized class is ordinary code,
+not a validation error, per the Block term's own distinction.</li>
 <li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>, which calls
 <code>lookup</code> once per block during validate and again during render; consumer
 repos, which populate the extension directory.</li>

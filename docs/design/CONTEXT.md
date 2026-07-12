@@ -17,6 +17,17 @@ A typed content unit inside a [Document](#term-document) — a fenced div
 ` ```vega-lite `). Defined entirely by its kind, attrs, and body; no
 identity beyond that — a value object.
 
+A fenced div's class is always a kind attempt: `::: {.kind}` is richmd's
+primary authoring syntax, so a class with no
+[registry](#term-block-kind-registry) match is a validation error, never a
+silent pass-through. A fenced code block's class is not: by universal
+Pandoc/CommonMark convention it names a syntax-highlighting language
+(` ```js `, ` ```python `), so richmd only treats a code block as a Block
+when its class is one it explicitly recognizes (`mermaid`, `vega-lite`,
+...) — an unrecognized code block class is always ordinary code, never a
+validation error. The two node types read their class differently on
+purpose; this is not an inconsistency.
+
 ### Block kind {#term-block-kind}
 
 The name that selects which [schema](#term-block-kind-schema) and renderer
