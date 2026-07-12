@@ -34,6 +34,10 @@ layer.
 Clean commit messages — no trailers, no attribution, no Co-Authored-By, no
 "Generated with" footers.
 
+Keep `USAGE_RULES.md` updated whenever a block kind, attr, or CLI flag
+changes — it's the user-facing interface contract, and letting it drift
+from the implementation is a breaking change to the user, not a docs nit.
+
 ## Tooling
 
 - `nix develop` (or direnv, via `.envrc`) — dev shell with Node, Pandoc, and

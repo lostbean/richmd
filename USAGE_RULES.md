@@ -39,25 +39,29 @@ classed code blocks.
 ### `callout` (fenced div)
 
 ```
-::: {.callout tint="warning"}
+::: {.callout tint="warning" title="Heads up"}
 Rebuilding this index takes about ten minutes.
 :::
 ```
 
-| Attr   | Required | Type | Allowed values              |
-| ------ | -------- | ---- | --------------------------- |
-| `tint` | no       | enum | `info`, `warning`, `danger` |
+| Attr    | Required | Type   | Allowed values              |
+| ------- | -------- | ------ | --------------------------- |
+| `tint`  | no       | enum   | `info`, `warning`, `danger` |
+| `title` | no       | string |                             |
 
 Body: **required**.
 
 ### `cards` (fenced div)
 
 The workhorse enumeration block — items are `###` headings inside the div.
+Each card's title heading may optionally carry its own `badge`,
+`badge-tint`, and `meta` attrs — visual metadata rendered beside the title,
+never a substitute for the title text itself.
 
 ```
 ::: {.cards cols="3"}
 
-### First card
+### First card {badge="ingest" badge-tint="info" meta="owns: validation"}
 
 Body text.
 
@@ -74,22 +78,59 @@ Body text.
 
 Body: **required**.
 
+Per-card heading attrs (all optional, independent of each other and of the
+div's own `cols`/`size`):
+
+| Attr         | Required | Type   | Allowed values                                                         |
+| ------------ | -------- | ------ | ---------------------------------------------------------------------- |
+| `badge`      | no       | string | free text, rendered as a small pill                                    |
+| `badge-tint` | no       | enum   | `accent`, `accent2`, `info`, `warning`, `danger`, `neutral`, `outline` |
+| `meta`       | no       | string | free text, rendered alongside the badge                                |
+
+Omitting all three renders a card byte-for-byte identical to one authored
+before these attrs existed.
+
 ### `stat-tile` (fenced div)
 
 KPI-style number-plus-label. No body content — the tile's content comes
 entirely from its attrs.
 
 ```
-::: {.stat-tile value="42" label="widgets shipped"}
+::: {.stat-tile value="42" label="widgets shipped" delta="↑ 12% vs last wk" dir="up"}
 :::
 ```
 
-| Attr    | Required | Type   |
-| ------- | -------- | ------ |
-| `value` | yes      | string |
-| `label` | yes      | string |
+| Attr    | Required | Type   | Allowed values                       |
+| ------- | -------- | ------ | ------------------------------------ |
+| `value` | yes      | string |                                      |
+| `label` | yes      | string |                                      |
+| `delta` | no       | string | free-form trend text, e.g. `"↑ 12%"` |
+| `dir`   | no       | enum   | `up`, `down`                         |
 
 Body: **forbidden**.
+
+### `stat-grid` (fenced div)
+
+Groups sibling `stat-tile`s into one shared row — the body is a run of
+nested `stat-tile` divs (a longer colon-run on the outer fence than the
+inner one), not free content.
+
+```
+::: {.stat-grid cols="4"}
+:::: {.stat-tile value="99.97%" label="uptime"}
+::::
+
+:::: {.stat-tile value="142ms" label="p50 latency"}
+::::
+:::
+```
+
+| Attr   | Required | Type | Allowed values |
+| ------ | -------- | ---- | -------------- |
+| `cols` | no       | enum | `2`, `3`, `4`  |
+
+Body: **required** — nested `stat-tile` divs; each one validates and
+renders independently before the grid wraps them.
 
 ### `toc` (fenced div)
 
@@ -98,13 +139,14 @@ re-parses the source document to build the list, so it always matches the
 real rendered heading ids (the same slug function is used for both).
 
 ```
-::: {.toc max-depth="2"}
+::: {.toc max-depth="2" title="On this page"}
 :::
 ```
 
-| Attr        | Required | Type   | Meaning                                              |
-| ----------- | -------- | ------ | ---------------------------------------------------- |
-| `max-depth` | no       | string | heading levels to include (1–6); omit for all levels |
+| Attr        | Required | Type   | Meaning                                                     |
+| ----------- | -------- | ------ | ----------------------------------------------------------- |
+| `max-depth` | no       | string | heading levels to include (1–6); omit for all levels        |
+| `title`     | no       | string | the label rendered above the list; defaults to `"Contents"` |
 
 Body: **forbidden**.
 
@@ -139,15 +181,18 @@ validation error naming the path; `richmd validate` catches it before
 `richmd render` would ever need to.
 
 ```
-::: {.embedded-svg file="diagram.svg"}
+::: {.embedded-svg file="diagram.svg" caption="Request flow, high level"}
 :::
 ```
 
-| Attr   | Required | Type   |
-| ------ | -------- | ------ |
-| `file` | yes      | string |
+| Attr      | Required | Type   |
+| --------- | -------- | ------ |
+| `file`    | yes      | string |
+| `caption` | no       | string |
 
-Body: **forbidden**.
+Body: **forbidden**. With `caption` present, the SVG is wrapped in a real
+`<figure>`/`<figcaption>` pair; omitting it renders exactly as before the
+attr existed — a bare div, no `<figure>` wrapper at all.
 
 ### `mermaid` (fenced code block)
 
@@ -159,7 +204,7 @@ CDN (the page needs network access to display the diagram); `--offline`
 embeds the runtime directly instead.
 
 ````
-```mermaid
+```{.mermaid title="Request flow"}
 graph TD
     A[Start] --> B{Is it?}
     B -->|Yes| C[OK]
@@ -167,9 +212,14 @@ graph TD
 ```
 ````
 
-No attrs. Body: **required** — must be syntactically valid mermaid source.
-A malformed diagram fails validation with the parser's own line/column
-error, not a generic message.
+| Attr    | Required | Type   |
+| ------- | -------- | ------ |
+| `title` | no       | string |
+
+Body: **required** — must be syntactically valid mermaid source. A
+malformed diagram fails validation with the parser's own line/column error,
+not a generic message. `title`, when present, renders above the diagram
+inside the shared diagram panel.
 
 ### `vega-lite` (fenced code block)
 
@@ -179,7 +229,7 @@ vega/vega-lite/vega-embed. Two distinct failure modes are reported: invalid
 JSON vs. valid JSON that doesn't conform to the vega-lite schema.
 
 ````
-```vega-lite
+```{.vega-lite title="Widgets by category"}
 {
   "mark": "bar",
   "data": { "values": [{ "a": "A", "b": 28 }] },
@@ -191,10 +241,15 @@ JSON vs. valid JSON that doesn't conform to the vega-lite schema.
 ```
 ````
 
-No attrs. Body: **required** — must be valid JSON conforming to the
-vega-lite schema. `--offline` embeds the vega/vega-lite/vega-embed runtimes
-directly in the page, the same as mermaid's own runtime; the default CDN
-mode works for both.
+| Attr    | Required | Type   |
+| ------- | -------- | ------ |
+| `title` | no       | string |
+
+Body: **required** — must be valid JSON conforming to the vega-lite schema.
+`title`, when present, renders above the chart inside the shared diagram
+panel (same as mermaid's `title`). `--offline` embeds the
+vega/vega-lite/vega-embed runtimes directly in the page, the same as
+mermaid's own runtime; the default CDN mode works for both.
 
 ### `chart` (fenced div)
 
@@ -228,6 +283,19 @@ the header columns to use, since position alone becomes ambiguous — richmd
 never guesses or silently truncates to the first two columns. For `pie`,
 the first column becomes the slice color/category and the second becomes
 the slice size (`theta`).
+
+Failure cases, all reported at validate time:
+
+- Fewer than 2 columns: `"table has N column(s); a chart block needs at
+least 2 (x and y)"`.
+- More than 2 columns with `x=`/`y=` missing or empty: the ambiguity error
+  above, naming ADR-0006.
+- An `x=`/`y=` value that doesn't match any table header column: `"attr 'x'
+names column '...', which does not match any table header column"` (same
+  for `y`).
+- The expanded vega-lite spec is also run back through the same JSON-schema
+  check hand-authored `vega-lite` blocks use — a second, vega-lite-flavored
+  error is possible even after the column binding itself resolves cleanly.
 
 ## Cross-document links and heading anchors
 
@@ -309,13 +377,16 @@ return {
 ```
 
 The schema's `attrs`/`body` shape is identical to every built-in kind's
-(see the vocabulary above). The Lua file may return either
-`{ render = fn }` or a bare `render` function directly. Your kind then
-validates and renders through the exact same generic pipeline as `callout`
-or `mermaid` — richmd's own filter code never special-cases it. A
-malformed schema file (bad JSON, missing a required field) is a **fatal,
-load-time** error naming the offending file — richmd refuses to run at all
-rather than silently skipping a broken extension.
+(see the vocabulary above). The schema's `"kind"` field must match the
+filename it's loaded from (`highlight.schema.json` must declare
+`"kind": "highlight"`) — a mismatch is also a fatal, load-time error. The
+Lua file may return either `{ render = fn }` or a bare `render` function
+directly. Your kind then validates and renders through the exact same
+generic pipeline as `callout` or `mermaid` — richmd's own filter code never
+special-cases it. A malformed schema file (bad JSON, missing a required
+field, or a kind/filename mismatch) is a **fatal, load-time** error naming
+the offending file — richmd refuses to run at all rather than silently
+skipping a broken extension.
 
 ## Failure behavior
 
