@@ -31,14 +31,22 @@
 // would compute for .richmd-doc's colors and fonts.
 //
 // Usage: scripts/theme-swap-check
-//   Renders examples/custom-theme-demo.md fresh (default theme embedded),
-//   builds an in-memory swapped copy (custom-theme.css's content in place
-//   of the embedded theme <style> block), and asserts a named set of
-//   --richmd-* custom properties + the .custom-definition extension rule
-//   differ between the two. Exits 0 on success, 1 with a clear diff on any
-//   mismatch. Never writes the swapped HTML to disk — this is a
-//   verification step, not a build artifact (the demo doc's OWN golden
-//   hash always reflects the DEFAULT theme, per the work order).
+//   Renders a COPY of examples/custom-theme-demo.md (default theme
+//   embedded) in a throwaway temp directory, builds an in-memory swapped
+//   copy (custom-theme.css's content in place of the embedded theme
+//   <style> block), and asserts a named set of --richmd-* custom
+//   properties + the .custom-definition extension rule differ between the
+//   two. Exits 0 on success, 1 with a clear diff on any mismatch.
+//
+//   Renders into a temp dir rather than examples/ itself so this script
+//   never touches the real, committed examples/custom-theme-demo.html at
+//   all — earlier versions rendered in place and rmSync'd the result
+//   afterward, which deleted that tracked file for good whenever the
+//   process exited before reaching the cleanup line (a thrown error, a
+//   fail() call's process.exit(1) bypassing later cleanup, or simply
+//   another tool invoking this script and stopping early). Rendering to a
+//   temp copy makes that class of bug structurally impossible: there is
+//   nothing under examples/ for this script to ever delete.
 
 // Deliberately CommonJS (require), not ESM `import`, even though this repo's
 // package.json sets "type": "module" — matching the working convention
@@ -51,13 +59,13 @@
 // paths in practice. `require` is unambiguous for a shebang'd, extensionless
 // CLI script and needs no build step.
 const { spawnSync } = require("node:child_process");
-const { readFileSync, rmSync } = require("node:fs");
+const { readFileSync, mkdtempSync, cpSync, rmSync } = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const repoRoot = path.resolve(__dirname, "..");
 const cliPath = path.join(repoRoot, "bin", "richmd.js");
-const mdPath = path.join(repoRoot, "examples", "custom-theme-demo.md");
-const htmlPath = path.join(repoRoot, "examples", "custom-theme-demo.html");
+const mdSourcePath = path.join(repoRoot, "examples", "custom-theme-demo.md");
 const customThemePath = path.join(repoRoot, "examples", "custom-theme.css");
 
 function fail(message) {
@@ -65,23 +73,43 @@ function fail(message) {
   process.exit(1);
 }
 
-// 1. Render fresh — never trust a stale .html already on disk.
-const renderResult = spawnSync(process.execPath, [cliPath, "render", mdPath], {
-  encoding: "utf8",
-  cwd: repoRoot,
-});
-if (renderResult.status !== 0) {
-  fail(
-    `rendering ${mdPath} failed:\n${renderResult.stderr || renderResult.stdout}`,
-  );
-}
+// 1. Render a COPY, in a throwaway temp directory — never the real
+// examples/ tree (see this file's header comment for why). The demo doc
+// resolves its `definition` block kind from a sibling `.richmd/blocks/`
+// extension directory (ADR-0003: extension dirs resolve relative to the
+// document's OWN directory), so that directory is copied alongside the
+// .md file, not just the .md file alone, or the render would fail with an
+// unknown-block-kind error.
+const tmpDir = mkdtempSync(path.join(os.tmpdir(), "richmd-theme-swap-check-"));
+let defaultHtml;
+try {
+  const tmpMdPath = path.join(tmpDir, "custom-theme-demo.md");
+  const tmpHtmlPath = path.join(tmpDir, "custom-theme-demo.html");
+  // Copy the WHOLE examples/ directory, not just this one .md file: the
+  // demo doc carries a cross-document link to data-status-report.md (§00
+  // invariant: cross-document links always resolve, checked at validate
+  // time), so that sibling must exist in the copy too, alongside the
+  // `.richmd/blocks/` extension directory the `definition` kind loads from.
+  cpSync(path.join(repoRoot, "examples"), tmpDir, { recursive: true });
 
-const defaultHtml = readFileSync(htmlPath, "utf8");
-// Clean up the render artifact immediately — this script never leaves a
-// generated .html behind (mirrors example-hash-check's own discipline of
-// treating examples/ as source, plus scripts/example-hash-check remaining
-// the single owner of the committed golden-hash artifact for this doc).
-rmSync(htmlPath, { force: true });
+  const renderResult = spawnSync(
+    process.execPath,
+    [cliPath, "render", tmpMdPath],
+    { encoding: "utf8", cwd: repoRoot },
+  );
+  if (renderResult.status !== 0) {
+    fail(
+      `rendering ${mdSourcePath} failed:\n${renderResult.stderr || renderResult.stdout}`,
+    );
+  }
+
+  defaultHtml = readFileSync(tmpHtmlPath, "utf8");
+} finally {
+  // Best-effort: this is a temp dir under os.tmpdir(), never the repo, so a
+  // failure to clean it up here is inert litter, not a lost source file —
+  // the point of the try/finally is just tidiness, not correctness.
+  rmSync(tmpDir, { recursive: true, force: true });
+}
 
 // 2. Extract the richmd theme <style> block specifically (there are two
 // <style> blocks in the page: Pandoc's own generic one, and richmd's theme
@@ -191,7 +219,7 @@ if (!customThemeCss.match(/\.custom-definition\s*\{[^}]*border-left/)) {
 // <link.../> or href= pointing at it would be a real mechanism attempt,
 // which richmd has no CLI flag to honor anyway (bin/richmd.js: no
 // theme-selection option exists), so authoring one would be misleading.
-const mdSource = readFileSync(mdPath, "utf8");
+const mdSource = readFileSync(mdSourcePath, "utf8");
 const wiresUpTheme =
   /\]\([^)]*custom-theme\.css[^)]*\)/.test(mdSource) ||
   /<link[^>]*custom-theme\.css/.test(mdSource) ||

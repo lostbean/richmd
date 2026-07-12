@@ -1,10 +1,23 @@
 // Proves the "definition" custom block-kind extension
 // (examples/.richmd/blocks/definition.schema.json + definition.lua) works
-// end to end against the REAL examples/custom-theme-demo.md document — not
-// a copied fixture — so extension-directory resolution is exercised for
-// THIS example specifically, not just examples/data-status-report.md's
-// "kicker" extension (design.md §00 principle P4, ADR-0003: extend by
-// composition, never by fork).
+// end to end against a COPY of the real examples/custom-theme-demo.md
+// document (not a from-scratch fixture) — so extension-directory
+// resolution is exercised for THIS example specifically, not just
+// examples/data-status-report.md's "kicker" extension (design.md §00
+// principle P4, ADR-0003: extend by composition, never by fork).
+//
+// Rendered into a throwaway temp copy, never onto the real
+// examples/custom-theme-demo.md in place: this test used to render
+// directly onto the committed sibling path and rm() the resulting .html in
+// an after() hook, which deleted that TRACKED, golden-hashed file (same
+// golden-hash discipline as the other 3 example docs, via
+// scripts/example-hash-check custom-theme-demo) on every single `npm test`
+// run — anyone or anything that stopped short of the after() hook (a
+// crash, a different runner) left it deleted with nothing to restore it.
+// Copying the doc (plus its sibling .richmd/blocks/ extension dir and the
+// data-status-report.md it cross-document-links to) into a temp dir first
+// makes that class of bug structurally impossible: nothing under
+// examples/ is ever written or deleted by this test.
 //
 // TDD directive: this file's happy-path test was run and observed to FAIL
 // (no definition.schema.json/definition.lua existed yet, so "definition"
@@ -18,6 +31,7 @@ import { promisify } from "node:util";
 import {
   mkdtemp,
   rm,
+  cp,
   mkdir,
   writeFile,
   readFile,
@@ -33,8 +47,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const cliPath = path.join(repoRoot, "bin", "richmd.js");
 const examplesDir = path.join(repoRoot, "examples");
-const demoMdPath = path.join(examplesDir, "custom-theme-demo.md");
-const demoHtmlPath = path.join(examplesDir, "custom-theme-demo.html");
 
 async function runCli(args, options = {}) {
   try {
@@ -53,12 +65,25 @@ async function runCli(args, options = {}) {
   }
 }
 
-describe("richmd render (examples/custom-theme-demo.md, the real example doc)", () => {
+describe("richmd render (custom-theme-demo.md, a copy of the real example doc)", () => {
+  let workDir;
+  let demoMdPath;
+  let demoHtmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-custom-theme-demo-"));
+    // Copy the WHOLE examples/ directory: the demo doc cross-document-links
+    // to data-status-report.md (§00 invariant: cross-document links always
+    // resolve, checked at validate time) and resolves the `definition` kind
+    // from the sibling `.richmd/blocks/` extension directory (ADR-0003) —
+    // both must exist alongside the copy for a faithful render.
+    await cp(examplesDir, workDir, { recursive: true });
+    demoMdPath = path.join(workDir, "custom-theme-demo.md");
+    demoHtmlPath = path.join(workDir, "custom-theme-demo.html");
+  });
+
   after(async () => {
-    // Clean up the generated sibling HTML so running the test suite never
-    // leaves a build artifact behind in examples/ (the golden-hash script,
-    // not this test, owns producing the committed .html for CI).
-    await rm(demoHtmlPath, { force: true });
+    await rm(workDir, { recursive: true, force: true });
   });
 
   it("exits 0, resolving the 'definition' kind from examples/.richmd/blocks/", async () => {
@@ -91,10 +116,8 @@ describe("richmd render (examples/custom-theme-demo.md, the real example doc)", 
     assert.match(html, /<style/);
     assert.match(html, /--richmd-accent-500: #4f46e5/); // default theme's indigo accent
   });
-});
 
-describe("richmd validate (examples/custom-theme-demo.md)", () => {
-  it("exits 0", async () => {
+  it("exits 0 under richmd validate too", async () => {
     const result = await runCli(["validate", demoMdPath]);
     assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
   });
