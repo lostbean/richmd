@@ -100,7 +100,13 @@ describe("richmd render — shared diagram-theme script", () => {
 
   it("is emitted BEFORE .richmd-container, so window.richmdDiagramTheme already exists when a diagram's own auto-invoked render script parses (regression: diagrams inside the container call richmdDiagramTheme() synchronously at parse time, not deferred to DOMContentLoaded — if this script were emitted after the container instead, richmdDiagramTheme would be undefined during every diagram's first render, and mermaid's real theme-color-math throws on undefined values, confirmed via a headless-browser reproduction)", async () => {
     const diagramThemeIdx = html.indexOf("richmdDiagramTheme = function");
-    const containerIdx = html.indexOf('<div class="richmd-container">');
+    // This fixture has no `richmd-layout` frontmatter, so it gets the wide
+    // default (design.md §07) — both richmd-container and
+    // richmd-container--wide classes (see test/layout.test.js for dedicated
+    // richmd-layout frontmatter coverage).
+    const containerIdx = html.indexOf(
+      '<div class="richmd-container richmd-container--wide">',
+    );
     assert.ok(diagramThemeIdx >= 0 && containerIdx >= 0);
     assert.ok(
       diagramThemeIdx < containerIdx,

@@ -103,6 +103,113 @@ describe("richmd render (vega-lite, valid input)", () => {
     const html = await readFile(htmlPath, "utf8");
     assert.match(html, /window\.richmdDiagramRerenders\.push\(/);
   });
+
+  // Bug fix: vega-lite charts previously rendered at vega-lite's own ~200px
+  // built-in default width regardless of their actual container's width
+  // (confirmed via direct browser inspection: a chart in a 662px-wide
+  // .richmd-diagram panel rendered its actual canvas at only 218px), because
+  // the author's spec was embedded verbatim with no `width` ever injected.
+  // The fix measures the target container's REAL rendered width in the
+  // browser at render time (richmdMeasureVegaWidth, using
+  // getBoundingClientRect — this can only be known once the DOM has laid
+  // out, never at Lua/build time) and injects it into the spec's `width`
+  // UNLESS the author's own spec already set one explicitly.
+  it("defines richmdMeasureVegaWidth and only injects width when the merged spec doesn't already have one", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /function\s+richmdMeasureVegaWidth/);
+    assert.match(
+      html,
+      /typeof mergedSpec\.width === ['"]undefined['"]/,
+      "expected the injection to be gated on the author's spec NOT already setting width",
+    );
+    assert.match(html, /mergedSpec\.width\s*=\s*measuredWidth/);
+  });
+
+  it("richmdMeasureVegaWidth itself: returns the measured width when positive, and null (meaning 'do not override') when the container measures 0 or has no getBoundingClientRect (executed in isolation via a fake element)", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    const scriptMatches = [
+      ...html.matchAll(/<script>([\s\S]*?)<\/script>/g),
+    ].map((m) => m[1]);
+    const script = scriptMatches.find((s) =>
+      s.includes("richmdMeasureVegaWidth"),
+    );
+    assert.ok(
+      script,
+      "expected to find the script defining richmdMeasureVegaWidth",
+    );
+
+    const fnSource = script.match(
+      /function richmdMeasureVegaWidth\([\s\S]*?\n {2}\}/,
+    );
+    assert.ok(
+      fnSource,
+      "expected to isolate richmdMeasureVegaWidth's own source",
+    );
+
+    const fn = new Function(fnSource[0] + "\n;return richmdMeasureVegaWidth;");
+    const richmdMeasureVegaWidth = fn();
+
+    assert.equal(
+      richmdMeasureVegaWidth({ getBoundingClientRect: () => ({ width: 662 }) }),
+      662,
+    );
+    assert.equal(
+      richmdMeasureVegaWidth({ getBoundingClientRect: () => ({ width: 0 }) }),
+      null,
+    );
+    assert.equal(richmdMeasureVegaWidth(null), null);
+    assert.equal(richmdMeasureVegaWidth({}), null);
+  });
+
+  it("registers a window resize listener that re-runs the same render function (so charts re-measure and re-fit on viewport changes)", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /addEventListener\(\s*['"]resize['"]/);
+    // The resize handler must re-invoke the SAME embedRichmdVega_<id>
+    // function pushed onto richmdDiagramRerenders (one re-render code path
+    // shared by "on load", "on theme toggle", and "on resize" — never a
+    // second, divergent resize-only rendering path), and it must be
+    // debounced via requestAnimationFrame rather than firing synchronously
+    // on every single resize event during a drag-resize.
+    assert.match(html, /requestAnimationFrame\(/);
+    assert.match(html, /cancelAnimationFrame\(/);
+  });
+});
+
+describe("richmd render (vega-lite, spec with its own explicit width) — author's width is never overridden", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-vega-lite-explicit-width-"),
+    );
+    mdPath = path.join(workDir, "vega-lite-explicit-width.md");
+    htmlPath = path.join(workDir, "vega-lite-explicit-width.html");
+    await cp(path.join(fixturesDir, "vega-lite-explicit-width.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and the embedded spec JSON still has the author's own width value verbatim", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /"width":\s*321/);
+  });
+
+  it("the width-injection guard is present and would skip this spec (typeof check on mergedSpec.width, which is 321, not undefined)", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    // Structural proof the injection is conditional at all (the dedicated
+    // no-explicit-width describe block above proves the injection actually
+    // fires when absent; a real headless-browser check — see this chunk's
+    // work order report — additionally confirmed the rendered chart stays
+    // at the author's own 321px-derived plot width across a window resize,
+    // never growing to fill the container).
+    assert.match(html, /typeof mergedSpec\.width === ['"]undefined['"]/);
+  });
 });
 
 describe("richmd render (vega-lite, spec with its own config) — author config wins over richmd's base config", () => {

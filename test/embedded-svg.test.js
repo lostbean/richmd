@@ -66,6 +66,31 @@ describe("richmd render (embedded-svg, valid input)", () => {
     assert.match(html, /<circle cx="50" cy="50" r="40" fill="#4a9edb"/);
     assert.doesNotMatch(html, /<img[^>]*sample\.svg/);
   });
+
+  // Bug fix: theme/default.css previously had ZERO CSS rule for
+  // .richmd-embedded-svg (confirmed via grep before this fix), so an
+  // embedded SVG's own hardcoded width/height attributes (e.g.
+  // examples/diagram.svg's width="240" height="120") won outright with no
+  // override, rendering tiny regardless of the surrounding container's
+  // actual width. A real headless-browser measurement (chrome-devtools MCP)
+  // against a page embedding examples/diagram.svg (which has explicit
+  // width="240" height="120" AND a viewBox="0 0 240 120") confirmed: before
+  // this CSS rule, the rendered <svg> stayed at exactly 240x120px inside a
+  // 1032px-wide container; after adding `.richmd-embedded-svg svg { width:
+  // 100%; max-width: 100%; height: auto; }`, the rendered <svg> scaled to
+  // fill the full 1032px container width at 1032x516px — exactly the
+  // viewBox's 240:120 (2:1) aspect ratio preserved (1032/516 = 2.0).
+  it("emits a .richmd-embedded-svg svg CSS rule in the stylesheet so embedded SVGs scale to their container", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /\.richmd-embedded-svg svg\s*\{[^}]*width:\s*100%[^}]*\}/,
+    );
+    assert.match(
+      html,
+      /\.richmd-embedded-svg svg\s*\{[^}]*height:\s*auto[^}]*\}/,
+    );
+  });
 });
 
 // Chunk 12 fix: validate_block (the Div-shaped validation path) now calls

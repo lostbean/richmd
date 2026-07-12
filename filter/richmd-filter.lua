@@ -579,13 +579,47 @@ local function topbar_html()
     .. "</div>"
 end
 
--- wrap_blocks_in_page_shell(blocks) -> pandoc.List(Block)
+-- container_classes(doc_meta) -> { "richmd-container" } | { "richmd-container", "richmd-container--wide" }
+--
+-- Reads the document's OWN YAML frontmatter for a `richmd-layout` key
+-- (design.md §07: "Container width is a per-document choice, authored as a
+-- YAML frontmatter key... defaulting to `wide` when absent"). This is
+-- document-level metadata, not a block-kind concept — read once per
+-- document, here in the filter core, never through the
+-- registry/schema-driven validate_attrs mechanism the block kinds use (§00
+-- invariant: the filter core stays generic about block kinds, but frontmatter
+-- is not a block kind at all, so that invariant does not apply to it).
+--
+-- Pandoc exposes YAML frontmatter via `doc.meta`, keyed by the frontmatter
+-- field name; a present scalar key comes back as a MetaValue (a Lua table
+-- wrapping the string), not a plain Lua string, so `pandoc.utils.stringify`
+-- is the documented way to read it as text — confirmed with a real
+-- `pandoc --lua-filter` run against both a `richmd-layout: narrow` document
+-- (stringify returns "narrow") and a document with no frontmatter at all
+-- (`doc.meta["richmd-layout"]` is plain Lua `nil`, never a table). Only the
+-- literal value "narrow" opts out of wide — absent, "wide", or any other
+-- value all fall through to the new wide default.
+local function container_classes(doc_meta)
+  local raw = doc_meta and doc_meta["richmd-layout"]
+  local layout = raw ~= nil and pandoc.utils.stringify(raw) or nil
+  if layout == "narrow" then
+    return { "richmd-container" }
+  end
+  return { "richmd-container", "richmd-container--wide" }
+end
+
+-- wrap_blocks_in_page_shell(blocks, doc_meta) -> pandoc.List(Block)
 --
 -- Wraps the whole rendered document in the .richmd-doc / .richmd-container
 -- shell theme/default.css already fully styles (§00: this is additive
 -- structure only, never a new renderer/kind — every existing block-kind's
 -- own output, already independently correct, is carried through completely
--- unchanged as the content of `.richmd-container`).
+-- unchanged as the content of `.richmd-container`). The container's own
+-- classes are derived from the document's `richmd-layout` frontmatter (see
+-- container_classes above) — wide (`richmd-container richmd-container--wide`)
+-- unless the document explicitly opts into the narrower `richmd-layout:
+-- narrow` reading column (plain `richmd-container`, 760px, theme/default.css
+-- §2).
 --
 -- Pandoc's Lua filter API has no hook that wraps the HTML writer's <body>
 -- tag itself (the writer owns the <body>...</body> shell via its built-in
@@ -610,7 +644,7 @@ end
 -- sets the attribute directly on the live DOM node and persists the choice;
 -- the anti-flash script re-applies a stored choice, if any, on the next
 -- load — but a first-ever render never carries a hardcoded value.
-local function wrap_blocks_in_page_shell(blocks)
+local function wrap_blocks_in_page_shell(blocks, doc_meta)
   -- Pandoc's HTML writer (Text.Pandoc.Shared.makeSections, run unconditionally
   -- inside every writer, independent of --section-divs) auto-converts ANY Div
   -- whose FIRST child block is a Header into an HTML <section> tag, merging
@@ -648,7 +682,7 @@ local function wrap_blocks_in_page_shell(blocks)
     -- is simplest and keeps the "one shared script" contract intact.
     pandoc.RawBlock("html", diagram_theme_script_html()),
     pandoc.RawBlock("html", topbar_html()),
-    pandoc.Div(container_children, pandoc.Attr("", { "richmd-container" })),
+    pandoc.Div(container_children, pandoc.Attr("", container_classes(doc_meta))),
     pandoc.RawBlock("html", theme_toggle_script_html()),
   })
   return pandoc.List({
@@ -787,7 +821,7 @@ function Pandoc(doc)
   -- the shell's content; see wrap_blocks_in_page_shell's own comment for why
   -- this is the correct (AST-level, not string-postprocessing) way to reach
   -- what would otherwise require wrapping Pandoc's own <body> tag.
-  doc.blocks = wrap_blocks_in_page_shell(doc.blocks)
+  doc.blocks = wrap_blocks_in_page_shell(doc.blocks, doc.meta)
 
   return doc
 end

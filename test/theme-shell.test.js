@@ -78,20 +78,26 @@ describe("richmd render (page shell + theme toggle)", () => {
     // between .richmd-doc's opening tag and .richmd-topbar, ahead of
     // everything else so it runs before first paint — so this only asserts
     // relative order (topbar before container), not strict adjacency.
+    // This fixture has no `richmd-layout` frontmatter at all, so it gets the
+    // wide default (design.md §07) — both richmd-container and
+    // richmd-container--wide classes (see test/layout.test.js for the
+    // dedicated richmd-layout frontmatter coverage, narrow included).
     assert.match(
       html,
-      /<div class="richmd-doc"[^>]*>[\s\S]*?<div class="richmd-topbar">[\s\S]*?<\/div>\s*<div class="richmd-container">/,
+      /<div class="richmd-doc"[^>]*>[\s\S]*?<div class="richmd-topbar">[\s\S]*?<\/div>\s*<div class="richmd-container richmd-container--wide">/,
     );
     assert.match(
       html,
-      /<div class="richmd-container">[\s\S]*Just a plain paragraph\.[\s\S]*<\/div>/,
+      /<div class="richmd-container richmd-container--wide">[\s\S]*Just a plain paragraph\.[\s\S]*<\/div>/,
     );
   });
 
   it("the topbar appears before the container inside .richmd-doc, and content stays inside the container", async () => {
     const docOpenIdx = html.indexOf('<div class="richmd-doc"');
     const topbarIdx = html.indexOf('<div class="richmd-topbar">');
-    const containerIdx = html.indexOf('<div class="richmd-container">');
+    const containerIdx = html.indexOf(
+      '<div class="richmd-container richmd-container--wide">',
+    );
     const contentIdx = html.indexOf("Just a plain paragraph.");
     assert.ok(docOpenIdx >= 0 && topbarIdx > docOpenIdx);
     assert.ok(containerIdx > topbarIdx);

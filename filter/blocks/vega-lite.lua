@@ -221,6 +221,57 @@ local function richmd_merge_config_js()
   }]]
 end
 
+-- richmd_measure_width_js() -> string
+--
+-- A small JS helper that measures the `.richmd-vega` target element's own
+-- actual rendered content width via `getBoundingClientRect().width` — the
+-- ONLY way to learn a container's real pixel width, since it depends on the
+-- surrounding page's layout (`.richmd-container`/`.richmd-container--wide`,
+-- design.md §07, plus the `.richmd-diagram` panel's own padding) which is not
+-- knowable at Lua/build time (bug confirmed via direct browser inspection: a
+-- chart in a 662px-wide `.richmd-diagram` panel rendered its actual canvas at
+-- only ~218px, vega-lite's own ~200px built-in default, because no `width`
+-- was ever injected here before this fix).
+--
+-- `.richmd-vega` (theme/default.css §10) is itself `display: block; width:
+-- 100%` with NO padding of its own — the padding lives on its `.richmd-diagram`
+-- ANCESTOR — so measuring the `.richmd-vega` target div directly already
+-- yields the correct content width with nothing further to subtract;
+-- confirmed with a real headless-browser check
+-- (getComputedStyle(target).padding === "0px" on the actual rendered page).
+--
+-- Timing: investigated whether "measure too early returns 0" is a real
+-- hazard here specifically, rather than assuming a naive fix works. This
+-- function's caller (embedRichmdVega_<id>, below) already only ever runs
+-- from two places: (1) synchronously, inline, as the very next sibling
+-- <script> the HTML parser reaches right after this diagram's own
+-- `<div class="richmd-vega">` — by that point in the document, the theme
+-- stylesheet is already fully parsed (injected into <head>, which the parser
+-- reaches before <body>) and the three vega CDN `<script src>` tags
+-- immediately above this inline script are render-blocking (no async/defer),
+-- so the browser has already computed layout for every element the parser
+-- has reached so far; and (2) from `window.richmdRerenderDiagrams()`, called
+-- long after DOMContentLoaded by the theme toggle. A real headless-browser
+-- reproduction (chrome-devtools MCP) confirmed the container already reports
+-- its correct final width at the synchronous call site (790px/982px in two
+-- separate real-page checks, not 0) — because unlike an <img> or external
+-- stylesheet, nothing this diagram's own layout depends on is still
+-- in-flight when this script runs. This function still defensively treats a
+-- non-positive measurement as "unknown" (returns null, meaning "do not
+-- override") rather than ever injecting a bogus 0/negative width, in case a
+-- consumer's own CSS produces a genuinely collapsed container (e.g. a
+-- `display: none` ancestor) — safer to fall through to vega-lite's own
+-- default than to force width:0.
+local function richmd_measure_width_js()
+  return [[function richmdMeasureVegaWidth(target) {
+    if (!target || typeof target.getBoundingClientRect !== "function") {
+      return null;
+    }
+    var width = target.getBoundingClientRect().width;
+    return width > 0 ? width : null;
+  }]]
+end
+
 -- vega_lite_base_config_js() -> string
 --
 -- A JS expression that maps `window.richmdDiagramTheme()`'s live-CSS color
@@ -304,6 +355,27 @@ end
 -- dependency order — vega-embed's own documented usage) followed by a
 -- plain inline `<script>` that defines and calls the render function.
 --
+-- Width injection (bug fix): the author's own spec is embedded verbatim
+-- with no `width` field of its own in the vast majority of real specs, so
+-- without intervention vega-lite silently falls back to its own ~200px
+-- built-in default, regardless of how wide the surrounding
+-- `.richmd-diagram` panel actually is (confirmed via direct browser
+-- inspection — see richmd_measure_width_js's own comment above). The target
+-- container's actual rendered width is measured at call time (never at
+-- Lua/build time, which cannot know it) via richmdMeasureVegaWidth, and
+-- injected as the spec's `width` ONLY when the author's own spec did not
+-- already set one explicitly (`typeof spec.width !== "undefined"` — the
+-- author's explicit choice always wins, never overridden, exactly like
+-- richmd_merge_config_js's "author wins" rule for `config`). A `window
+-- .addEventListener("resize", ...)` (lightly debounced via
+-- `requestAnimationFrame` so a drag-resize doesn't fire dozens of
+-- back-to-back vegaEmbed calls) re-runs the SAME embedRichmdVega_<id>
+-- function on every resize, re-measuring and re-injecting the width fresh
+-- each time — reusing the identical "re-parse spec from source, rebuild
+-- config/width, call vegaEmbed" code path the theme-toggle re-render already
+-- uses (richmdDiagramRerenders), rather than a second, divergent resize-only
+-- code path.
+--
 -- Offline bundling (RICHMD_OFFLINE=1) is not yet implemented for
 -- vega-lite in this chunk — see the module-level note below.
 local function render(block, resolved_attrs)
@@ -344,6 +416,9 @@ local function render(block, resolved_attrs)
     .. "    "
     .. richmd_merge_config_js()
     .. "\n"
+    .. "    "
+    .. richmd_measure_width_js()
+    .. "\n"
     .. "    function embedRichmdVega_"
     .. fn_suffix
     .. "() {\n"
@@ -358,6 +433,12 @@ local function render(block, resolved_attrs)
     .. ")(colors);\n"
     .. "      var mergedConfig = richmdMergeConfig(baseConfig, spec.config || {});\n"
     .. "      var mergedSpec = Object.assign({}, spec, { config: mergedConfig });\n"
+    .. "      if (typeof mergedSpec.width === 'undefined') {\n"
+    .. "        var measuredWidth = richmdMeasureVegaWidth(containerEl);\n"
+    .. "        if (measuredWidth !== null) {\n"
+    .. "          mergedSpec.width = measuredWidth;\n"
+    .. "        }\n"
+    .. "      }\n"
     .. "      vegaEmbed('#"
     .. container_id
     .. "', mergedSpec, { actions: false });\n"
@@ -369,6 +450,28 @@ local function render(block, resolved_attrs)
     .. "    embedRichmdVega_"
     .. fn_suffix
     .. "();\n"
+    .. "    var resizeRaf_"
+    .. fn_suffix
+    .. " = null;\n"
+    .. "    window.addEventListener('resize', function () {\n"
+    .. "      if (resizeRaf_"
+    .. fn_suffix
+    .. " !== null) {\n"
+    .. "        cancelAnimationFrame(resizeRaf_"
+    .. fn_suffix
+    .. ");\n"
+    .. "      }\n"
+    .. "      resizeRaf_"
+    .. fn_suffix
+    .. " = requestAnimationFrame(function () {\n"
+    .. "        resizeRaf_"
+    .. fn_suffix
+    .. " = null;\n"
+    .. "        embedRichmdVega_"
+    .. fn_suffix
+    .. "();\n"
+    .. "      });\n"
+    .. "    });\n"
     .. "  })();\n"
     .. "</script>"
 
