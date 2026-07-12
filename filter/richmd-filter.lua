@@ -368,6 +368,200 @@ local function theme_style_html()
   return "<style>\n" .. css .. "\n</style>"
 end
 
+-- anti_flash_theme_script_html() -> string
+--
+-- A tiny inline <script>, emitted as the FIRST child of .richmd-doc (ahead
+-- of the topbar and the container), so it runs before the browser paints
+-- any of the doc's actual content. It reads a previously-persisted user
+-- choice back out of localStorage and — if one exists — applies it to
+-- .richmd-doc's data-richmd-theme attribute immediately, synchronously,
+-- before first paint. Without this, a returning reader with a stored "dark"
+-- preference would see a flash of the light theme (CSS's
+-- prefers-color-scheme default) before the toggle script further down the
+-- page ever got a chance to run. No dependency on DOMContentLoaded here on
+-- purpose: .richmd-doc already exists in the parse tree by the time this
+-- inline script tag itself runs (it's the previous sibling), so this can
+-- run synchronously as the parser reaches it — that's what "before first
+-- paint" requires.
+local function anti_flash_theme_script_html()
+  return [[<script>
+  (function () {
+    try {
+      var stored = localStorage.getItem("richmd-theme");
+      if (stored === "light" || stored === "dark") {
+        document.currentScript.parentElement.setAttribute("data-richmd-theme", stored);
+      }
+    } catch (e) {}
+  })();
+</script>]]
+end
+
+-- theme_toggle_script_html() -> string
+--
+-- The toggle button's click-handling script (design.md §07's existing
+-- "inject... into every rendered page" responsibility, extended to a small
+-- inline behavior alongside the stylesheet — no CDN, no framework, matching
+-- the plain-inline-<script> pattern filter/blocks/mermaid.lua already uses
+-- for its own runtime). Reads/writes the SAME "richmd-theme" localStorage
+-- key the anti-flash script above reads, toggles data-richmd-theme on the
+-- nearest .richmd-doc ancestor, and updates the button's icon+label to
+-- reflect the theme now active. Deferred to DOMContentLoaded (unlike the
+-- anti-flash script) since it only needs to attach a click listener, not
+-- race first paint.
+local function theme_toggle_script_html()
+  return [[<script>
+  (function () {
+    // Reflects the theme CURRENTLY ACTIVE, not the theme a click would
+    // switch to: sun icon + "Light" label when light is active, moon icon +
+    // "Dark" label when dark is active (acceptance criteria's exact
+    // contract) — never the inverse "what you'd switch to" convention some
+    // toggle designs use instead.
+    function applyToggleLabel(button, activeTheme) {
+      var icon = button.querySelector(".richmd-theme-toggle-icon");
+      var label = button.querySelector(".richmd-theme-toggle-label");
+      if (activeTheme === "dark") {
+        if (icon) icon.textContent = "☽";
+        if (label) label.textContent = "Dark";
+      } else {
+        if (icon) icon.textContent = "☀";
+        if (label) label.textContent = "Light";
+      }
+    }
+
+    function currentTheme(docEl) {
+      var attr = docEl.getAttribute("data-richmd-theme");
+      if (attr === "light" || attr === "dark") {
+        return attr;
+      }
+      var prefersDark =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches;
+      return prefersDark ? "dark" : "light";
+    }
+
+    function init() {
+      var docEl = document.querySelector(".richmd-doc");
+      var button = document.querySelector(".richmd-theme-toggle");
+      if (!docEl || !button) return;
+
+      applyToggleLabel(button, currentTheme(docEl));
+
+      button.addEventListener("click", function () {
+        var next = currentTheme(docEl) === "dark" ? "light" : "dark";
+        docEl.setAttribute("data-richmd-theme", next);
+        try {
+          localStorage.setItem("richmd-theme", next);
+        } catch (e) {}
+        applyToggleLabel(button, next);
+      });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", init);
+    } else {
+      init();
+    }
+  })();
+</script>]]
+end
+
+-- theme_toggle_button_html() -> string
+--
+-- The toggle button's markup: theme/default.css's .richmd-theme-toggle rule
+-- (§12 THEME TOGGLE) expects an inline-flex button containing a small icon
+-- element followed by label text — this emits exactly that shape (an icon
+-- span, then a label span), with no inline style/color of its own (§00
+-- principle P3: style is swappable, never hardcoded — every visual property
+-- comes from the .richmd-theme-toggle CSS rule this button's class
+-- selects). Initial icon/label reflects the light default; the toggle
+-- script corrects it immediately on load to match whatever theme (OS
+-- preference or stored choice) is actually active, so there's no
+-- user-visible mismatch even before JS runs (the button text is not part of
+-- the anti-flash concern — only page background/text colors are, and those
+-- are handled by the anti-flash script above and by CSS itself).
+local function theme_toggle_button_html()
+  return '<button type="button" class="richmd-theme-toggle" aria-label="Toggle color theme">'
+    .. '<span class="richmd-theme-toggle-icon">\xE2\x98\x80</span>'
+    .. '<span class="richmd-theme-toggle-label">Light</span>'
+    .. "</button>"
+end
+
+-- topbar_html() -> string
+--
+-- The `.richmd-topbar` chrome (theme/default.css §12): brand text on the
+-- left, the theme toggle button on the right. Plain RawBlock HTML, exactly
+-- like every other kind's render_fn already emits (e.g.
+-- filter/blocks/mermaid.lua's panel_html) — no new templating mechanism
+-- introduced here.
+local function topbar_html()
+  return '<div class="richmd-topbar">'
+    .. '<div class="richmd-brand">richmd</div>'
+    .. theme_toggle_button_html()
+    .. "</div>"
+end
+
+-- wrap_blocks_in_page_shell(blocks) -> pandoc.List(Block)
+--
+-- Wraps the whole rendered document in the .richmd-doc / .richmd-container
+-- shell theme/default.css already fully styles (§00: this is additive
+-- structure only, never a new renderer/kind — every existing block-kind's
+-- own output, already independently correct, is carried through completely
+-- unchanged as the content of `.richmd-container`).
+--
+-- Pandoc's Lua filter API has no hook that wraps the HTML writer's <body>
+-- tag itself (the writer owns the <body>...</body> shell via its built-in
+-- template; header-includes only reaches <head>). The documented way to
+-- wrap the whole rendered page's content is the one used here: return a
+-- modified top-level Blocks list from Pandoc(doc) with a single outer
+-- pandoc.Div wrapping everything — the HTML writer renders a Div as a
+-- <div>, so one Div with class "richmd-doc" containing the anti-flash
+-- script + topbar + a nested Div with class "richmd-container" (holding the
+-- ORIGINAL blocks, unmodified) produces exactly
+-- <body><div class="richmd-doc">...<div class="richmd-container">...
+-- ...</div></div></body> — this is real AST-level structure, not
+-- string post-processing of Pandoc's own output (which would be fragile and
+-- inconsistent with richmd's AST-based architecture everywhere else).
+--
+-- No data-richmd-theme attribute is set on .richmd-doc here: the CSS's
+-- prefers-color-scheme media query is the correct default (theme/default.css
+-- §1b) for a page nobody has interacted with yet, and forcing a literal
+-- "light" or "dark" value here would override that OS-driven default for
+-- every reader on first visit, which is not richmd's call to make. Once a
+-- reader clicks the toggle, the toggle script (theme_toggle_script_html)
+-- sets the attribute directly on the live DOM node and persists the choice;
+-- the anti-flash script re-applies a stored choice, if any, on the next
+-- load — but a first-ever render never carries a hardcoded value.
+local function wrap_blocks_in_page_shell(blocks)
+  -- Pandoc's HTML writer (Text.Pandoc.Shared.makeSections, run unconditionally
+  -- inside every writer, independent of --section-divs) auto-converts ANY Div
+  -- whose FIRST child block is a Header into an HTML <section> tag, merging
+  -- the Div's classes onto that section and MOVING the header's own `id`
+  -- attribute off the <h*> tag and onto the <section> instead. Almost every
+  -- richmd document starts with a top-level heading, so `.richmd-container`
+  -- (wrapping `blocks` directly) is exactly the shape this transform matches
+  -- — left alone, it would silently rewrite `.richmd-container` into
+  -- `<section class="richmd-container">` AND strip the `id` off the
+  -- document's first heading, breaking any `#fragment` cross-document link
+  -- resolved against that heading's slug (render_only_header/
+  -- render_only_link above — a real regression, not cosmetic). A leading
+  -- zero-content RawBlock defeats the pattern match (it requires the Div's
+  -- first list element to literally be a Header) without affecting Pandoc's
+  -- normal section/heading handling anywhere else in the document, and
+  -- renders as an empty line with no visible or structural effect.
+  local container_children = pandoc.List(blocks)
+  container_children:insert(1, pandoc.RawBlock("html", ""))
+
+  local shell_children = pandoc.List({
+    pandoc.RawBlock("html", anti_flash_theme_script_html()),
+    pandoc.RawBlock("html", topbar_html()),
+    pandoc.Div(container_children, pandoc.Attr("", { "richmd-container" })),
+    pandoc.RawBlock("html", theme_toggle_script_html()),
+  })
+  return pandoc.List({
+    pandoc.Div(shell_children, pandoc.Attr("", { "richmd-doc" })),
+  })
+end
+
 -- Pass 2 (render phase): only reachable once the caller has already
 -- confirmed #errors == 0 (see Pandoc(doc) below). Independently re-derives
 -- each Div's kind via the same generic registry:lookup used in validate,
@@ -492,6 +686,14 @@ function Pandoc(doc)
   doc.meta["header-includes"] = pandoc.List({ pandoc.MetaBlocks({
     pandoc.RawBlock("html", theme_style_html()),
   }) })
+
+  -- Wrap the whole rendered document in the .richmd-doc/.richmd-topbar/
+  -- .richmd-container page shell (theme/default.css §2/§12) — every
+  -- block-kind's own already-correct output is carried through unchanged as
+  -- the shell's content; see wrap_blocks_in_page_shell's own comment for why
+  -- this is the correct (AST-level, not string-postprocessing) way to reach
+  -- what would otherwise require wrapping Pandoc's own <body> tag.
+  doc.blocks = wrap_blocks_in_page_shell(doc.blocks)
 
   return doc
 end
