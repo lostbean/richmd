@@ -222,3 +222,43 @@ describe("richmd render (duplicate headings, -1/-2 suffix rule)", () => {
     assert.match(html, /<h2 id="overview-2">/);
   });
 });
+
+// Slugs are a pure, documented function (design.md §00 invariant) using
+// GitHub-flavored rules: a multi-byte punctuation character (em-dash) must
+// be stripped cleanly, never left as a truncated byte producing U+FFFD; a
+// multi-byte letter (accented character) must be kept, not stripped.
+describe("richmd render (multi-byte UTF-8 punctuation in headings)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-headings-utf8-"));
+    mdPath = path.join(workDir, "headings-multibyte-punctuation.md");
+    htmlPath = path.join(workDir, "headings-multibyte-punctuation.html");
+    await cp(
+      path.join(fixturesDir, "headings-multibyte-punctuation.md"),
+      mdPath,
+    );
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+  });
+
+  it("strips an em-dash cleanly instead of leaving a replacement-character artifact", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /<h2 id="reports-retired">/);
+    assert.doesNotMatch(html, /�/);
+  });
+
+  it("keeps a multi-byte accented letter verbatim", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /<h2 id="naive-café">/);
+  });
+});
