@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120" width="240" height="120" role="img" aria-labelledby="richmd-example-svg-title">
+  <title id="richmd-example-svg-title">Uptime trending upward across the quarter</title>
+  <rect x="1" y="1" width="238" height="118" rx="12" fill="none" stroke="currentColor" stroke-width="2" opacity="0.25"/>
+  <polyline points="16,96 60,80 104,88 148,52 192,40 224,18"
+            fill="none" stroke="currentColor" stroke-width="4"
+            stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="16" cy="96" r="4" fill="currentColor"/>
+  <circle cx="60" cy="80" r="4" fill="currentColor"/>
+  <circle cx="104" cy="88" r="4" fill="currentColor"/>
+  <circle cx="148" cy="52" r="4" fill="currentColor"/>
+  <circle cx="192" cy="40" r="4" fill="currentColor"/>
+  <circle cx="224" cy="18" r="5" fill="currentColor"/>
+  <line x1="16" y1="108" x2="224" y2="108" stroke="currentColor" stroke-width="2" opacity="0.3"/>
+</svg>

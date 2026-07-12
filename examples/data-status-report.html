@@ -1,0 +1,1490 @@
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="generator" content="pandoc" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=yes"
+    />
+    <title>data-status-report</title>
+    <style>
+      code {
+        white-space: pre-wrap;
+      }
+      span.smallcaps {
+        font-variant: small-caps;
+      }
+      div.columns {
+        display: flex;
+        gap: min(4vw, 1.5em);
+      }
+      div.column {
+        flex: auto;
+        overflow-x: auto;
+      }
+      div.hanging-indent {
+        margin-left: 1.5em;
+        text-indent: -1.5em;
+      }
+      /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+      ul.task-list[class] {
+        list-style: none;
+      }
+      ul.task-list li input[type="checkbox"] {
+        font-size: inherit;
+        width: 0.8em;
+        margin: 0 0.8em 0.2em -1.6em;
+        vertical-align: middle;
+      }
+      .display.math {
+        display: block;
+        text-align: center;
+        margin: 0.5rem auto;
+      }
+    </style>
+    <style>
+      /* ============================================================================
+     richmd — default report theme
+     A single CSS asset, styled entirely through --richmd-* custom properties.
+     Drop this file next to a richmd-generated report and it just works; override
+     any variable (at :root, or on a subtree) to reskin without touching markup.
+
+     Contract summary — three property groups:
+       1. --richmd-color-*     colors, ramps and semantic aliases (themeable)
+       2. --richmd-space-* / --richmd-radius-* / --richmd-shadow-*   scale tokens
+       3. --richmd-font-* / --richmd-text-*                          type tokens
+     Light is the default; dark activates automatically via prefers-color-scheme,
+     or force either mode with data-richmd-theme="light" | "dark" on <html> (or
+     any ancestor of .richmd-doc) — that attribute always wins over OS preference.
+     ========================================================================= */
+
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap");
+
+      /* ---------------------------------------------------------------------------
+     1. TOKENS — light theme (default) — "Bright Lab": cool paper ground,
+     vivid indigo/cyan accents, geometric type.
+     ------------------------------------------------------------------------ */
+      :root {
+        color-scheme: light;
+
+        /* base surfaces & text */
+        --richmd-color-bg: #f6f7fb;
+        --richmd-color-bg-alt: #edeff6; /* zebra rows, code bg, inset panels */
+        --richmd-color-surface: #ffffff; /* cards, stat tiles, TOC panel */
+        --richmd-color-surface-2: #eef0f7; /* nested surface (card-on-card) */
+        --richmd-color-border: rgba(15, 23, 42, 0.1);
+        --richmd-color-border-strong: rgba(15, 23, 42, 0.22);
+        --richmd-color-text: #12172b;
+        --richmd-color-text-muted: rgba(18, 23, 43, 0.62);
+        --richmd-color-text-faint: rgba(18, 23, 43, 0.4);
+        --richmd-color-link: #4338ca;
+        --richmd-color-link-hover: #312493;
+        --richmd-color-selection: rgba(79, 70, 229, 0.22);
+
+        /* accent ramp — vivid indigo (primary voice: links, TOC active, primary badges) */
+        --richmd-accent-100: #eef0fe;
+        --richmd-accent-300: #b7bcfa;
+        --richmd-accent-500: #4f46e5;
+        --richmd-accent-700: #362f9e;
+        --richmd-accent-900: #201a5c;
+
+        /* accent-2 ramp — vivid cyan (secondary voice: success states, alt badges) */
+        --richmd-accent2-100: #e3f9fc;
+        --richmd-accent2-300: #99e6f0;
+        --richmd-accent2-500: #0891b2;
+        --richmd-accent2-700: #0a5a70;
+        --richmd-accent2-900: #073445;
+
+        /* semantic ramps — callouts, badges, stat deltas */
+        --richmd-info-100: #e7f0fe;
+        --richmd-info-300: #a9c6f5;
+        --richmd-info-500: #2563eb;
+        --richmd-info-700: #1c3f8f;
+        --richmd-warning-100: #fef3e0;
+        --richmd-warning-300: #f5cc7d;
+        --richmd-warning-500: #d97706;
+        --richmd-warning-700: #92500a;
+        --richmd-danger-100: #fde8e8;
+        --richmd-danger-300: #f2a5a5;
+        --richmd-danger-500: #dc2626;
+        --richmd-danger-700: #932020;
+
+        /* semantic aliases — use these in components, not raw ramp steps */
+        --richmd-color-accent-tint: var(--richmd-accent-100);
+        --richmd-color-accent-solid: var(--richmd-accent-500);
+        --richmd-color-accent-solid-hover: var(--richmd-accent-700);
+        --richmd-color-accent-text: var(--richmd-accent-700);
+        --richmd-color-accent2-tint: var(--richmd-accent2-100);
+        --richmd-color-accent2-solid: var(--richmd-accent2-500);
+        --richmd-color-accent2-text: var(--richmd-accent2-700);
+        --richmd-color-info-tint: var(--richmd-info-100);
+        --richmd-color-info-border: var(--richmd-info-300);
+        --richmd-color-info-solid: var(--richmd-info-500);
+        --richmd-color-info-text: var(--richmd-info-700);
+        --richmd-color-warning-tint: var(--richmd-warning-100);
+        --richmd-color-warning-border: var(--richmd-warning-300);
+        --richmd-color-warning-solid: var(--richmd-warning-500);
+        --richmd-color-warning-text: var(--richmd-warning-700);
+        --richmd-color-danger-tint: var(--richmd-danger-100);
+        --richmd-color-danger-border: var(--richmd-danger-300);
+        --richmd-color-danger-solid: var(--richmd-danger-500);
+        --richmd-color-danger-text: var(--richmd-danger-700);
+
+        /* type */
+        --richmd-font-heading:
+          "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+        --richmd-font-heading-weight: 600;
+        --richmd-font-body:
+          "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+        --richmd-font-mono:
+          "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          monospace;
+
+        --richmd-text-xs: 12px;
+        --richmd-text-sm: 14px;
+        --richmd-text-base: 16px;
+        --richmd-text-lg: 19px;
+        --richmd-text-xl: 24px;
+        --richmd-text-2xl: 30px;
+        --richmd-text-3xl: 39px;
+        --richmd-text-4xl: 50px;
+        --richmd-line-height: 1.6;
+        --richmd-line-height-tight: 1.15;
+
+        /* scale */
+        --richmd-space-1: 4px;
+        --richmd-space-2: 8px;
+        --richmd-space-3: 12px;
+        --richmd-space-4: 16px;
+        --richmd-space-5: 24px;
+        --richmd-space-6: 32px;
+        --richmd-space-7: 48px;
+        --richmd-space-8: 64px;
+
+        --richmd-radius-sm: 6px;
+        --richmd-radius-md: 10px;
+        --richmd-radius-lg: 16px;
+        --richmd-radius-pill: 999px;
+
+        --richmd-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+        --richmd-shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
+        --richmd-shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.14);
+
+        --richmd-content-width: 760px;
+        --richmd-content-width-wide: 1080px;
+      }
+
+      /* ---------------------------------------------------------------------------
+     1b. TOKENS — dark theme. Same variable names, new values; OS-driven by
+     default, override-able with data-richmd-theme.
+     ------------------------------------------------------------------------ */
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-richmd-theme="light"]) {
+          --richmd-is-dark: 1;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-richmd-theme="light"]) {
+          color-scheme: dark;
+          --richmd-color-bg: #0b1020;
+          --richmd-color-bg-alt: #131a2e;
+          --richmd-color-surface: #161d34;
+          --richmd-color-surface-2: #1c2440;
+          --richmd-color-border: rgba(226, 232, 248, 0.1);
+          --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
+          --richmd-color-text: #e7ebf7;
+          --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
+          --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
+          --richmd-color-link: #a5b4fc;
+          --richmd-color-link-hover: #c7d2fe;
+          --richmd-color-selection: rgba(129, 140, 248, 0.3);
+
+          --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
+          --richmd-color-accent-solid: #818cf8;
+          --richmd-color-accent-solid-hover: #a5b4fc;
+          --richmd-color-accent-text: #a9b4fa;
+          --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
+          --richmd-color-accent2-solid: #22d3ee;
+          --richmd-color-accent2-text: #67e0f2;
+          --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
+          --richmd-color-info-border: rgba(147, 197, 253, 0.3);
+          --richmd-color-info-solid: #60a5fa;
+          --richmd-color-info-text: #93c5fd;
+          --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
+          --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
+          --richmd-color-warning-solid: #f0a828;
+          --richmd-color-warning-text: #fbc95f;
+          --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
+          --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
+          --richmd-color-danger-solid: #f87171;
+          --richmd-color-danger-text: #fca5a5;
+
+          --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+          --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+          --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+        }
+      }
+      /* Scoped overrides — data-richmd-theme set directly on .richmd-doc (or any
+     ancestor) must win over the OS media query regardless of where in the
+     tree it sits, not just at :root. */
+      .richmd-doc[data-richmd-theme="light"] {
+        color-scheme: light;
+        --richmd-color-bg: #f6f7fb;
+        --richmd-color-bg-alt: #edeff6;
+        --richmd-color-surface: #ffffff;
+        --richmd-color-surface-2: #eef0f7;
+        --richmd-color-border: rgba(15, 23, 42, 0.1);
+        --richmd-color-border-strong: rgba(15, 23, 42, 0.22);
+        --richmd-color-text: #12172b;
+        --richmd-color-text-muted: rgba(18, 23, 43, 0.62);
+        --richmd-color-text-faint: rgba(18, 23, 43, 0.4);
+        --richmd-color-link: #4338ca;
+        --richmd-color-link-hover: #312493;
+        --richmd-color-selection: rgba(79, 70, 229, 0.22);
+        --richmd-color-accent-tint: var(--richmd-accent-100);
+        --richmd-color-accent-solid: var(--richmd-accent-500);
+        --richmd-color-accent-solid-hover: var(--richmd-accent-700);
+        --richmd-color-accent-text: var(--richmd-accent-700);
+        --richmd-color-accent2-tint: var(--richmd-accent2-100);
+        --richmd-color-accent2-solid: var(--richmd-accent2-500);
+        --richmd-color-accent2-text: var(--richmd-accent2-700);
+        --richmd-color-info-tint: var(--richmd-info-100);
+        --richmd-color-info-border: var(--richmd-info-300);
+        --richmd-color-info-solid: var(--richmd-info-500);
+        --richmd-color-info-text: var(--richmd-info-700);
+        --richmd-color-warning-tint: var(--richmd-warning-100);
+        --richmd-color-warning-border: var(--richmd-warning-300);
+        --richmd-color-warning-solid: var(--richmd-warning-500);
+        --richmd-color-warning-text: var(--richmd-warning-700);
+        --richmd-color-danger-tint: var(--richmd-danger-100);
+        --richmd-color-danger-border: var(--richmd-danger-300);
+        --richmd-color-danger-solid: var(--richmd-danger-500);
+        --richmd-color-danger-text: var(--richmd-danger-700);
+        --richmd-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+        --richmd-shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
+        --richmd-shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.14);
+      }
+      .richmd-doc[data-richmd-theme="dark"] {
+        color-scheme: dark;
+        --richmd-color-bg: #0b1020;
+        --richmd-color-bg-alt: #131a2e;
+        --richmd-color-surface: #161d34;
+        --richmd-color-surface-2: #1c2440;
+        --richmd-color-border: rgba(226, 232, 248, 0.1);
+        --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
+        --richmd-color-text: #e7ebf7;
+        --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
+        --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
+        --richmd-color-link: #a5b4fc;
+        --richmd-color-link-hover: #c7d2fe;
+        --richmd-color-selection: rgba(129, 140, 248, 0.3);
+        --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
+        --richmd-color-accent-solid: #818cf8;
+        --richmd-color-accent-solid-hover: #a5b4fc;
+        --richmd-color-accent-text: #a9b4fa;
+        --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
+        --richmd-color-accent2-solid: #22d3ee;
+        --richmd-color-accent2-text: #67e0f2;
+        --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
+        --richmd-color-info-border: rgba(147, 197, 253, 0.3);
+        --richmd-color-info-solid: #60a5fa;
+        --richmd-color-info-text: #93c5fd;
+        --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
+        --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
+        --richmd-color-warning-solid: #f0a828;
+        --richmd-color-warning-text: #fbc95f;
+        --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
+        --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
+        --richmd-color-danger-solid: #f87171;
+        --richmd-color-danger-text: #fca5a5;
+        --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+        --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+      }
+
+      :root[data-richmd-theme="dark"] {
+        color-scheme: dark;
+        --richmd-color-bg: #0b1020;
+        --richmd-color-bg-alt: #131a2e;
+        --richmd-color-surface: #161d34;
+        --richmd-color-surface-2: #1c2440;
+        --richmd-color-border: rgba(226, 232, 248, 0.1);
+        --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
+        --richmd-color-text: #e7ebf7;
+        --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
+        --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
+        --richmd-color-link: #a5b4fc;
+        --richmd-color-link-hover: #c7d2fe;
+        --richmd-color-selection: rgba(129, 140, 248, 0.3);
+        --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
+        --richmd-color-accent-solid: #818cf8;
+        --richmd-color-accent-solid-hover: #a5b4fc;
+        --richmd-color-accent-text: #a9b4fa;
+        --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
+        --richmd-color-accent2-solid: #22d3ee;
+        --richmd-color-accent2-text: #67e0f2;
+        --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
+        --richmd-color-info-border: rgba(147, 197, 253, 0.3);
+        --richmd-color-info-solid: #60a5fa;
+        --richmd-color-info-text: #93c5fd;
+        --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
+        --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
+        --richmd-color-warning-solid: #f0a828;
+        --richmd-color-warning-text: #fbc95f;
+        --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
+        --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
+        --richmd-color-danger-solid: #f87171;
+        --richmd-color-danger-text: #fca5a5;
+        --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+        --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+      }
+
+      /* ---------------------------------------------------------------------------
+     2. BASE — the report document shell
+     ------------------------------------------------------------------------ */
+      .richmd-doc,
+      .richmd-doc *,
+      .richmd-doc *::before,
+      .richmd-doc *::after {
+        box-sizing: border-box;
+      }
+      .richmd-doc {
+        background: var(--richmd-color-bg);
+        color: var(--richmd-color-text);
+        font-family: var(--richmd-font-body);
+        font-size: var(--richmd-text-base);
+        line-height: var(--richmd-line-height);
+        transition:
+          background 0.15s ease,
+          color 0.15s ease;
+      }
+      .richmd-doc ::selection {
+        background: var(--richmd-color-selection);
+      }
+      .richmd-doc :focus {
+        outline: none;
+      }
+      .richmd-doc :focus-visible {
+        outline: 2px solid var(--richmd-color-accent-solid);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+
+      .richmd-container {
+        max-width: var(--richmd-content-width);
+        margin: 0 auto;
+        padding: var(--richmd-space-7) var(--richmd-space-5)
+          var(--richmd-space-8);
+      }
+      .richmd-container--wide {
+        max-width: var(--richmd-content-width-wide);
+      }
+
+      /* headings + stable anchors */
+      .richmd-doc h1,
+      .richmd-doc h2,
+      .richmd-doc h3,
+      .richmd-doc h4,
+      .richmd-doc h5,
+      .richmd-doc h6 {
+        font-family: var(--richmd-font-heading);
+        font-weight: var(--richmd-font-heading-weight);
+        line-height: var(--richmd-line-height-tight);
+        letter-spacing: -0.01em;
+        margin: var(--richmd-space-7) 0 var(--richmd-space-3);
+        scroll-margin-top: var(--richmd-space-5);
+      }
+      .richmd-doc h1:first-child,
+      .richmd-doc h2:first-child {
+        margin-top: 0;
+      }
+      .richmd-doc h1 {
+        font-size: var(--richmd-text-4xl);
+      }
+      .richmd-doc h2 {
+        font-size: var(--richmd-text-3xl);
+        margin-top: var(--richmd-space-8);
+      }
+      .richmd-doc h3 {
+        font-size: var(--richmd-text-2xl);
+      }
+      .richmd-doc h4 {
+        font-size: var(--richmd-text-xl);
+        font-family: var(--richmd-font-body);
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+      .richmd-doc h5 {
+        font-size: var(--richmd-text-lg);
+        font-family: var(--richmd-font-body);
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+      .richmd-doc h6 {
+        font-size: var(--richmd-text-sm);
+        font-family: var(--richmd-font-body);
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--richmd-color-text-muted);
+      }
+
+      .richmd-heading {
+        display: flex;
+        align-items: baseline;
+        gap: var(--richmd-space-2);
+      }
+      .richmd-anchor {
+        font-family: var(--richmd-font-body);
+        font-weight: 500;
+        font-size: 0.55em;
+        color: var(--richmd-color-text-faint);
+        text-decoration: none;
+        opacity: 0;
+        transition: opacity 0.12s ease;
+      }
+      .richmd-heading:hover .richmd-anchor,
+      .richmd-anchor:focus-visible {
+        opacity: 1;
+      }
+      .richmd-anchor:hover {
+        color: var(--richmd-color-accent-text);
+      }
+
+      .richmd-doc p {
+        margin: 0 0 var(--richmd-space-4);
+      }
+      .richmd-doc a {
+        color: var(--richmd-color-link);
+        text-underline-offset: 3px;
+      }
+      .richmd-doc a:hover {
+        color: var(--richmd-color-link-hover);
+      }
+      .richmd-lede {
+        font-size: var(--richmd-text-lg);
+        color: var(--richmd-color-text-muted);
+        margin-bottom: var(--richmd-space-6);
+      }
+
+      .richmd-doc ul,
+      .richmd-doc ol {
+        margin: 0 0 var(--richmd-space-4);
+        padding-left: 1.3em;
+      }
+      .richmd-doc li {
+        margin-bottom: var(--richmd-space-1);
+      }
+      .richmd-doc li::marker {
+        color: var(--richmd-color-accent-text);
+      }
+
+      .richmd-doc blockquote {
+        margin: var(--richmd-space-5) 0;
+        padding: var(--richmd-space-3) var(--richmd-space-5);
+        border-left: 3px solid var(--richmd-color-accent-solid);
+        color: var(--richmd-color-text-muted);
+        font-style: italic;
+      }
+      .richmd-doc blockquote p:last-child {
+        margin-bottom: 0;
+      }
+
+      .richmd-doc img {
+        display: block;
+        max-width: 100%;
+        border-radius: var(--richmd-radius-md);
+      }
+      .richmd-doc figure {
+        margin: var(--richmd-space-5) 0;
+      }
+      .richmd-doc figcaption {
+        font-size: var(--richmd-text-xs);
+        margin-top: var(--richmd-space-2);
+        color: var(--richmd-color-text-faint);
+        text-align: center;
+      }
+
+      .richmd-doc code {
+        font-family: var(--richmd-font-mono);
+        font-size: 0.87em;
+        background: var(--richmd-color-bg-alt);
+        padding: 0.15em 0.4em;
+        border-radius: 5px;
+      }
+      .richmd-doc pre {
+        margin: var(--richmd-space-5) 0;
+        padding: var(--richmd-space-4);
+        background: var(--richmd-color-bg-alt);
+        border: 1px solid var(--richmd-color-border);
+        border-radius: var(--richmd-radius-md);
+        overflow-x: auto;
+      }
+      .richmd-doc pre code {
+        background: none;
+        padding: 0;
+        font-size: 0.85em;
+        line-height: 1.55;
+      }
+
+      .richmd-hr {
+        height: 1px;
+        border: 0;
+        margin: var(--richmd-space-7) 0;
+        background: var(--richmd-color-border);
+      }
+
+      /* ---------------------------------------------------------------------------
+     3. TABLE OF CONTENTS
+     ------------------------------------------------------------------------ */
+      .richmd-toc {
+        background: var(--richmd-color-surface);
+        border: 1px solid var(--richmd-color-border);
+        border-radius: var(--richmd-radius-lg);
+        padding: var(--richmd-space-5);
+        margin-bottom: var(--richmd-space-7);
+      }
+      .richmd-toc-title {
+        font-size: var(--richmd-text-xs);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--richmd-color-text-muted);
+        margin-bottom: var(--richmd-space-3);
+      }
+      .richmd-toc-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        columns: 2;
+        column-gap: var(--richmd-space-6);
+      }
+      .richmd-toc-list li {
+        margin-bottom: var(--richmd-space-1);
+        break-inside: avoid;
+      }
+      .richmd-toc-list a {
+        display: block;
+        color: var(--richmd-color-text);
+        text-decoration: none;
+        padding: 3px 0;
+        border-radius: 6px;
+      }
+      .richmd-toc-list a:hover {
+        color: var(--richmd-color-accent-text);
+      }
+      .richmd-toc-list .richmd-toc-sub {
+        padding-left: var(--richmd-space-4);
+        font-size: var(--richmd-text-sm);
+        color: var(--richmd-color-text-muted);
+      }
+
+      /* ---------------------------------------------------------------------------
+     4. CALLOUTS
+     ------------------------------------------------------------------------ */
+      .richmd-callout {
+        display: flex;
+        gap: var(--richmd-space-3);
+        margin: var(--richmd-space-5) 0;
+        padding: var(--richmd-space-4) var(--richmd-space-5);
+        border-radius: var(--richmd-radius-md);
+        border: 1px solid;
+        font-size: var(--richmd-text-sm);
+      }
+      .richmd-callout-icon {
+        flex: none;
+        width: 20px;
+        height: 20px;
+        margin-top: 0.1em;
+      }
+      .richmd-callout-body p:last-child {
+        margin-bottom: 0;
+      }
+      .richmd-callout-title {
+        display: block;
+        font-weight: 700;
+        margin-bottom: var(--richmd-space-1);
+      }
+      .richmd-callout--info {
+        background: var(--richmd-color-info-tint);
+        border-color: var(--richmd-color-info-border);
+        color: var(--richmd-color-info-text);
+      }
+      .richmd-callout--warning {
+        background: var(--richmd-color-warning-tint);
+        border-color: var(--richmd-color-warning-border);
+        color: var(--richmd-color-warning-text);
+      }
+      .richmd-callout--danger {
+        background: var(--richmd-color-danger-tint);
+        border-color: var(--richmd-color-danger-border);
+        color: var(--richmd-color-danger-text);
+      }
+      .richmd-callout--info .richmd-callout-icon {
+        color: var(--richmd-color-info-solid);
+      }
+      .richmd-callout--warning .richmd-callout-icon {
+        color: var(--richmd-color-warning-solid);
+      }
+      .richmd-callout--danger .richmd-callout-icon {
+        color: var(--richmd-color-danger-solid);
+      }
+      .richmd-callout-body {
+        color: var(--richmd-color-text);
+      }
+
+      /* ---------------------------------------------------------------------------
+     5. CARD GRIDS
+     ------------------------------------------------------------------------ */
+      .richmd-card-grid {
+        display: grid;
+        gap: var(--richmd-space-4);
+        grid-template-columns: repeat(var(--richmd-cols, 3), 1fr);
+        margin: var(--richmd-space-5) 0;
+      }
+      .richmd-card-grid[data-cols="2"] {
+        --richmd-cols: 2;
+      }
+      .richmd-card-grid[data-cols="3"] {
+        --richmd-cols: 3;
+      }
+      .richmd-card-grid[data-cols="4"] {
+        --richmd-cols: 4;
+      }
+      @media (max-width: 720px) {
+        .richmd-card-grid {
+          --richmd-cols: 1 !important;
+        }
+      }
+      @media (min-width: 721px) and (max-width: 980px) {
+        .richmd-card-grid[data-cols="4"],
+        .richmd-card-grid[data-cols="3"] {
+          --richmd-cols: 2;
+        }
+      }
+
+      .richmd-card {
+        display: flex;
+        flex-direction: column;
+        gap: var(--richmd-space-2);
+        background: var(--richmd-color-surface);
+        border: 1px solid var(--richmd-color-border);
+        border-radius: var(--richmd-radius-lg);
+        padding: var(--richmd-space-4);
+        box-shadow: var(--richmd-shadow-sm);
+      }
+      .richmd-card-kicker {
+        font-size: var(--richmd-text-xs);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--richmd-color-accent-text);
+      }
+      .richmd-card-title {
+        font-family: var(--richmd-font-heading);
+        font-weight: var(--richmd-font-heading-weight);
+        font-size: var(--richmd-text-lg);
+      }
+      .richmd-card-body {
+        margin: 0;
+        font-size: var(--richmd-text-sm);
+        color: var(--richmd-color-text-muted);
+        flex: 1;
+      }
+      .richmd-card-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--richmd-space-2);
+        font-size: var(--richmd-text-xs);
+        color: var(--richmd-color-text-faint);
+      }
+
+      /* ---------------------------------------------------------------------------
+     6. STAT / KPI TILES
+     ------------------------------------------------------------------------ */
+      .richmd-stat-grid {
+        display: grid;
+        gap: var(--richmd-space-4);
+        grid-template-columns: repeat(var(--richmd-stat-cols, 4), 1fr);
+        margin: var(--richmd-space-5) 0;
+      }
+      @media (max-width: 720px) {
+        .richmd-stat-grid {
+          --richmd-stat-cols: 2 !important;
+        }
+      }
+      .richmd-stat {
+        background: var(--richmd-color-surface);
+        border: 1px solid var(--richmd-color-border);
+        border-radius: var(--richmd-radius-md);
+        padding: var(--richmd-space-4);
+      }
+      .richmd-stat-label {
+        font-size: var(--richmd-text-xs);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--richmd-color-text-muted);
+        margin-bottom: var(--richmd-space-2);
+      }
+      .richmd-stat-value {
+        font-family: var(--richmd-font-heading);
+        font-weight: var(--richmd-font-heading-weight);
+        font-size: var(--richmd-text-3xl);
+        line-height: 1;
+      }
+      .richmd-stat-delta {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: var(--richmd-text-xs);
+        font-weight: 600;
+        margin-top: var(--richmd-space-2);
+      }
+      .richmd-stat-delta--up {
+        color: var(--richmd-color-accent2-text);
+      }
+      .richmd-stat-delta--down {
+        color: var(--richmd-color-danger-text);
+      }
+
+      /* ---------------------------------------------------------------------------
+     7. BADGES / PILLS
+     ------------------------------------------------------------------------ */
+      .richmd-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: var(--richmd-text-xs);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        padding: 3px 11px;
+        border-radius: var(--richmd-radius-pill);
+        white-space: nowrap;
+      }
+      .richmd-badge--accent {
+        background: var(--richmd-color-accent-tint);
+        color: var(--richmd-color-accent-text);
+      }
+      .richmd-badge--accent2 {
+        background: var(--richmd-color-accent2-tint);
+        color: var(--richmd-color-accent2-text);
+      }
+      .richmd-badge--info {
+        background: var(--richmd-color-info-tint);
+        color: var(--richmd-color-info-text);
+      }
+      .richmd-badge--warning {
+        background: var(--richmd-color-warning-tint);
+        color: var(--richmd-color-warning-text);
+      }
+      .richmd-badge--danger {
+        background: var(--richmd-color-danger-tint);
+        color: var(--richmd-color-danger-text);
+      }
+      .richmd-badge--neutral {
+        background: var(--richmd-color-bg-alt);
+        color: var(--richmd-color-text-muted);
+      }
+      .richmd-badge--outline {
+        background: transparent;
+        border: 1px solid var(--richmd-color-border-strong);
+        color: var(--richmd-color-text-muted);
+      }
+
+      /* ---------------------------------------------------------------------------
+     8. DETAILS / DISCLOSURE
+     ------------------------------------------------------------------------ */
+      .richmd-details {
+        background: var(--richmd-color-surface);
+        border: 1px solid var(--richmd-color-border);
+        border-radius: var(--richmd-radius-md);
+        margin: var(--richmd-space-4) 0;
+        overflow: hidden;
+      }
+      .richmd-details > summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: var(--richmd-space-2);
+        padding: var(--richmd-space-3) var(--richmd-space-4);
+        font-weight: 600;
+        font-size: var(--richmd-text-sm);
+        user-select: none;
+      }
+      .richmd-details > summary::-webkit-details-marker {
+        display: none;
+      }
+      .richmd-details > summary::before {
+        content: "";
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-right: 2px solid var(--richmd-color-accent-solid);
+        border-bottom: 2px solid var(--richmd-color-accent-solid);
+        transform: rotate(-45deg);
+        transition: transform 0.15s ease;
+        margin-right: 2px;
+      }
+      .richmd-details[open] > summary::before {
+        transform: rotate(45deg);
+      }
+      .richmd-details > summary:focus-visible {
+        outline: 2px solid var(--richmd-color-accent-solid);
+        outline-offset: -2px;
+      }
+      .richmd-details-body {
+        padding: 0 var(--richmd-space-4) var(--richmd-space-4);
+        font-size: var(--richmd-text-sm);
+        color: var(--richmd-color-text-muted);
+      }
+      .richmd-details-body p:last-child {
+        margin-bottom: 0;
+      }
+
+      /* ---------------------------------------------------------------------------
+     9. STATEMENT BLOCKS (goals / no-goals / invariants / principles)
+     ------------------------------------------------------------------------ */
+      .richmd-statement {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: var(--richmd-space-4);
+        padding: var(--richmd-space-3) 0;
+        border-top: 1px solid var(--richmd-color-border);
+      }
+      .richmd-statement:first-of-type {
+        border-top: none;
+      }
+      .richmd-statement-label {
+        font-weight: 700;
+        font-size: var(--richmd-text-sm);
+        color: var(--richmd-color-accent-text);
+      }
+      .richmd-statement-body {
+        font-size: var(--richmd-text-sm);
+        color: var(--richmd-color-text);
+        margin: 0;
+      }
+      @media (max-width: 640px) {
+        .richmd-statement {
+          grid-template-columns: 1fr;
+          gap: var(--richmd-space-1);
+        }
+      }
+
+      /* ---------------------------------------------------------------------------
+     10. DIAGRAMS — mermaid + vega-lite + generic svg figures
+     ------------------------------------------------------------------------ */
+      .richmd-diagram {
+        background: var(--richmd-color-surface);
+        border: 1px solid var(--richmd-color-border);
+        border-radius: var(--richmd-radius-lg);
+        padding: var(--richmd-space-5);
+        margin: var(--richmd-space-5) 0;
+        overflow-x: auto;
+      }
+      .richmd-diagram-title {
+        font-size: var(--richmd-text-xs);
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--richmd-color-text-muted);
+        margin-bottom: var(--richmd-space-3);
+      }
+      .richmd-mermaid {
+        display: flex;
+        justify-content: center;
+      }
+      .richmd-vega {
+        display: block;
+        width: 100%;
+      }
+      .richmd-mermaid svg,
+      .richmd-vega svg,
+      .richmd-vega canvas {
+        max-width: 100%;
+      }
+
+      /* ---------------------------------------------------------------------------
+     11. TABLES
+     ------------------------------------------------------------------------ */
+      .richmd-table-wrap {
+        overflow-x: auto;
+        margin: var(--richmd-space-5) 0;
+        border: 1px solid var(--richmd-color-border);
+        border-radius: var(--richmd-radius-md);
+      }
+      .richmd-doc table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: var(--richmd-text-sm);
+        min-width: 480px;
+      }
+      .richmd-doc th {
+        text-align: left;
+        font-size: var(--richmd-text-xs);
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--richmd-color-text-muted);
+        padding: var(--richmd-space-3);
+        background: var(--richmd-color-bg-alt);
+        border-bottom: 1px solid var(--richmd-color-border);
+        white-space: nowrap;
+      }
+      .richmd-doc td {
+        padding: var(--richmd-space-3);
+        border-bottom: 1px solid var(--richmd-color-border);
+      }
+      .richmd-doc tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .richmd-doc tbody tr:hover {
+        background: var(--richmd-color-bg-alt);
+      }
+
+      /* ---------------------------------------------------------------------------
+     12. THEME TOGGLE (optional chrome a report may include)
+     ------------------------------------------------------------------------ */
+      .richmd-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--richmd-space-4);
+        padding: var(--richmd-space-3) var(--richmd-space-5);
+        border-bottom: 1px solid var(--richmd-color-border);
+      }
+      .richmd-brand {
+        font-family: var(--richmd-font-heading);
+        font-weight: var(--richmd-font-heading-weight);
+        font-size: var(--richmd-text-lg);
+      }
+      .richmd-theme-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        font-family: var(--richmd-font-body);
+        font-size: var(--richmd-text-xs);
+        font-weight: 600;
+        background: var(--richmd-color-surface);
+        border: 1px solid var(--richmd-color-border-strong);
+        padding: 6px 12px;
+        border-radius: var(--richmd-radius-pill);
+        color: var(--richmd-color-text);
+      }
+      .richmd-theme-toggle:hover {
+        background: var(--richmd-color-bg-alt);
+      }
+
+      /* ---------------------------------------------------------------------------
+     13. RESPONSIVE
+     ------------------------------------------------------------------------ */
+      @media (max-width: 640px) {
+        .richmd-container {
+          padding: var(--richmd-space-5) var(--richmd-space-4)
+            var(--richmd-space-6);
+        }
+        .richmd-doc h1 {
+          font-size: var(--richmd-text-3xl);
+        }
+        .richmd-doc h2 {
+          font-size: var(--richmd-text-2xl);
+        }
+        .richmd-toc-list {
+          columns: 1;
+        }
+      }
+
+      /* ---------------------------------------------------------------------------
+     14. PRINT
+     ------------------------------------------------------------------------ */
+      @media print {
+        .richmd-doc {
+          background: #fff !important;
+          color: #111 !important;
+        }
+        .richmd-theme-toggle,
+        .richmd-anchor {
+          display: none !important;
+        }
+        .richmd-container {
+          max-width: 100%;
+          padding: 0;
+        }
+        .richmd-card,
+        .richmd-stat,
+        .richmd-toc,
+        .richmd-callout,
+        .richmd-diagram,
+        .richmd-details {
+          background: #fff !important;
+          box-shadow: none !important;
+          border: 1px solid #ccc !important;
+          break-inside: avoid;
+        }
+        .richmd-card-grid,
+        .richmd-stat-grid {
+          break-inside: avoid;
+        }
+        h1,
+        h2,
+        h3 {
+          break-after: avoid;
+        }
+        .richmd-table-wrap {
+          overflow: visible;
+          border-color: #ccc !important;
+        }
+        .richmd-doc table {
+          min-width: 0;
+        }
+        .richmd-details {
+          break-inside: avoid;
+        }
+        .richmd-details:not([open]) > summary::before {
+          content: "▸ ";
+          border: none;
+          transform: none;
+        }
+        a {
+          color: #111 !important;
+          text-decoration: underline;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="richmd-doc">
+      <script>
+        (function () {
+          try {
+            var stored = localStorage.getItem("richmd-theme");
+            if (stored === "light" || stored === "dark") {
+              document.currentScript.parentElement.setAttribute(
+                "data-richmd-theme",
+                stored,
+              );
+            }
+          } catch (e) {}
+        })();
+      </script>
+      <div class="richmd-topbar">
+        <div class="richmd-brand">richmd</div>
+        <button
+          type="button"
+          class="richmd-theme-toggle"
+          aria-label="Toggle color theme"
+        >
+          <span class="richmd-theme-toggle-icon">☀</span
+          ><span class="richmd-theme-toggle-label">Light</span>
+        </button>
+      </div>
+      <div class="richmd-container">
+        <h1 id="q2-platform-status">Q2 Platform Status</h1>
+        <div class="richmd-kicker">
+          <span class="richmd-card-kicker"
+            >INTERNAL — PLATFORM ENGINEERING</span
+          >
+        </div>
+        <p>
+          A quarterly look at platform health, reliability, and the work that
+          shaped it. This report covers April through June: uptime, latency,
+          incident load, and where the team is spending its time going into Q3.
+        </p>
+        <div class="richmd-toc">
+          <div class="richmd-toc-title">Contents</div>
+          <ul class="richmd-toc-list">
+            <li><a href="#q2-platform-status">Q2 Platform Status</a></li>
+            <li class="richmd-toc-sub">
+              <a href="#headline-numbers">Headline numbers</a>
+            </li>
+            <li class="richmd-toc-sub">
+              <a href="#reliability">Reliability</a>
+            </li>
+            <li class="richmd-toc-sub">
+              <a href="#what-shipped">What shipped</a>
+            </li>
+            <li class="richmd-toc-sub">
+              <a href="#operating-principles">Operating principles</a>
+            </li>
+            <li class="richmd-toc-sub">
+              <a href="#trend-at-a-glance">Trend at a glance</a>
+            </li>
+            <li class="richmd-toc-sub">
+              <a href="#incident-detail">Incident detail</a>
+            </li>
+            <li class="richmd-toc-sub">
+              <a href="#looking-ahead-to-q3">Looking ahead to Q3</a>
+            </li>
+          </ul>
+        </div>
+        <h2 id="headline-numbers">Headline numbers</h2>
+        <div class="richmd-stat-grid">
+          <div class="richmd-stat">
+            <div class="richmd-stat-label">uptime this quarter</div>
+            <div class="richmd-stat-value">99.97%</div>
+            <div class="richmd-stat-delta richmd-stat-delta--up">
+              ↑ 0.04 pts vs Q1
+            </div>
+          </div>
+        </div>
+        <div class="richmd-stat-grid">
+          <div class="richmd-stat">
+            <div class="richmd-stat-label">p50 API latency</div>
+            <div class="richmd-stat-value">142ms</div>
+            <div class="richmd-stat-delta richmd-stat-delta--up">
+              ↓ 18ms vs Q1
+            </div>
+          </div>
+        </div>
+        <div class="richmd-stat-grid">
+          <div class="richmd-stat">
+            <div class="richmd-stat-label">sev-1 incidents</div>
+            <div class="richmd-stat-value">6</div>
+            <div class="richmd-stat-delta richmd-stat-delta--down">
+              ↑ 2 vs Q1
+            </div>
+          </div>
+        </div>
+        <div class="richmd-stat-grid">
+          <div class="richmd-stat">
+            <div class="richmd-stat-label">requests / day (avg)</div>
+            <div class="richmd-stat-value">4.2M</div>
+          </div>
+        </div>
+        <div class="richmd-callout richmd-callout--warning">
+          <div class="richmd-callout-body">
+            <span class="richmd-callout-title">Watch item</span>
+            <p>
+              Sev-1 incidents ticked up this quarter, concentrated in the
+              billing webhook path (see
+              <a href="#reliability">Reliability</a> below). The root-cause
+              fixes are scoped for early Q3 — tracked as the top reliability
+              priority going into next quarter.
+            </p>
+          </div>
+        </div>
+        <h2 id="reliability">Reliability</h2>
+        <div class="richmd-kicker">
+          <span class="richmd-card-kicker">INCIDENTS &amp; UPTIME</span>
+        </div>
+        <p>
+          Five of the six sev-1s traced back to retry storms against a
+          downstream payments provider during its own degraded periods; the
+          sixth was a bad config push to the edge cache layer that was reverted
+          within nine minutes. Both failure classes now have dedicated
+          mitigation work queued.
+        </p>
+        <div class="richmd-mermaid-wrapper">
+          <div class="richmd-diagram">
+            <pre class="mermaid richmd-mermaid">
+graph TD
+    A[Request in] --&gt; B{Downstream healthy?}
+    B --&gt;|Yes| C[Serve normally]
+    B --&gt;|No, first failure| D[Retry with backoff]
+    D --&gt; E{Still failing?}
+    E --&gt;|Yes| F[Circuit breaker opens]
+    E --&gt;|No| C
+    F --&gt; G[Fail fast + queue for replay]
+    G --&gt; H[Replay once downstream recovers]</pre
+            >
+          </div>
+          <script type="module">
+            import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+            mermaid.initialize({ startOnLoad: true });
+          </script>
+        </div>
+        <p>
+          The chart below tracks sev-1 count per month against our quarterly
+          budget of two per month — April and May came in under budget; June’s
+          spike is the retry-storm cluster described above.
+        </p>
+        <div class="richmd-diagram-wrapper">
+          <div class="richmd-diagram">
+            <div id="richmd-vega-358892543" class="richmd-vega"></div>
+            <script type="application/json" class="richmd-vega-lite-spec">
+              {
+                "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+                "description": "Sev-1 incidents per month vs. budget",
+                "data": {
+                  "values": [
+                    { "month": "Apr", "incidents": 1, "budget": 2 },
+                    { "month": "May", "incidents": 1, "budget": 2 },
+                    { "month": "Jun", "incidents": 4, "budget": 2 }
+                  ]
+                },
+                "mark": "bar",
+                "encoding": {
+                  "x": {
+                    "field": "month",
+                    "type": "ordinal",
+                    "sort": null,
+                    "title": "Month"
+                  },
+                  "y": {
+                    "field": "incidents",
+                    "type": "quantitative",
+                    "title": "Sev-1 incidents"
+                  },
+                  "color": {
+                    "condition": {
+                      "test": "datum.incidents > datum.budget",
+                      "value": "#dc2626"
+                    },
+                    "value": "#4f46e5"
+                  }
+                }
+              }
+            </script>
+          </div>
+          <script src="https://cdn.jsdelivr.net/npm/vega@6"></script>
+          <script src="https://cdn.jsdelivr.net/npm/vega-lite@6"></script>
+          <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+          <script>
+            (function () {
+              var specEl = document.getElementById(
+                "richmd-vega-358892543",
+              ).nextElementSibling;
+              var spec = JSON.parse(specEl.textContent);
+              vegaEmbed("#richmd-vega-358892543", spec);
+            })();
+          </script>
+        </div>
+        <h2 id="what-shipped">What shipped</h2>
+        <div class="richmd-kicker">
+          <span class="richmd-card-kicker">Q2 DELIVERY</span>
+        </div>
+        <div class="richmd-card-grid" data-cols="3">
+          <div class="richmd-card">
+            <div class="richmd-card-title">Retry budget enforcement</div>
+            <div class="richmd-card-body">
+              <p>
+                Downstream calls now carry a shared retry budget instead of
+                per-request unbounded backoff — the mechanism directly
+                responsible for containing what would otherwise have been a
+                seventh sev-1 in late June.
+              </p>
+            </div>
+          </div>
+          <div class="richmd-card">
+            <div class="richmd-card-title">Read-replica autoscaling</div>
+            <div class="richmd-card-body">
+              <p>
+                The read path now scales replica count off real query latency
+                rather than a fixed schedule, cutting p50 API latency by 18ms
+                quarter over quarter.
+              </p>
+            </div>
+          </div>
+          <div class="richmd-card">
+            <div class="richmd-card-title">Config push canarying</div>
+            <div class="richmd-card-body">
+              <p>
+                Edge cache config changes now roll out to a single canary region
+                first and auto-revert on an error-rate spike, the direct fix for
+                the June config-push incident.
+              </p>
+            </div>
+          </div>
+        </div>
+        <h2 id="operating-principles">Operating principles</h2>
+        <div class="richmd-kicker">
+          <span class="richmd-card-kicker">HOW WE DECIDE</span>
+        </div>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong>Fail closed, not open</strong>
+          </div>
+          <p class="richmd-statement-body">
+            When a downstream dependency is unhealthy, the platform must degrade
+            to a safe, explicit failure rather than silently serving stale or
+            incorrect data.
+          </p>
+        </div>
+        <div class="richmd-statement">
+          <div class="richmd-statement-label">
+            <strong
+              >Every sev-1 gets a mitigation, not just a postmortem</strong
+            >
+          </div>
+          <p class="richmd-statement-body">
+            A sev-1 incident review is not considered closed until at least one
+            concrete mitigation (a code change, an alert, or a runbook update)
+            has shipped — a retrospective alone is not sufficient.
+          </p>
+        </div>
+        <h2 id="trend-at-a-glance">Trend at a glance</h2>
+        <div class="richmd-embedded-svg">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 240 120"
+            width="240"
+            height="120"
+            role="img"
+            aria-labelledby="richmd-example-svg-title"
+          >
+            <title id="richmd-example-svg-title">
+              Uptime trending upward across the quarter
+            </title>
+            <rect
+              x="1"
+              y="1"
+              width="238"
+              height="118"
+              rx="12"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              opacity="0.25"
+            />
+            <polyline
+              points="16,96 60,80 104,88 148,52 192,40 224,18"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <circle cx="16" cy="96" r="4" fill="currentColor" />
+            <circle cx="60" cy="80" r="4" fill="currentColor" />
+            <circle cx="104" cy="88" r="4" fill="currentColor" />
+            <circle cx="148" cy="52" r="4" fill="currentColor" />
+            <circle cx="192" cy="40" r="4" fill="currentColor" />
+            <circle cx="224" cy="18" r="5" fill="currentColor" />
+            <line
+              x1="16"
+              y1="108"
+              x2="224"
+              y2="108"
+              stroke="currentColor"
+              stroke-width="2"
+              opacity="0.3"
+            />
+          </svg>
+        </div>
+        <h2 id="incident-detail">Incident detail</h2>
+        <p>Full sev-1 log for the quarter (6 incidents):</p>
+        <table>
+          <colgroup>
+            <col style="width: 8%" />
+            <col style="width: 11%" />
+            <col style="width: 43%" />
+            <col style="width: 35%" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Duration</th>
+              <th>Cause</th>
+              <th>Mitigation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Apr 08</td>
+              <td>22 min</td>
+              <td>Payments provider degradation</td>
+              <td>Retry budget enforcement</td>
+            </tr>
+            <tr>
+              <td>Apr 25</td>
+              <td>14 min</td>
+              <td>Payments provider degradation</td>
+              <td>Retry budget enforcement</td>
+            </tr>
+            <tr>
+              <td>May 12</td>
+              <td>31 min</td>
+              <td>Payments provider degradation</td>
+              <td>Retry budget enforcement</td>
+            </tr>
+            <tr>
+              <td>Jun 03</td>
+              <td>9 min</td>
+              <td>Bad edge cache config push</td>
+              <td>Config push canarying</td>
+            </tr>
+            <tr>
+              <td>Jun 14</td>
+              <td>41 min</td>
+              <td>Payments provider degradation</td>
+              <td>Retry budget enforcement</td>
+            </tr>
+            <tr>
+              <td>Jun 22</td>
+              <td>19 min</td>
+              <td>Payments provider degradation</td>
+              <td>Retry budget enforcement</td>
+            </tr>
+          </tbody>
+        </table>
+        <h2 id="looking-ahead-to-q3">Looking ahead to Q3</h2>
+        <p>
+          Reliability work carries forward as the top priority: the
+          payments-provider retry-storm fixes above should collapse five of this
+          quarter’s six sev-1s into near-zero incidents once fully rolled out.
+          Latency work shifts focus to the write path next, where p50 has been
+          flat while the read path improved.
+        </p>
+      </div>
+      <script>
+        (function () {
+          // Reflects the theme CURRENTLY ACTIVE, not the theme a click would
+          // switch to: sun icon + "Light" label when light is active, moon icon +
+          // "Dark" label when dark is active (acceptance criteria's exact
+          // contract) — never the inverse "what you'd switch to" convention some
+          // toggle designs use instead.
+          function applyToggleLabel(button, activeTheme) {
+            var icon = button.querySelector(".richmd-theme-toggle-icon");
+            var label = button.querySelector(".richmd-theme-toggle-label");
+            if (activeTheme === "dark") {
+              if (icon) icon.textContent = "☽";
+              if (label) label.textContent = "Dark";
+            } else {
+              if (icon) icon.textContent = "☀";
+              if (label) label.textContent = "Light";
+            }
+          }
+
+          function currentTheme(docEl) {
+            var attr = docEl.getAttribute("data-richmd-theme");
+            if (attr === "light" || attr === "dark") {
+              return attr;
+            }
+            var prefersDark =
+              typeof window.matchMedia === "function" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches;
+            return prefersDark ? "dark" : "light";
+          }
+
+          function init() {
+            var docEl = document.querySelector(".richmd-doc");
+            var button = document.querySelector(".richmd-theme-toggle");
+            if (!docEl || !button) return;
+
+            applyToggleLabel(button, currentTheme(docEl));
+
+            button.addEventListener("click", function () {
+              var next = currentTheme(docEl) === "dark" ? "light" : "dark";
+              docEl.setAttribute("data-richmd-theme", next);
+              try {
+                localStorage.setItem("richmd-theme", next);
+              } catch (e) {}
+              applyToggleLabel(button, next);
+            });
+          }
+
+          if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", init);
+          } else {
+            init();
+          }
+        })();
+      </script>
+    </div>
+  </body>
+</html>

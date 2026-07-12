@@ -42,3 +42,6 @@ jobs:
             done
             scripts/layer-integrity .
           '
+
+      - name: example-doc regression check (examples/ golden hash)
+        run: nix develop -c scripts/example-hash-check

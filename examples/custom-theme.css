@@ -1,0 +1,41 @@
+/* ============================================================================
+   richmd example — custom-theme.css
+   Demonstrates design.md §00 principle P3 "Style is swappable, never
+   hardcoded": richmd's renderer only ever emits structure and --richmd-*
+   CSS-variable hooks (theme/default.css), never hardcoded colors/fonts in
+   generator logic — so a consumer can reskin a report with pure CSS, no
+   markup change, by overriding a handful of variables at :root (or on any
+   subtree/ancestor of .richmd-doc).
+
+   This file is NOT wired into examples/data-status-report.html's render
+   pipeline automatically — richmd has no CSS-selection render option (there
+   is nothing to "apply" at build time). It exists to prove the override
+   CONTRACT is genuinely live: load default.css followed by this file (in
+   that order) in any HTML page and every value below wins, because plain
+   CSS cascade/specificity — not richmd — is what makes reskinning work.
+   See the accompanying manual-comparison note in USAGE_RULES.md/README for
+   the exact two-file diff this override produces.
+   ========================================================================= */
+
+:root {
+  /* Different accent color family entirely: default theme's accent is a
+     vivid indigo (--richmd-accent-500: #4f46e5); this override swaps the
+     whole "solid" alias to a warm amber so the effect is unmistakable in
+     links, TOC active state, primary badges, and stat-tile deltas. */
+  --richmd-color-accent-solid: #b45309;
+  --richmd-color-accent-solid-hover: #92400e;
+  --richmd-color-accent-text: #92400e;
+  --richmd-color-link: #b45309;
+  --richmd-color-link-hover: #92400e;
+
+  /* Different heading voice: default theme's --richmd-font-heading is
+     "Space Grotesk" (a geometric sans); this override swaps every heading,
+     card title, stat value, and TOC-adjacent heading font to a serif
+     face for a distinctly different, editorial feel with no markup
+     change anywhere in data-status-report.md. */
+  --richmd-font-heading: Georgia, "Iowan Old Style", "Times New Roman", serif;
+
+  /* Slightly warmer paper background than the default cool-gray
+     (--richmd-color-bg: #f6f7fb), reinforcing the amber accent above. */
+  --richmd-color-bg: #fbf7f0;
+}

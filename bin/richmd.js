@@ -34,7 +34,17 @@ function usage() {
 }
 
 function runFilter(inputPath, { validateOnly, outputPath, offline }) {
-  const args = ["--lua-filter", filterPath, "--standalone"];
+  // document-css=false suppresses Pandoc's own default template stylesheet
+  // (which includes `body { max-width: 36em; ... }`) — richmd's theme owns
+  // layout width entirely via .richmd-container/.richmd-container--wide, so
+  // Pandoc's default must never compete with it.
+  const args = [
+    "--lua-filter",
+    filterPath,
+    "--standalone",
+    "-M",
+    "document-css=false",
+  ];
   if (outputPath) {
     args.push("-o", outputPath);
   } else {

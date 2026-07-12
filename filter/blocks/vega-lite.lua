@@ -62,7 +62,7 @@ local schema = {
 -- (dist/mermaid.esm.min.mjs), while vega-embed's is not, so copying
 -- mermaid's exact script shape here would silently produce a broken
 -- `import` of a non-module file.
-local VEGA_CDN_URL = "https://cdn.jsdelivr.net/npm/vega@5"
+local VEGA_CDN_URL = "https://cdn.jsdelivr.net/npm/vega@6"
 local VEGA_LITE_CDN_URL = "https://cdn.jsdelivr.net/npm/vega-lite@6"
 local VEGA_EMBED_CDN_URL = "https://cdn.jsdelivr.net/npm/vega-embed@6"
 
@@ -157,13 +157,24 @@ schema.validate = validate
 
 -- html_escape(text) -> string
 --
--- Minimal HTML-entity escaping for embedding the raw JSON spec inside a
--- <script type="application/json"> element — JSON can legitimately contain
--- `<`/`>`/`&` inside string values (e.g. a title like "A & B") which would
--- otherwise be misinterpreted by an HTML parser, so the source is escaped
--- rather than assumed safe. Same rationale as mermaid.lua's html_escape.
+-- For embedding text inside ordinary HTML content (e.g. the optional
+-- .richmd-diagram-title), where `<`/`>`/`&` must be entity-escaped or the
+-- browser's HTML parser would misinterpret them as markup.
 local function html_escape(text)
   return (text:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+end
+
+-- escape_script_close(text) -> string
+--
+-- A <script> element's content (regardless of its `type`) is raw text to
+-- the HTML parser, never re-parsed as HTML — entity-escaping `<`/`>`/`&`
+-- inside it is wrong and corrupts the JSON (e.g. a spec's `"a > b"` test
+-- expression becomes the literal string "a &gt; b", which the JS/JSON
+-- consumer then fails to parse or evaluates incorrectly). The ONLY real
+-- hazard is a literal `</script` sequence inside the JSON breaking the
+-- browser out of the script element early; escape only that.
+local function escape_script_close(text)
+  return (text:gsub("</[Ss][Cc][Rr][Ii][Pp][Tt]", "<\\/script"))
 end
 
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
@@ -210,7 +221,7 @@ local function render(block, resolved_attrs)
     .. container_id
     .. "\" class=\"richmd-vega\"></div>\n"
     .. "<script type=\"application/json\" class=\"richmd-vega-lite-spec\">"
-    .. html_escape(source)
+    .. escape_script_close(source)
     .. "</script>"
 
   local title_html = ""
