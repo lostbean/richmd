@@ -1423,7 +1423,11 @@ re-renders when the theme toggle (§00) flips light/dark, exactly like
 the surrounding page's own colors do.</li>
 <li><strong>Interface</strong>: default mode emits CDN <code>&lt;script&gt;</code> tags for the mermaid.js
 and vega-lite runtimes; <code>--offline</code> (§02) downloads the pinned versions
-once and embeds them directly in the page instead.</li>
+once and embeds them directly in the page instead. Container width is a
+per-document choice, authored as a YAML frontmatter key
+(<code>richmd-layout: narrow</code>, defaulting to <code>wide</code> when absent) — a
+data-heavy report reads better wide, a prose-heavy document can opt into
+the narrower reading column.</li>
 <li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>'s render phase for
 injection; a consumer's own CSS file, which overrides <code>--richmd-*</code>
 variables or replaces the stylesheet wholesale to reskin.</li>

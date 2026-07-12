@@ -379,7 +379,11 @@ vega-lite source becomes a rendered visual in the reader's browser.
   the surrounding page's own colors do.
 - **Interface**: default mode emits CDN `<script>` tags for the mermaid.js
   and vega-lite runtimes; `--offline` (§02) downloads the pinned versions
-  once and embeds them directly in the page instead.
+  once and embeds them directly in the page instead. Container width is a
+  per-document choice, authored as a YAML frontmatter key
+  (`richmd-layout: narrow`, defaulting to `wide` when absent) — a
+  data-heavy report reads better wide, a prose-heavy document can opt into
+  the narrower reading column.
 - **Interacts with**: the [filter core](#03-filter-core)'s render phase for
   injection; a consumer's own CSS file, which overrides `--richmd-*`
   variables or replaces the stylesheet wholesale to reskin.
