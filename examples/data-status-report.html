@@ -1072,6 +1072,48 @@
           } catch (e) {}
         })();
       </script>
+      <script>
+        window.richmdDiagramTheme = function () {
+          var el =
+            document.querySelector(".richmd-doc") || document.documentElement;
+          var cs = getComputedStyle(el);
+          function v(name, fallback) {
+            var value = cs.getPropertyValue(name);
+            value = value && value.trim();
+            return value || fallback;
+          }
+          return {
+            bg: v("--richmd-color-bg", "#ffffff"),
+            bgAlt: v("--richmd-color-bg-alt", "#f0f0f0"),
+            surface: v("--richmd-color-surface", "#ffffff"),
+            surface2: v("--richmd-color-surface-2", "#f0f0f0"),
+            border: v("--richmd-color-border", "rgba(0,0,0,0.1)"),
+            borderStrong: v("--richmd-color-border-strong", "rgba(0,0,0,0.22)"),
+            text: v("--richmd-color-text", "#000000"),
+            textMuted: v("--richmd-color-text-muted", "rgba(0,0,0,0.62)"),
+            textFaint: v("--richmd-color-text-faint", "rgba(0,0,0,0.4)"),
+            accentSolid: v("--richmd-color-accent-solid", "#4f46e5"),
+            accentText: v("--richmd-color-accent-text", "#4f46e5"),
+            accentTint: v("--richmd-color-accent-tint", "#eef0fe"),
+            accent2Solid: v("--richmd-color-accent2-solid", "#0891b2"),
+            accent2Text: v("--richmd-color-accent2-text", "#0891b2"),
+            fontBody: v("--richmd-font-body", "sans-serif"),
+          };
+        };
+
+        window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
+        window.richmdRerenderDiagrams = function () {
+          window.richmdDiagramRerenders.forEach(function (fn) {
+            try {
+              fn();
+            } catch (e) {}
+          });
+        };
+
+        document.addEventListener("richmd-theme-changed", function () {
+          window.richmdRerenderDiagrams();
+        });
+      </script>
       <div class="richmd-topbar">
         <div class="richmd-brand">richmd</div>
         <button
@@ -1123,7 +1165,7 @@
           </ul>
         </div>
         <h2 id="headline-numbers">Headline numbers</h2>
-        <div class="richmd-stat-grid">
+        <div class="richmd-stat-grid" data-cols="4">
           <div class="richmd-stat">
             <div class="richmd-stat-label">uptime this quarter</div>
             <div class="richmd-stat-value">99.97%</div>
@@ -1131,8 +1173,6 @@
               ↑ 0.04 pts vs Q1
             </div>
           </div>
-        </div>
-        <div class="richmd-stat-grid">
           <div class="richmd-stat">
             <div class="richmd-stat-label">p50 API latency</div>
             <div class="richmd-stat-value">142ms</div>
@@ -1140,8 +1180,6 @@
               ↓ 18ms vs Q1
             </div>
           </div>
-        </div>
-        <div class="richmd-stat-grid">
           <div class="richmd-stat">
             <div class="richmd-stat-label">sev-1 incidents</div>
             <div class="richmd-stat-value">6</div>
@@ -1149,8 +1187,6 @@
               ↑ 2 vs Q1
             </div>
           </div>
-        </div>
-        <div class="richmd-stat-grid">
           <div class="richmd-stat">
             <div class="richmd-stat-label">requests / day (avg)</div>
             <div class="richmd-stat-value">4.2M</div>
@@ -1181,7 +1217,11 @@
         </p>
         <div class="richmd-mermaid-wrapper">
           <div class="richmd-diagram">
-            <pre class="mermaid richmd-mermaid">
+            <pre
+              class="mermaid richmd-mermaid"
+              id="richmd-mermaid-568034560"
+              style="display: none"
+            >
 graph TD
     A[Request in] --&gt; B{Downstream healthy?}
     B --&gt;|Yes| C[Serve normally]
@@ -1192,10 +1232,66 @@ graph TD
     F --&gt; G[Fail fast + queue for replay]
     G --&gt; H[Replay once downstream recovers]</pre
             >
+            <div
+              class="richmd-mermaid"
+              id="richmd-mermaid-568034560-target"
+            ></div>
           </div>
           <script type="module">
-            import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-            mermaid.initialize({ startOnLoad: true });
+            if (!window.mermaid) {
+              var mermaidModule =
+                await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
+              window.mermaid = mermaidModule.default;
+            }
+            function renderMermaid_richmd_mermaid_568034560() {
+              var sourceEl = document.getElementById(
+                "richmd-mermaid-568034560",
+              );
+              var targetEl = document.getElementById(
+                "richmd-mermaid-568034560-target",
+              );
+              if (!sourceEl || !targetEl || !window.mermaid) return;
+              var colors = window.richmdDiagramTheme
+                ? window.richmdDiagramTheme()
+                : {};
+              window.mermaid.initialize({
+                startOnLoad: false,
+                theme: "base",
+                themeVariables: (function (c) {
+                  return {
+                    background: c.bg,
+                    primaryColor: c.surface,
+                    primaryTextColor: c.text,
+                    primaryBorderColor: c.border,
+                    lineColor: c.accentSolid,
+                    secondaryColor: c.surface2,
+                    tertiaryColor: c.surface2,
+                    actorBkg: c.surface,
+                    actorBorder: c.border,
+                    actorTextColor: c.text,
+                    signalColor: c.text,
+                    signalTextColor: c.text,
+                    noteBkgColor: c.accentTint,
+                    noteTextColor: c.text,
+                    noteBorderColor: c.border,
+                    fontFamily: c.fontBody,
+                  };
+                })(colors),
+              });
+              window.mermaid
+                .render(
+                  "richmd-mermaid-568034560-target-svg",
+                  sourceEl.textContent,
+                )
+                .then(function (result) {
+                  targetEl.innerHTML = result.svg;
+                });
+            }
+            window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
+            window.richmdDiagramRerenders.push(
+              renderMermaid_richmd_mermaid_568034560,
+            );
+            renderMermaid_richmd_mermaid_568034560();
           </script>
         </div>
         <p>
@@ -1205,7 +1301,7 @@ graph TD
         </p>
         <div class="richmd-diagram-wrapper">
           <div class="richmd-diagram">
-            <div id="richmd-vega-358892543" class="richmd-vega"></div>
+            <div id="richmd-vega-17604891" class="richmd-vega"></div>
             <script type="application/json" class="richmd-vega-lite-spec">
               {
                 "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -1246,11 +1342,76 @@ graph TD
           <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
           <script>
             (function () {
-              var specEl = document.getElementById(
-                "richmd-vega-358892543",
-              ).nextElementSibling;
-              var spec = JSON.parse(specEl.textContent);
-              vegaEmbed("#richmd-vega-358892543", spec);
+              function richmdMergeConfig(base, override) {
+                if (
+                  typeof base !== "object" ||
+                  base === null ||
+                  Array.isArray(base) ||
+                  typeof override !== "object" ||
+                  override === null ||
+                  Array.isArray(override)
+                ) {
+                  return override !== undefined ? override : base;
+                }
+                var result = {};
+                var key;
+                for (key in base) {
+                  result[key] = base[key];
+                }
+                for (key in override) {
+                  result[key] = richmdMergeConfig(base[key], override[key]);
+                }
+                return result;
+              }
+              function embedRichmdVega_richmd_vega_17604891() {
+                var containerEl = document.getElementById(
+                  "richmd-vega-17604891",
+                );
+                var specEl = containerEl.nextElementSibling;
+                var spec = JSON.parse(specEl.textContent);
+                var colors = window.richmdDiagramTheme
+                  ? window.richmdDiagramTheme()
+                  : {};
+                var baseConfig = (function (c) {
+                  return {
+                    background: "transparent",
+                    font: c.fontBody,
+                    axis: {
+                      labelColor: c.textMuted,
+                      titleColor: c.textMuted,
+                      gridColor: c.border,
+                      domainColor: c.border,
+                      tickColor: c.border,
+                      labelFontSize: 11,
+                      titleFontSize: 11,
+                    },
+                    legend: {
+                      labelColor: c.textMuted,
+                      titleColor: c.textMuted,
+                      labelFontSize: 11,
+                    },
+                    view: {
+                      stroke: "transparent",
+                    },
+                  };
+                })(colors);
+                var mergedConfig = richmdMergeConfig(
+                  baseConfig,
+                  spec.config || {},
+                );
+                var mergedSpec = Object.assign({}, spec, {
+                  config: mergedConfig,
+                });
+                vegaEmbed("#richmd-vega-17604891", mergedSpec, {
+                  actions: false,
+                });
+              }
+              window.richmdDiagramRerenders =
+                window.richmdDiagramRerenders || [];
+              window.richmdDiagramRerenders.push(
+                embedRichmdVega_richmd_vega_17604891,
+              );
+              embedRichmdVega_richmd_vega_17604891();
             })();
           </script>
         </div>
@@ -1475,6 +1636,7 @@ graph TD
                 localStorage.setItem("richmd-theme", next);
               } catch (e) {}
               applyToggleLabel(button, next);
+              document.dispatchEvent(new CustomEvent("richmd-theme-changed"));
             });
           }
 

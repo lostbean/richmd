@@ -7,15 +7,19 @@
 # build (exit 1).
 #
 # Determinism note (read before treating a failure as a false positive):
-# filter/blocks/vega-lite.lua's render_fn mints a fresh
-# `richmd-vega-<math.random(...)>` container id on every single render — by
-# design, this differs run to run even with byte-identical source. Rather
-# than seed the RNG or otherwise change vega-lite.lua's shipped render
-# behavior (out of scope for example/tooling work — see the chunk report),
-# this script normalizes that one varying token out of the rendered HTML
-# before hashing: every `richmd-vega-[0-9]+` id is rewritten to the fixed
-# placeholder `richmd-vega-STABLE` first. This is the ONLY normalization
-# applied; any other diff in the rendered output is a real regression.
+# filter/blocks/vega-lite.lua's and filter/blocks/mermaid.lua's render_fns
+# each mint a fresh math.random(...)-based id per render — `richmd-vega-N`
+# / `richmd-mermaid-N` as HTML element ids, and the same number reused
+# inside a JS identifier (`embedRichmdVega_richmd_vega_N`,
+# `renderMermaid_richmd_mermaid_N`, since hyphens aren't valid in JS
+# identifiers, both use `richmd_vega_N` / `richmd_mermaid_N` there) — by
+# design, all of these differ run to run even with byte-identical source.
+# Rather than seed the RNG or otherwise change either renderer's shipped
+# behavior (out of scope for example/tooling work), this script normalizes
+# every occurrence of the varying numeric suffix — hyphen-joined or
+# underscore-joined, HTML id or JS identifier — out of the rendered HTML
+# before hashing. This is the ONLY normalization applied; any other diff in
+# the rendered output is a real regression.
 #
 # Usage: scripts/example-hash-check [--update]
 #   (no args)  render, hash, compare against the committed golden hash.
@@ -64,10 +68,17 @@ if [ ! -f "$HTML_PATH" ]; then
   exit 2
 fi
 
-# Normalize the one known non-deterministic token (vega-lite.lua's
-# math.random container id — see header note) before hashing, so the golden
-# hash reflects genuine content/markup drift only, never run-to-run noise.
-NORMALIZED="$(sed -E 's/richmd-vega-[0-9]+/richmd-vega-STABLE/g' "$HTML_PATH")"
+# Normalize the known non-deterministic tokens (vega-lite.lua's and
+# mermaid.lua's math.random container/function ids, in both their
+# hyphen-joined HTML-id form and underscore-joined JS-identifier form — see
+# header note) before hashing, so the golden hash reflects genuine
+# content/markup drift only, never run-to-run noise.
+NORMALIZED="$(sed -E \
+  -e 's/richmd-vega-[0-9]+/richmd-vega-STABLE/g' \
+  -e 's/richmd-mermaid-[0-9]+/richmd-mermaid-STABLE/g' \
+  -e 's/richmd_vega_[0-9]+/richmd_vega_STABLE/g' \
+  -e 's/richmd_mermaid_[0-9]+/richmd_mermaid_STABLE/g' \
+  "$HTML_PATH")"
 NEW_HASH="$(printf '%s' "$NORMALIZED" | shasum -a 256 | awk '{print $1}')"
 
 if [ "$MODE" = "update" ]; then

@@ -182,49 +182,153 @@ local function html_escape(text)
   return (text:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
 end
 
+-- mermaid_theme_variables_js() -> string
+--
+-- A JS expression (embedded verbatim into each diagram's own inline
+-- <script>) that maps `window.richmdDiagramTheme()`'s live-CSS color object
+-- (richmd-filter.lua's diagram_theme_script_html(), emitted once per page)
+-- into the shape mermaid's own `themeVariables` expects when
+-- `theme: 'base'` is selected. This is the ONLY place mermaid.lua knows
+-- about mermaid's specific themeVariables field names — no hex value is
+-- ever hardcoded here (design.md §00 principle P3 / §07): every color comes
+-- from the shared `richmdDiagramTheme()` object, which itself reads
+-- `--richmd-*` custom properties live via getComputedStyle at call time.
+-- `theme: 'base'` is mermaid's own documented mechanism for a
+-- fully-custom theme driven entirely by `themeVariables` rather than one of
+-- mermaid's built-in named themes (default/dark/forest/neutral) — using any
+-- built-in theme here would reintroduce exactly the hardcoded-elsewhere's-
+-- palette problem this chunk removes.
+local function mermaid_theme_variables_js()
+  return [[function (c) {
+      return {
+        background: c.bg,
+        primaryColor: c.surface,
+        primaryTextColor: c.text,
+        primaryBorderColor: c.border,
+        lineColor: c.accentSolid,
+        secondaryColor: c.surface2,
+        tertiaryColor: c.surface2,
+        actorBkg: c.surface,
+        actorBorder: c.border,
+        actorTextColor: c.text,
+        signalColor: c.text,
+        signalTextColor: c.text,
+        noteBkgColor: c.accentTint,
+        noteTextColor: c.text,
+        noteBorderColor: c.border,
+        fontFamily: c.fontBody,
+      };
+    }]]
+end
+
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
 -- Embeds the raw mermaid source in a <pre class="mermaid"> container (per
 -- design.md §07) and lets the client-side mermaid.js runtime render the
--- diagram in the reader's browser on page load — never pre-rendered to a
--- static SVG here.
+-- diagram in the reader's browser — but, unlike before this chunk, never via
+-- `mermaid.initialize({ startOnLoad: true })`'s own auto-scan-and-render.
+-- Instead each diagram's own inline <script> explicitly calls mermaid's
+-- async `mermaid.render(id, source)` API itself, with `theme: 'base'` plus
+-- `themeVariables` built from the page's LIVE --richmd-* colors (via the
+-- shared `window.richmdDiagramTheme()` helper), and injects the resulting
+-- SVG into a dedicated target <div> (the source-bearing <pre> is hidden via
+-- inline `display:none` and kept around purely as the data source for
+-- re-renders — never removed from the DOM). The same render logic is
+-- wrapped in a named function and pushed onto the shared
+-- `window.richmdDiagramRerenders` array (richmd-filter.lua's
+-- diagram_theme_script_html()), so clicking the theme toggle re-invokes it
+-- with freshly-read colors — this is the "expose a way to re-render"
+-- requirement from design.md §07 / this chunk's work order.
 --
--- Default mode (RICHMD_OFFLINE unset, ADR-0004's default): unchanged from
--- before this chunk — a CDN <script type="module"> reference.
+-- Default mode (RICHMD_OFFLINE unset, ADR-0004's default): a CDN
+-- <script type="module"> that imports mermaid and assigns it to
+-- `window.mermaid` (mermaid's ESM export is scoped to the importing module,
+-- not global by default — every diagram's own script tag needs the SAME
+-- mermaid instance, so the first one to run publishes it to `window`).
 --
 -- Offline mode (RICHMD_OFFLINE=1, set by `richmd render --offline` via
 -- bin/richmd.js, the SAME env-var-signal pattern as RICHMD_VALIDATE_ONLY):
 -- the pinned mermaid.js UMD bundle's full source is embedded directly in a
 -- plain inline <script> tag (no `type="module"`, since the UMD build
 -- assigns `globalThis.mermaid` itself rather than exporting an ES module) —
--- no CDN URL anywhere in the output, so the page is viewable with zero
--- network access.
+-- no CDN URL anywhere in the output. The UMD bundle is only embedded once
+-- per page (a page-level guard checks `window.mermaid` isn't already set)
+-- to avoid re-defining the runtime once per diagram on multi-diagram pages.
 --
 -- The whole diagram (optional title + the <pre class="mermaid
--- richmd-mermaid"> content) is wrapped in the shared `.richmd-diagram` panel
--- (theme/default.css §10) — the same outer panel concept vega-lite.lua's
--- render_fn wraps its own chart target in. The `<pre>` markup and the
--- CDN-vs-offline script logic are byte-for-byte unchanged from before this
--- chunk; only the surrounding wrapper markup and the optional title div are
--- new.
+-- richmd-mermaid"> content + the render target) is wrapped in the shared
+-- `.richmd-diagram` panel (theme/default.css §10) — the same outer panel
+-- concept vega-lite.lua's render_fn wraps its own chart target in.
 local function render(block, resolved_attrs)
   local source = block.text or ""
+  local diagram_id = "richmd-mermaid-" .. tostring(math.random(1, 1000000000))
+  local target_id = diagram_id .. "-target"
 
-  local pre_html = "<pre class=\"mermaid richmd-mermaid\">" .. html_escape(source) .. "</pre>"
+  local pre_html = '<pre class="mermaid richmd-mermaid" id="'
+    .. diagram_id
+    .. '" style="display:none">'
+    .. html_escape(source)
+    .. "</pre>"
+  local target_html = '<div class="richmd-mermaid" id="' .. target_id .. '"></div>'
+
+  -- render_call_js: the actual per-diagram render logic, shared verbatim
+  -- between the initial render and every subsequent re-render (the toggle
+  -- click included) — defined as a named function and both called
+  -- immediately AND pushed onto the shared rerender array, so "render once"
+  -- and "re-render on demand" can never drift apart into two copies of the
+  -- same logic.
+  local render_call_js = "  function renderMermaid_"
+    .. diagram_id:gsub("-", "_")
+    .. "() {\n"
+    .. "    var sourceEl = document.getElementById('"
+    .. diagram_id
+    .. "');\n"
+    .. "    var targetEl = document.getElementById('"
+    .. target_id
+    .. "');\n"
+    .. "    if (!sourceEl || !targetEl || !window.mermaid) return;\n"
+    .. "    var colors = window.richmdDiagramTheme ? window.richmdDiagramTheme() : {};\n"
+    .. "    window.mermaid.initialize({\n"
+    .. "      startOnLoad: false,\n"
+    .. "      theme: 'base',\n"
+    .. "      themeVariables: ("
+    .. mermaid_theme_variables_js()
+    .. ")(colors),\n"
+    .. "    });\n"
+    .. "    window.mermaid\n"
+    .. "      .render('"
+    .. target_id
+    .. "-svg', sourceEl.textContent)\n"
+    .. "      .then(function (result) {\n"
+    .. "        targetEl.innerHTML = result.svg;\n"
+    .. "      });\n"
+    .. "  }\n"
+    .. "  window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];\n"
+    .. "  window.richmdDiagramRerenders.push(renderMermaid_"
+    .. diagram_id:gsub("-", "_")
+    .. ");\n"
+    .. "  renderMermaid_"
+    .. diagram_id:gsub("-", "_")
+    .. "();\n"
 
   local script_html
   if os.getenv("RICHMD_OFFLINE") then
     local bundle_source = read_offline_bundle()
     script_html = "<script>\n"
+      .. "  if (!window.mermaid) {\n"
       .. bundle_source
-      .. "\n  mermaid.initialize({ startOnLoad: true });\n"
+      .. "\n  }\n"
+      .. render_call_js
       .. "</script>"
   else
     script_html = "<script type=\"module\">\n"
-      .. "  import mermaid from '"
+      .. "  if (!window.mermaid) {\n"
+      .. "    var mermaidModule = await import('"
       .. MERMAID_CDN_URL
-      .. "';\n"
-      .. "  mermaid.initialize({ startOnLoad: true });\n"
+      .. "');\n"
+      .. "    window.mermaid = mermaidModule.default;\n"
+      .. "  }\n"
+      .. render_call_js
       .. "</script>"
   end
 
@@ -233,7 +337,7 @@ local function render(block, resolved_attrs)
     title_html = "<div class=\"richmd-diagram-title\">" .. html_escape(resolved_attrs.title) .. "</div>"
   end
 
-  local panel_html = "<div class=\"richmd-diagram\">" .. title_html .. pre_html .. "</div>"
+  local panel_html = "<div class=\"richmd-diagram\">" .. title_html .. pre_html .. target_html .. "</div>"
 
   return pandoc.Div({
     pandoc.RawBlock("html", panel_html),

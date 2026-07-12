@@ -89,6 +89,92 @@ describe("richmd render (vega-lite, valid input)", () => {
       /<div class="richmd-diagram">\s*<div id="[^"]*" class="richmd-vega">/,
     );
   });
+
+  it("builds a base config from live --richmd-* CSS colors (via the shared richmdDiagramTheme helper) and passes it to vegaEmbed", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /richmdDiagramTheme/);
+    assert.match(html, /background:\s*['"]transparent['"]/);
+    assert.match(html, /axis:/);
+    assert.match(html, /legend:/);
+    assert.match(html, /vegaEmbed\(/);
+  });
+
+  it("pushes its render function onto the shared window.richmdDiagramRerenders array", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /window\.richmdDiagramRerenders\.push\(/);
+  });
+});
+
+describe("richmd render (vega-lite, spec with its own config) — author config wins over richmd's base config", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-vega-lite-authorconfig-"),
+    );
+    mdPath = path.join(workDir, "vega-lite-author-config.md");
+    htmlPath = path.join(workDir, "vega-lite-author-config.html");
+    await cp(path.join(fixturesDir, "vega-lite-author-config.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and embeds a deep-merge call so the author's own config values are never silently overridden", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    // The author's spec config (a distinctive axis.labelColor the fixture
+    // sets) must still be present verbatim in the embedded spec JSON.
+    assert.match(html, /"labelColor":\s*"#ff00ff"/);
+    // richmd's own merge logic must be present (a generic deep-merge
+    // helper, not a hardcoded field-by-field copy) so it actually runs at
+    // render time rather than the fixture's value merely surviving because
+    // nothing touched it.
+    assert.match(html, /function\s+richmdMergeConfig/);
+  });
+
+  it("deep-merges rather than shallow-replacing: richmd's other axis fields (e.g. gridColor) survive alongside the author's labelColor override", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    // Extract richmdMergeConfig and actually execute it against a base
+    // config shaped like richmd's own (axis has gridColor + labelColor)
+    // and an override shaped like the fixture's author config (axis has
+    // ONLY labelColor) — proves the merge is a real recursive deep-merge,
+    // not a top-level Object.assign that would drop richmd's gridColor
+    // entirely once the author sets any axis field.
+    const scriptMatches = [
+      ...html.matchAll(/<script>([\s\S]*?)<\/script>/g),
+    ].map((m) => m[1]);
+    const script = scriptMatches.find((s) => s.includes("richmdMergeConfig"));
+    assert.ok(script, "expected to find the script defining richmdMergeConfig");
+
+    // The script is a self-invoking IIFE (richmd's own emitted shape),
+    // which immediately touches `document`/`vegaEmbed` on load — rather
+    // than stub a fake DOM/vegaEmbed just to let the whole IIFE run, this
+    // isolates richmdMergeConfig's own function source (it has no closure
+    // dependency on the surrounding IIFE scope — a pure, self-contained
+    // recursive function) and evaluates just that.
+    const mergeFnSource = script.match(
+      /function richmdMergeConfig\([\s\S]*?\n {2}\}/,
+    );
+    assert.ok(
+      mergeFnSource,
+      "expected to isolate richmdMergeConfig's own source",
+    );
+
+    const fn = new Function(
+      mergeFnSource[0] +
+        "\n;return richmdMergeConfig({axis:{gridColor:'g',labelColor:'l'}}, {axis:{labelColor:'#ff00ff'}});",
+    );
+    const merged = fn();
+    assert.equal(merged.axis.labelColor, "#ff00ff");
+    assert.equal(merged.axis.gridColor, "g");
+  });
 });
 
 describe("richmd render (vega-lite, valid input with title attr)", () => {

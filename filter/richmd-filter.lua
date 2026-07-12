@@ -29,6 +29,7 @@ require("blocks.mermaid").register(registry)
 require("blocks.vega-lite").register(registry)
 require("blocks.cards").register(registry)
 require("blocks.stat-tile").register(registry)
+require("blocks.stat-grid").register(registry)
 require("blocks.toc").register(registry)
 require("blocks.labeled-block").register(registry)
 require("blocks.embedded-svg").register(registry)
@@ -368,6 +369,83 @@ local function theme_style_html()
   return "<style>\n" .. css .. "\n</style>"
 end
 
+-- diagram_theme_script_html() -> string
+--
+-- A single shared inline <script>, emitted ONCE per page (alongside the
+-- toggle/anti-flash scripts, not per-diagram — every mermaid/vega-lite
+-- block on the page reuses the same global helper rather than each
+-- embedding its own copy). Defines `window.richmdDiagramTheme()`, which
+-- reads the page's LIVE `--richmd-*` custom property values via
+-- `getComputedStyle(document.querySelector(".richmd-doc"))` and returns a
+-- plain object with the small set of colors both diagram kinds need
+-- (background/surface/border/text/text-muted/accent/accent2 plus the body
+-- font stack) — never a hardcoded hex value (design.md §00 principle P3,
+-- §07: "a diagram's own colors are read from the page's live --richmd-*
+-- custom properties at render time... never hardcoded"). Because this
+-- reads the CSS live, at call time, a consumer who overrides
+-- theme/default.css's variables (or a reader flipping the theme toggle,
+-- which changes which values the SAME variables resolve to) is
+-- automatically reflected the next time this function is called — no
+-- richmd-owned code needs to know light/dark exist as concepts at all,
+-- only that the variables might change.
+--
+-- Also defines `window.richmdRerenderDiagrams()`: a tiny pub/sub the
+-- mermaid/vega-lite render scripts each push their own per-page re-render
+-- callback onto (`window.richmdDiagramRerenders`, an array), and
+-- `richmdRerenderDiagrams()` simply calls every callback currently in that
+-- array. The toggle handler (theme_toggle_script_html) calls this after it
+-- flips `data-richmd-theme`, via a `richmd-theme-changed` DOM CustomEvent
+-- this script also listens for — a custom event (rather than the toggle
+-- script calling mermaid/vega-lite's re-render functions directly) is the
+-- cleaner seam here because the toggle script has no reason to know either
+-- diagram kind exists (it is not a block-kind concept, per design.md §00's
+-- "filter core stays generic" invariant applied to this new script too);
+-- any number of independent diagram render scripts can add themselves as
+-- listeners without the toggle or each other ever being edited.
+local function diagram_theme_script_html()
+  return [[<script>
+  window.richmdDiagramTheme = function () {
+    var el = document.querySelector(".richmd-doc") || document.documentElement;
+    var cs = getComputedStyle(el);
+    function v(name, fallback) {
+      var value = cs.getPropertyValue(name);
+      value = value && value.trim();
+      return value || fallback;
+    }
+    return {
+      bg: v("--richmd-color-bg", "#ffffff"),
+      bgAlt: v("--richmd-color-bg-alt", "#f0f0f0"),
+      surface: v("--richmd-color-surface", "#ffffff"),
+      surface2: v("--richmd-color-surface-2", "#f0f0f0"),
+      border: v("--richmd-color-border", "rgba(0,0,0,0.1)"),
+      borderStrong: v("--richmd-color-border-strong", "rgba(0,0,0,0.22)"),
+      text: v("--richmd-color-text", "#000000"),
+      textMuted: v("--richmd-color-text-muted", "rgba(0,0,0,0.62)"),
+      textFaint: v("--richmd-color-text-faint", "rgba(0,0,0,0.4)"),
+      accentSolid: v("--richmd-color-accent-solid", "#4f46e5"),
+      accentText: v("--richmd-color-accent-text", "#4f46e5"),
+      accentTint: v("--richmd-color-accent-tint", "#eef0fe"),
+      accent2Solid: v("--richmd-color-accent2-solid", "#0891b2"),
+      accent2Text: v("--richmd-color-accent2-text", "#0891b2"),
+      fontBody: v("--richmd-font-body", "sans-serif"),
+    };
+  };
+
+  window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
+  window.richmdRerenderDiagrams = function () {
+    window.richmdDiagramRerenders.forEach(function (fn) {
+      try {
+        fn();
+      } catch (e) {}
+    });
+  };
+
+  document.addEventListener("richmd-theme-changed", function () {
+    window.richmdRerenderDiagrams();
+  });
+</script>]]
+end
+
 -- anti_flash_theme_script_html() -> string
 --
 -- A tiny inline <script>, emitted as the FIRST child of .richmd-doc (ahead
@@ -453,6 +531,7 @@ local function theme_toggle_script_html()
           localStorage.setItem("richmd-theme", next);
         } catch (e) {}
         applyToggleLabel(button, next);
+        document.dispatchEvent(new CustomEvent("richmd-theme-changed"));
       });
     }
 
@@ -553,6 +632,21 @@ local function wrap_blocks_in_page_shell(blocks)
 
   local shell_children = pandoc.List({
     pandoc.RawBlock("html", anti_flash_theme_script_html()),
+    -- diagram_theme_script_html() MUST run before `.richmd-container`'s own
+    -- content: every mermaid/vega-lite diagram inside the container calls
+    -- `window.richmdDiagramTheme()` synchronously, at parse time, as soon as
+    -- its own inline <script> tag runs (never deferred to
+    -- DOMContentLoaded) — so if this script were emitted after the
+    -- container (as it was before this fix), `window.richmdDiagramTheme`
+    -- would still be undefined during every diagram's first render,
+    -- silently falling back to `{}` and handing mermaid/vega-lite a
+    -- themeVariables/config object full of `undefined` values (mermaid's
+    -- own internal color-math then throws on `undefined`, confirmed via a
+    -- real headless-browser reproduction). `window.richmdRerenderDiagrams`
+    -- doesn't have this ordering constraint (the toggle only calls it long
+    -- after DOMContentLoaded), but defining both in one place, this early,
+    -- is simplest and keeps the "one shared script" contract intact.
+    pandoc.RawBlock("html", diagram_theme_script_html()),
     pandoc.RawBlock("html", topbar_html()),
     pandoc.Div(container_children, pandoc.Attr("", { "richmd-container" })),
     pandoc.RawBlock("html", theme_toggle_script_html()),

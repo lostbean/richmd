@@ -75,11 +75,31 @@ describe("richmd render (mermaid, valid input)", () => {
     // text legitimately appears in the inlined theme <style> block, so
     // check for the element itself, not the bare class name substring).
     assert.doesNotMatch(html, /<div class="richmd-diagram-title">/);
-    // The mermaid <pre> must be inside the .richmd-diagram wrapper.
+    // The mermaid <pre> must be inside the .richmd-diagram wrapper (the
+    // source-bearing <pre> now carries an id + inline display:none — it is
+    // kept in the DOM as the render script's data source, not shown
+    // directly; a separate target <div class="richmd-mermaid"> receives the
+    // rendered SVG).
     assert.match(
       html,
-      /<div class="richmd-diagram">\s*<pre class="mermaid richmd-mermaid">/,
+      /<div class="richmd-diagram">\s*<pre class="mermaid richmd-mermaid"[^>]*>/,
     );
+  });
+
+  it("renders explicitly via mermaid.render with theme:'base' and live-CSS themeVariables, not mermaid.initialize({startOnLoad:true})", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    // The old blind auto-scan-and-render call must be gone.
+    assert.doesNotMatch(html, /startOnLoad:\s*true/);
+    assert.match(html, /startOnLoad:\s*false/);
+    assert.match(html, /theme:\s*['"]base['"]/);
+    assert.match(html, /themeVariables/);
+    assert.match(html, /richmdDiagramTheme/);
+    assert.match(html, /\.render\(/);
+  });
+
+  it("pushes its render function onto the shared window.richmdDiagramRerenders array", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /window\.richmdDiagramRerenders\.push\(/);
   });
 });
 
@@ -107,7 +127,7 @@ describe("richmd render (mermaid, valid input with title attr)", () => {
     const html = await readFile(htmlPath, "utf8");
     assert.match(
       html,
-      /<div class="richmd-diagram">\s*<div class="richmd-diagram-title">My Diagram<\/div>\s*<pre class="mermaid richmd-mermaid">/,
+      /<div class="richmd-diagram">\s*<div class="richmd-diagram-title">My Diagram<\/div>\s*<pre class="mermaid richmd-mermaid"[^>]*>/,
     );
   });
 });

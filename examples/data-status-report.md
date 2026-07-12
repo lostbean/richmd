@@ -13,16 +13,18 @@ and where the team is spending its time going into Q3.
 
 ## Headline numbers
 
-::: {.stat-tile value="99.97%" label="uptime this quarter" delta="↑ 0.04 pts vs Q1" dir="up"}
-:::
+::: {.stat-grid cols="4"}
+:::: {.stat-tile value="99.97%" label="uptime this quarter" delta="↑ 0.04 pts vs Q1" dir="up"}
+::::
 
-::: {.stat-tile value="142ms" label="p50 API latency" delta="↓ 18ms vs Q1" dir="up"}
-:::
+:::: {.stat-tile value="142ms" label="p50 API latency" delta="↓ 18ms vs Q1" dir="up"}
+::::
 
-::: {.stat-tile value="6" label="sev-1 incidents" delta="↑ 2 vs Q1" dir="down"}
-:::
+:::: {.stat-tile value="6" label="sev-1 incidents" delta="↑ 2 vs Q1" dir="down"}
+::::
 
-::: {.stat-tile value="4.2M" label="requests / day (avg)"}
+:::: {.stat-tile value="4.2M" label="requests / day (avg)"}
+::::
 :::
 
 ::: {.callout tint="warning" title="Watch item"}

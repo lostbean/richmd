@@ -147,8 +147,16 @@ describe("richmd render (mermaid, --offline) — embeds the runtime inline", () 
     const html = await readFile(htmlPath, "utf8");
     assert.match(
       html,
-      /<div class="richmd-diagram">\s*<pre class="mermaid richmd-mermaid">/,
+      /<div class="richmd-diagram">\s*<pre class="mermaid richmd-mermaid"[^>]*>/,
     );
+  });
+
+  it("guards the embedded runtime with a window.mermaid presence check and still exposes the render/re-render pattern", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /if\s*\(\s*!window\.mermaid\s*\)\s*\{/);
+    assert.match(html, /theme:\s*['"]base['"]/);
+    assert.match(html, /themeVariables/);
+    assert.match(html, /window\.richmdDiagramRerenders\.push\(/);
   });
 });
 

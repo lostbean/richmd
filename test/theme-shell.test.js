@@ -137,8 +137,14 @@ describe("richmd render (page shell + theme toggle)", () => {
     const scriptMatches = [
       ...html.matchAll(/<script>([\s\S]*?)<\/script>/g),
     ].map((m) => m[1]);
-    const toggleScript = scriptMatches.find((s) =>
-      s.includes("addEventListener"),
+    // Distinguish the toggle script from the shared diagram-theme script
+    // (richmd-filter.lua's diagram_theme_script_html()) — both scripts
+    // legitimately use addEventListener (the toggle for its button's click,
+    // the diagram-theme script for a richmd-theme-changed listener), so
+    // match on the toggle's own distinctive click-handling shape instead.
+    const toggleScript = scriptMatches.find(
+      (s) =>
+        s.includes("addEventListener") && s.includes("richmd-theme-toggle"),
     );
     assert.ok(
       toggleScript,
@@ -200,6 +206,7 @@ describe("richmd render (page shell + theme toggle)", () => {
     const fakeDocEl = makeFakeEl();
     const fakeButtonEl = makeFakeEl();
 
+    const dispatchedEvents = [];
     const fakeDocument = {
       querySelector(sel) {
         if (sel.includes("richmd-doc")) return fakeDocEl;
@@ -211,16 +218,35 @@ describe("richmd render (page shell + theme toggle)", () => {
       addEventListener(type, fn) {
         if (type === "DOMContentLoaded") fn();
       },
+      dispatchEvent(event) {
+        dispatchedEvents.push(event);
+      },
       readyState: "complete",
     };
+
+    // A minimal CustomEvent stub: the toggle script only needs `new
+    // CustomEvent(type)` to construct an object it hands to
+    // document.dispatchEvent — jsdom/browsers do much more, but nothing
+    // else is observed here.
+    class FakeCustomEvent {
+      constructor(type) {
+        this.type = type;
+      }
+    }
 
     const fn = new Function(
       "document",
       "localStorage",
       "window",
+      "CustomEvent",
       toggleScript + "\n;return true;",
     );
-    fn(fakeDocument, fakeLocalStorage, { localStorage: fakeLocalStorage });
+    fn(
+      fakeDocument,
+      fakeLocalStorage,
+      { localStorage: fakeLocalStorage },
+      FakeCustomEvent,
+    );
 
     assert.ok(
       fakeButtonEl.listeners.click,
@@ -237,11 +263,20 @@ describe("richmd render (page shell + theme toggle)", () => {
     // theme a further click would switch to.
     assert.equal(fakeLabelEl.textContent, "Dark");
     assert.equal(fakeIconEl.textContent, "☽");
+    // The click must also dispatch a richmd-theme-changed DOM CustomEvent
+    // (design.md §07 / this chunk's work order) — diagrams listen for this
+    // on `document` to know when to re-render with fresh colors, so a
+    // toggle click that flips the attribute WITHOUT firing this event would
+    // silently leave every diagram frozen in its stale theme.
+    assert.equal(dispatchedEvents.length, 1);
+    assert.equal(dispatchedEvents[0].type, "richmd-theme-changed");
 
     fakeButtonEl.listeners.click();
     assert.equal(fakeDocEl.getAttribute("data-richmd-theme"), "light");
     assert.equal(store["richmd-theme"], "light");
     assert.equal(fakeLabelEl.textContent, "Light");
     assert.equal(fakeIconEl.textContent, "☀");
+    assert.equal(dispatchedEvents.length, 2);
+    assert.equal(dispatchedEvents[1].type, "richmd-theme-changed");
   });
 });

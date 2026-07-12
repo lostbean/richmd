@@ -177,6 +177,85 @@ local function escape_script_close(text)
   return (text:gsub("</[Ss][Cc][Rr][Ii][Pp][Tt]", "<\\/script"))
 end
 
+-- richmd_merge_config_js() -> string
+--
+-- A generic, recursive deep-merge JS function embedded once per diagram
+-- (kept small and self-contained rather than pulled from a shared script,
+-- since — unlike richmdDiagramTheme — this is pure logic with zero
+-- CSS/DOM dependency, and mirrors mermaid.lua's own pattern of embedding
+-- its small per-diagram JS helpers inline). `richmdMergeConfig(base,
+-- override)` returns a new object with `base`'s keys as the starting
+-- point, recursively replaced by any key `override` itself explicitly
+-- sets — i.e. the AUTHOR'S OWN spec `config` (passed as `override`) always
+-- wins over richmd's injected base config, at any nesting depth (e.g. the
+-- author setting only `config.axis.labelColor` leaves richmd's own
+-- `config.axis.gridColor` intact, rather than the author's partial `axis`
+-- object clobbering richmd's whole `axis` block). This is a plain
+-- structural merge, not vega-lite's own internal config-merge semantics —
+-- investigated and intentionally not relied upon here, since vegaEmbed's
+-- own `opts.config` + spec-`config` merge order is an internal
+-- implementation detail of vega-lite's `mergeConfig`, not part of its
+-- stable public contract; doing the merge explicitly in richmd's own JS
+-- guarantees "author wins" regardless of vega-lite version behavior.
+local function richmd_merge_config_js()
+  return [[function richmdMergeConfig(base, override) {
+    if (
+      typeof base !== "object" ||
+      base === null ||
+      Array.isArray(base) ||
+      typeof override !== "object" ||
+      override === null ||
+      Array.isArray(override)
+    ) {
+      return override !== undefined ? override : base;
+    }
+    var result = {};
+    var key;
+    for (key in base) {
+      result[key] = base[key];
+    }
+    for (key in override) {
+      result[key] = richmdMergeConfig(base[key], override[key]);
+    }
+    return result;
+  }]]
+end
+
+-- vega_lite_base_config_js() -> string
+--
+-- A JS expression that maps `window.richmdDiagramTheme()`'s live-CSS color
+-- object into the `config` shape vega-lite's own spec.config accepts —
+-- transparent background (the diagram panel already supplies one via
+-- theme/default.css §10), muted-color axis/legend text, a low-contrast
+-- grid line, and no view border (the outer `.richmd-diagram` panel already
+-- draws one). No hex value is hardcoded here (design.md §00 principle P3 /
+-- §07): every color comes from the shared `richmdDiagramTheme()` object.
+local function vega_lite_base_config_js()
+  return [[function (c) {
+    return {
+      background: "transparent",
+      font: c.fontBody,
+      axis: {
+        labelColor: c.textMuted,
+        titleColor: c.textMuted,
+        gridColor: c.border,
+        domainColor: c.border,
+        tickColor: c.border,
+        labelFontSize: 11,
+        titleFontSize: 11,
+      },
+      legend: {
+        labelColor: c.textMuted,
+        titleColor: c.textMuted,
+        labelFontSize: 11,
+      },
+      view: {
+        stroke: "transparent",
+      },
+    };
+  }]]
+end
+
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
 -- Embeds the raw vega-lite JSON spec in a <div class="richmd-vega">
@@ -205,17 +284,32 @@ end
 -- the old per-kind one, for consistency with mermaid.lua's identical
 -- wrapper-Div role.
 --
+-- Rendering is now an explicit, re-invokable function (embedRichmdVega_*)
+-- rather than a fire-and-forget vegaEmbed() call: it re-parses the spec
+-- from its <script type="application/json"> source each time (never
+-- mutating a shared spec object across calls), builds a fresh `config`
+-- object from the page's LIVE --richmd-* colors (via the shared
+-- `window.richmdDiagramTheme()` helper, richmd-filter.lua's
+-- diagram_theme_script_html()), deep-merges it with the author's OWN
+-- spec.config if present (richmd_merge_config_js() above — author's
+-- explicit settings always win), and calls `vegaEmbed(target, spec,
+-- {actions:false})`. The same function is both called immediately AND
+-- pushed onto the shared `window.richmdDiagramRerenders` array, so
+-- clicking the theme toggle re-embeds the chart with freshly-read colors
+-- — "render once" and "re-render on toggle" share one code path, never two
+-- copies that could drift.
+--
 -- Default mode (RICHMD_OFFLINE unset, ADR-0004's default): three CDN
 -- `<script src>` references (vega, vega-lite, vega-embed, in that
 -- dependency order — vega-embed's own documented usage) followed by a
--- plain inline `<script>` that calls the `vegaEmbed` global against the
--- parsed spec.
+-- plain inline `<script>` that defines and calls the render function.
 --
 -- Offline bundling (RICHMD_OFFLINE=1) is not yet implemented for
 -- vega-lite in this chunk — see the module-level note below.
 local function render(block, resolved_attrs)
   local source = block.text or ""
   local container_id = "richmd-vega-" .. tostring(math.random(1, 1000000000))
+  local fn_suffix = container_id:gsub("-", "_")
 
   local spec_html = "<div id=\""
     .. container_id
@@ -247,13 +341,34 @@ local function render(block, resolved_attrs)
     .. "\"></script>\n"
     .. "<script>\n"
     .. "  (function () {\n"
-    .. "    var specEl = document.getElementById('"
+    .. "    "
+    .. richmd_merge_config_js()
+    .. "\n"
+    .. "    function embedRichmdVega_"
+    .. fn_suffix
+    .. "() {\n"
+    .. "      var containerEl = document.getElementById('"
     .. container_id
-    .. "').nextElementSibling;\n"
-    .. "    var spec = JSON.parse(specEl.textContent);\n"
-    .. "    vegaEmbed('#"
+    .. "');\n"
+    .. "      var specEl = containerEl.nextElementSibling;\n"
+    .. "      var spec = JSON.parse(specEl.textContent);\n"
+    .. "      var colors = window.richmdDiagramTheme ? window.richmdDiagramTheme() : {};\n"
+    .. "      var baseConfig = ("
+    .. vega_lite_base_config_js()
+    .. ")(colors);\n"
+    .. "      var mergedConfig = richmdMergeConfig(baseConfig, spec.config || {});\n"
+    .. "      var mergedSpec = Object.assign({}, spec, { config: mergedConfig });\n"
+    .. "      vegaEmbed('#"
     .. container_id
-    .. "', spec);\n"
+    .. "', mergedSpec, { actions: false });\n"
+    .. "    }\n"
+    .. "    window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];\n"
+    .. "    window.richmdDiagramRerenders.push(embedRichmdVega_"
+    .. fn_suffix
+    .. ");\n"
+    .. "    embedRichmdVega_"
+    .. fn_suffix
+    .. "();\n"
     .. "  })();\n"
     .. "</script>"
 
