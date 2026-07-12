@@ -169,6 +169,98 @@ describe("richmd validate (cards, invalid cols)", () => {
   });
 });
 
+describe("richmd render (cards, optional per-card badge + meta)", () => {
+  // Per-card badge/meta is authored as Pandoc header_attributes on the
+  // card's own `###` heading line — `{badge="..." badge-tint="..."
+  // meta="..."}` — never a new heading level or a separate div (see
+  // filter/blocks/cards.lua's own header comment for why this syntax was
+  // chosen over a nested sub-heading).
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-cards-badge-meta-"),
+    );
+    mdPath = path.join(workDir, "cards-badge-meta.md");
+    htmlPath = path.join(workDir, "cards-badge-meta.html");
+    await cp(path.join(fixturesDir, "cards-badge-meta.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and writes a sibling .html file", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    await access(htmlPath);
+  });
+
+  it("renders a badge span with the tint modifier class for a card that has one", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<span class="richmd-badge richmd-badge--info">client<\/span>/,
+    );
+  });
+
+  it("renders a .richmd-card-meta div with the meta text for a card that has one", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<div class="richmd-card-meta">[\s\S]*owns:\s*schema\s*registry[\s\S]*<\/div>/,
+    );
+  });
+
+  it("omits both badge and meta entirely for a card that declares neither", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    // "Second card" has no badge/meta attrs at all.
+    const secondCardRe =
+      /<div class="richmd-card-title">\s*Second card\s*<\/div>\s*([\s\S]*?)<div class="richmd-card-body">/;
+    const match = html.match(secondCardRe);
+    assert.ok(match, "expected to find Second card's title/body region");
+    assert.doesNotMatch(match[1], /richmd-badge/);
+    assert.doesNotMatch(match[1], /richmd-card-meta/);
+  });
+
+  it("renders meta alone (no badge span) for a card with meta but no badge", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    const thirdCardRe =
+      /<div class="richmd-card-title">\s*Third card\s*<\/div>\s*([\s\S]*?)<div class="richmd-card-body">/;
+    const match = html.match(thirdCardRe);
+    assert.ok(match, "expected to find Third card's title/body region");
+    assert.doesNotMatch(match[1], /richmd-badge/);
+    assert.match(match[1], /richmd-card-meta/);
+    assert.match(match[1], /last updated: today/);
+  });
+});
+
+describe("richmd validate (cards, invalid badge-tint)", () => {
+  let workDir;
+  let mdPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-validate-cards-invalid-badge-tint-"),
+    );
+    mdPath = path.join(workDir, "cards-invalid-badge-tint.md");
+    await cp(path.join(fixturesDir, "cards-invalid-badge-tint.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero and names the bad badge-tint value", async () => {
+    const result = await runCli(["validate", mdPath]);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /badge-tint/);
+    assert.match(result.stderr, /rainbow/);
+  });
+});
+
 describe("richmd validate (cards, missing required body)", () => {
   let workDir;
   let mdPath;

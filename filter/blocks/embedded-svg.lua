@@ -26,6 +26,14 @@ local schema = {
       required = true,
       type = "string",
     },
+    -- Optional caption (design.md §04 registry card: "inline a sibling
+    -- `.svg` file, with an optional caption rendered as a real
+    -- `<figure>`/`<figcaption>` pair"). Omitting it renders exactly as
+    -- before this attr existed — see render()'s comment.
+    caption = {
+      required = false,
+      type = "string",
+    },
   },
   -- The block's own content is never used — the visible output comes
   -- entirely from the referenced file on disk.
@@ -71,6 +79,20 @@ local function read_svg_file(path)
   return contents
 end
 
+-- html_escape(text) -> string
+--
+-- `caption` is spliced into a raw HTML block below (a `<figcaption>` built
+-- via string concatenation, not a pandoc.Str/Span AST node whose own HTML
+-- writer would escape it automatically) — an unescaped caption containing
+-- `<`/`>`/`&` would either break the surrounding markup or, worse, let
+-- authored attr text execute as live HTML (e.g. a `caption="<script>...`
+-- value). Same escaping mermaid.lua's own html_escape applies to its
+-- `title` attr for the exact same reason (that attr is also spliced into
+-- raw HTML rather than going through Pandoc's writer).
+local function html_escape(text)
+  return (text:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+end
+
 -- validate(block, kind_name, location, add_error)
 --
 -- Called by the filter core's generic validate step alongside the
@@ -113,6 +135,14 @@ schema.validate = validate
 -- the file was deleted between validate and render within the same
 -- process), so it is a hard filter failure rather than a silently empty
 -- tile.
+--
+-- `caption` (optional, design.md §04): when present, the `.richmd-embedded-
+-- svg` div is wrapped in a real `<figure>` with a trailing `<figcaption>`
+-- holding the caption text (theme/default.css's `.richmd-doc figcaption`
+-- rule, already styled for exactly this — small, faint, centered text
+-- below a figure). When absent, the output is byte-for-byte identical to
+-- before this attr existed: just the bare `.richmd-embedded-svg` div, no
+-- `<figure>` wrapper at all.
 local function render(_block, resolved_attrs)
   local resolved_path = resolve_svg_path(resolved_attrs.file)
   local svg_source = read_svg_file(resolved_path)
@@ -120,9 +150,27 @@ local function render(_block, resolved_attrs)
     error("richmd: embedded-svg file '" .. resolved_attrs.file .. "' could not be read at render time (resolved to '" .. resolved_path .. "')")
   end
 
-  return pandoc.Div(
-    { pandoc.RawBlock("html", svg_source) },
-    pandoc.Attr("", { "richmd-embedded-svg" })
+  local caption = resolved_attrs.caption
+  if not caption or caption == "" then
+    return pandoc.Div(
+      { pandoc.RawBlock("html", svg_source) },
+      pandoc.Attr("", { "richmd-embedded-svg" })
+    )
+  end
+
+  -- With a caption, the real <figure> element itself must be the outer
+  -- tag (not a further `.richmd-embedded-svg`-classed div wrapping a
+  -- `<figure>`) so theme/default.css's plain `.richmd-doc figure` /
+  -- `.richmd-doc figcaption` rules apply directly. A Pandoc Div always
+  -- renders as `<div>`, so the whole figure is emitted as one raw HTML
+  -- block rather than composed from Div/RawBlock nodes.
+  return pandoc.RawBlock(
+    "html",
+    '<figure><div class="richmd-embedded-svg">'
+      .. svg_source
+      .. "</div><figcaption>"
+      .. html_escape(caption)
+      .. "</figcaption></figure>"
   )
 end
 

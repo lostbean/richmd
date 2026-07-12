@@ -93,6 +93,88 @@ describe("richmd render (embedded-svg, valid input)", () => {
   });
 });
 
+describe("richmd render (embedded-svg, optional caption)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-embedded-svg-caption-"),
+    );
+    mdPath = path.join(workDir, "embedded-svg-caption.md");
+    htmlPath = path.join(workDir, "embedded-svg-caption.html");
+    await cp(path.join(fixturesDir, "embedded-svg-caption.md"), mdPath);
+    await cp(
+      path.join(fixturesDir, "sample.svg"),
+      path.join(workDir, "sample.svg"),
+    );
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and writes a sibling .html file", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    await access(htmlPath);
+  });
+
+  it("wraps the embedded svg div in a <figure> with a <figcaption> holding the caption text", async () => {
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<figure>\s*<div class="richmd-embedded-svg">[\s\S]*?<\/div>\s*<figcaption>Figure 1: sample diagram<\/figcaption>\s*<\/figure>/,
+    );
+  });
+});
+
+// A caption is spliced into a raw HTML <figcaption> via string
+// concatenation (render() has no AST-node route to a bare RawBlock's
+// contents that would auto-escape it, unlike e.g. cards.lua's badge/meta
+// text which goes through pandoc.Str/Span and IS auto-escaped by Pandoc's
+// own HTML writer). An unescaped caption containing `<`/`>`/`&` would
+// either render as live HTML (e.g. a real `<b>` tag) or, worse, let
+// caption text execute as script — verified as a real bug (not just a
+// theoretical one) before html_escape was added to embedded-svg.lua.
+describe("richmd render (embedded-svg, caption with unsafe HTML characters)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-embedded-svg-caption-unsafe-"),
+    );
+    mdPath = path.join(workDir, "embedded-svg-caption-unsafe-chars.md");
+    htmlPath = path.join(workDir, "embedded-svg-caption-unsafe-chars.html");
+    await cp(
+      path.join(fixturesDir, "embedded-svg-caption-unsafe-chars.md"),
+      mdPath,
+    );
+    await cp(
+      path.join(fixturesDir, "sample.svg"),
+      path.join(workDir, "sample.svg"),
+    );
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("HTML-escapes the caption text rather than splicing it in as live markup", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<figcaption>a &lt;b&gt;bold&lt;\/b&gt; &amp; "quoted" caption<\/figcaption>/,
+    );
+    assert.doesNotMatch(html, /<figcaption>[^<]*<b>bold<\/b>/);
+  });
+});
+
 // Chunk 12 fix: validate_block (the Div-shaped validation path) now calls
 // schema.validate generically, exactly like validate_only_codeblock already
 // did for CodeBlock-shaped kinds — closing the gap chunk 10 found and

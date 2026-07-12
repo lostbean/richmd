@@ -44,10 +44,37 @@ local schema = {
     },
   },
   body = "required",
+  validate = nil, -- set below, after `validate` is defined
 }
+
+-- BADGE_TINTS: the 7 real tint-variant modifier classes theme/default.css
+-- ships (§7 BADGES / PILLS: `.richmd-badge--accent`/`--accent2`/`--info`/
+-- `--warning`/`--danger`/`--neutral`/`--outline`) — the only values
+-- `badge-tint` may validate to. Shared between validate() and render() so
+-- the two can never drift out of sync on what counts as a real tint.
+local BADGE_TINTS = { "accent", "accent2", "info", "warning", "danger", "neutral", "outline" }
 
 -- CARD_HEADING_LEVEL: the heading level that starts a new card. Authors
 -- write `### Title` per card (see test/fixtures/cards-valid.md).
+--
+-- Per-card badge/meta (design.md §04: "each card's `###` title optionally
+-- paired with a small badge/tag... visual metadata, never a substitute for
+-- the title text itself") is authored as Pandoc's own `header_attributes`
+-- reader extension directly on that SAME `###` line — `### Title
+-- {badge="..." badge-tint="..." meta="..."}` — never a new heading level
+-- or a sibling div. This was confirmed reliable in this repo's actual
+-- Pandoc invocation (bin/richmd.js: plain `markdown` reader, no `-f`
+-- override, so the default extension set applies) by a direct probe: a
+-- `pandoc --lua-filter` run against `### Title {badge="x"}` shows
+-- `header_attributes` is on by default, and the resulting Header AST node
+-- already carries `badge`/`badge-tint`/`meta` in its own `.attributes`
+-- table — exactly like any Div's attrs, just read off `card.heading`
+-- instead of off the cards Div itself. This keeps cards.lua's existing
+-- one-`###`-per-card contract completely unchanged (no new heading level
+-- introduced, so filter/heading-scope.lua's owns_internal_headers
+-- mechanism — which only ever looks at DIRECT-child Header nodes of a
+-- cards Div — needs no change at all: the attrs ride along on the exact
+-- same Header node heading-scope.lua already marks internal).
 local CARD_HEADING_LEVEL = 3
 
 -- split_cards(blocks) -> { { heading = pandoc.Header, body = { block, ... } }, ... }
@@ -73,6 +100,50 @@ local function split_cards(blocks)
   end
   return cards
 end
+
+-- validate(block, kind_name, location, add_error)
+--
+-- The generic schema-driven attrs/body checks (richmd-filter.lua's
+-- validate_attrs/validate_body) only ever see the cards Div's OWN attrs
+-- (cols/size) — they have no idea per-card Header nodes even exist, let
+-- alone that each one can carry its own badge/badge-tint/meta attrs. This
+-- hook is cards.lua's own custom grammar check (the exact same pattern
+-- embedded-svg.lua's `validate` uses for its file-existence check, and
+-- mermaid.lua's for its parse check): split the body into cards exactly
+-- like render() will, then validate each card's own `badge-tint` attr
+-- against BADGE_TINTS the same way the generic enum-attr check would, since
+-- there is no way to express "an attr living on a nested AST node, not the
+-- block's own attrs" in the generic schema.attrs table. `badge` and `meta`
+-- are free-form optional strings — nothing to validate beyond "present or
+-- not".
+local function validate(block, kind_name, location, add_error)
+  local cards = split_cards(block.content)
+  for _, card in ipairs(cards) do
+    local tint = card.heading.attributes["badge-tint"]
+    if tint and tint ~= "" then
+      local allowed = false
+      for _, candidate in ipairs(BADGE_TINTS) do
+        if tint == candidate then
+          allowed = true
+          break
+        end
+      end
+      if not allowed then
+        add_error(
+          kind_name,
+          location,
+          "attr 'badge-tint' has invalid value '"
+            .. tint
+            .. "' (allowed: "
+            .. table.concat(BADGE_TINTS, ", ")
+            .. ")"
+        )
+      end
+    end
+  end
+end
+
+schema.validate = validate
 
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
@@ -119,7 +190,44 @@ local function render(block, resolved_attrs)
     -- wrapper, not the <p> element).
     local body_div = pandoc.Div(card.body, pandoc.Attr("", { "richmd-card-body" }))
 
-    table.insert(card_divs, pandoc.Div({ title_div, body_div }, pandoc.Attr("", { "richmd-card" })))
+    -- Optional per-card badge/meta (design.md §04), read directly off the
+    -- card's own `### Title {badge="..." badge-tint="..." meta="..."}`
+    -- heading attrs (see CARD_HEADING_LEVEL's comment for why this attr
+    -- location is reliable in this repo's actual Pandoc invocation). Both
+    -- are entirely optional and independent of each other; omitting both
+    -- renders byte-for-byte identical to a card with no attrs at all — no
+    -- `.richmd-card-meta` div is emitted unless at least one of badge/meta
+    -- is actually present, so an existing card with a plain `### Title`
+    -- heading (no `{...}` at all) never gains one.
+    local badge_text = card.heading.attributes.badge
+    local badge_tint = card.heading.attributes["badge-tint"]
+    local meta_text = card.heading.attributes.meta
+
+    local meta_children = {}
+    if badge_text and badge_text ~= "" then
+      local badge_classes = { "richmd-badge" }
+      if badge_tint and badge_tint ~= "" then
+        table.insert(badge_classes, "richmd-badge--" .. badge_tint)
+      end
+      table.insert(
+        meta_children,
+        pandoc.Span({ pandoc.Str(badge_text) }, pandoc.Attr("", badge_classes))
+      )
+    end
+    if meta_text and meta_text ~= "" then
+      table.insert(meta_children, pandoc.Str(meta_text))
+    end
+
+    local card_children = { title_div }
+    if #meta_children > 0 then
+      table.insert(
+        card_children,
+        pandoc.Div({ pandoc.Plain(meta_children) }, pandoc.Attr("", { "richmd-card-meta" }))
+      )
+    end
+    table.insert(card_children, body_div)
+
+    table.insert(card_divs, pandoc.Div(card_children, pandoc.Attr("", { "richmd-card" })))
   end
 
   return pandoc.Div(card_divs, grid_attr)
@@ -134,5 +242,6 @@ end
 return {
   schema = schema,
   render = render,
+  validate = validate,
   register = register,
 }
