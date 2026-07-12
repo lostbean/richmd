@@ -152,6 +152,45 @@ describe("richmd validate (cross-document links, dangling target)", () => {
   });
 });
 
+// Fragment resolution is the other call site of the SAME slugify function
+// (design.md §06: "the slugify function is also exported standalone so
+// #fragment link resolution during validate can call the identical
+// logic"). A #fragment naming a heading that does not exist in the target
+// document is caught here, through the shared errors table.
+describe("richmd render (cross-document links, fragment does not match any heading)", () => {
+  let workDir;
+  let mainPath;
+  let siblingPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-links-bad-frag-"));
+    mainPath = path.join(workDir, "links-bad-fragment.md");
+    siblingPath = path.join(workDir, "links-sibling.md");
+    htmlPath = path.join(workDir, "links-bad-fragment.html");
+    await cp(path.join(fixturesDir, "links-bad-fragment.md"), mainPath);
+    await cp(path.join(fixturesDir, "links-sibling.md"), siblingPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero", async () => {
+    const result = await runCli(["render", mainPath]);
+    assert.notEqual(result.code, 0);
+  });
+
+  it("writes no HTML", async () => {
+    await assert.rejects(() => access(htmlPath));
+  });
+
+  it("names the fragment that does not match any heading", async () => {
+    const result = await runCli(["render", mainPath]);
+    assert.match(result.stderr, /no-such-heading/);
+  });
+});
+
 // Slugs are a pure, documented function (design.md §00 invariant): two
 // identical heading texts in the SAME document must produce distinct ids
 // via the GitHub-flavored -1/-2 duplicate suffix rule.

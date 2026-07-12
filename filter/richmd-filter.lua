@@ -168,27 +168,74 @@ local function is_relative_md_link(path_part)
   return path_part:match("%.md$") ~= nil
 end
 
+-- target_heading_slugs(resolved_path) -> { [slug] = true, ... }
+--
+-- Parses the target `.md` file and computes every heading's slug via the
+-- SAME Slugify.slugify function used to assign `id`s in the render phase
+-- (render_only_header, below) — one source of truth, so a `#fragment` link
+-- and its target heading's id can never disagree (§00 invariant). Used only
+-- to check that a `#fragment` names a heading that actually exists in the
+-- target document.
+local function target_heading_slugs(resolved_path)
+  local file = io.open(resolved_path, "r")
+  if not file then
+    return nil
+  end
+  local content = file:read("*a")
+  file:close()
+
+  local ok, target_doc = pcall(pandoc.read, content, "markdown")
+  if not ok then
+    return nil
+  end
+
+  local slugs = {}
+  local target_seen_slugs = Slugify.new_seen()
+  target_doc:walk({
+    Header = function(header)
+      local heading_text = pandoc.utils.stringify(header.content)
+      local slug = Slugify.slugify(heading_text, target_seen_slugs)
+      slugs[slug] = true
+    end,
+  })
+  return slugs
+end
+
 -- Pass 1 (validate phase): every relative `.md` link target must resolve to
 -- an existing file on disk, relative to the CURRENT document's own
 -- directory (§00 invariant: cross-document links always resolve). A
 -- dangling target is collected via the same `add_error` mechanism used for
--- callout/registry errors — never a separate path.
+-- callout/registry errors — never a separate path. When the link also
+-- carries a `#fragment`, that fragment is checked against the target
+-- document's own heading slugs (computed via the identical slugify
+-- function the render phase uses to assign heading ids).
 local function validate_only_link(link)
-  local path_part = split_target(link.target)
+  local path_part, fragment_part = split_target(link.target)
   if not is_relative_md_link(path_part) then
     return nil -- not a cross-document link; nothing to validate
   end
 
   local resolved_path = doc_dir .. "/" .. path_part
   local file = io.open(resolved_path, "r")
-  if file then
-    file:close()
-  else
+  if not file then
     add_error(
       "link",
       "link." .. link.target,
       "cross-document link target '" .. path_part .. "' does not exist (resolved to '" .. resolved_path .. "')"
     )
+    return nil
+  end
+  file:close()
+
+  if fragment_part then
+    local slugs = target_heading_slugs(resolved_path)
+    if slugs and not slugs[fragment_part] then
+      add_error(
+        "link",
+        "link." .. link.target,
+        "cross-document link target '" .. path_part .. "' has no heading matching fragment '#" .. fragment_part .. "'"
+      )
+    end
   end
   return nil
 end
