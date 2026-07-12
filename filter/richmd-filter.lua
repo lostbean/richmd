@@ -240,16 +240,29 @@ local function validate_only_link(link)
   return nil
 end
 
--- Richmd-recognized classes are those with a registry entry; a Div with no
--- richmd-recognized class is left untouched (ordinary Pandoc content).
+-- richmd_kind_of(div) -> kind_name | nil, unknown_class | nil
+--
+-- A fenced div with no classes at all is never richmd-authored content and
+-- is left completely untouched. A fenced div WITH classes, however, IS a
+-- Block: per CONTEXT.md#term-block's explicit Div/CodeBlock distinction,
+-- `::: {.kind}` is richmd's primary authoring syntax, so a Div's class is
+-- always a kind attempt — a class with no registry match is a validation
+-- error, never a silent pass-through (design.md §04's Interface field).
+-- (CodeBlocks are read differently on purpose — see
+-- richmd_kind_of_codeblock below.) The first class is used as the reported
+-- kind name (arbitrary but stable choice when multiple classes are
+-- present).
 local function richmd_kind_of(div)
+  if #div.classes == 0 then
+    return nil, nil -- no classes at all; never a Block, leave untouched
+  end
   for _, class in ipairs(div.classes) do
     local schema = select(1, registry:lookup(class))
     if schema then
-      return class
+      return class, nil
     end
   end
-  return nil
+  return nil, div.classes[1]
 end
 
 -- Pass 1 (validate phase): walk the whole AST, collect every error. Never
@@ -259,9 +272,16 @@ end
 -- (below) independently re-derives each block's kind via the same generic
 -- registry:lookup, exactly like this phase does.
 local function validate_only_div(div)
-  local kind_name = richmd_kind_of(div)
+  local kind_name, unknown_class = richmd_kind_of(div)
   if not kind_name then
-    return nil -- not a richmd block kind; leave untouched
+    if unknown_class then
+      add_error(
+        unknown_class,
+        "div." .. unknown_class,
+        "unknown block kind '" .. unknown_class .. "'"
+      )
+    end
+    return nil -- not a richmd block kind (or already reported); leave untouched
   end
   validate_block(div, kind_name)
   return nil
@@ -269,10 +289,14 @@ end
 
 -- richmd_kind_of_codeblock(code_block) -> kind_name | nil
 --
--- The CodeBlock equivalent of richmd_kind_of above: a fenced code block
--- (` ```mermaid `) is richmd-recognized by the SAME generic registry:lookup
--- mechanism used for Divs — a class with no registry entry is left as
--- ordinary Pandoc content (e.g. ` ```js ` code samples are untouched).
+-- Unlike richmd_kind_of (Divs) above, a CodeBlock's class is read
+-- differently on purpose (CONTEXT.md#term-block, design.md §04's Interface
+-- field): by universal Pandoc/CommonMark convention a code block's class
+-- names a code sample's language for editor/viewer styling (` ```js `,
+-- ` ```python `), not a kind attempt — richmd only treats a CodeBlock as a
+-- Block when its class is one it explicitly recognizes (`mermaid`,
+-- `vega-lite`, ...). A class with no registry match is always ordinary
+-- code, left completely untouched, never a validation error.
 local function richmd_kind_of_codeblock(code_block)
   for _, class in ipairs(code_block.classes) do
     local schema = select(1, registry:lookup(class))
@@ -295,7 +319,7 @@ end
 local function validate_only_codeblock(code_block)
   local kind_name = richmd_kind_of_codeblock(code_block)
   if not kind_name then
-    return nil -- not a richmd block kind; leave untouched
+    return nil -- not a recognized richmd block kind; ordinary code, leave untouched
   end
 
   local location = "codeblock." .. kind_name

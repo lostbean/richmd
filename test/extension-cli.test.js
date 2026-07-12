@@ -232,20 +232,27 @@ describe("richmd render (malformed schema FILE — missing required field) — s
 
 // Acceptance criterion (chunk 5 scope): loading a `.richmd/blocks/`
 // extension must not change how a div NAMING a registered-but-wrong kind
-// behaves, nor introduce a crash. `validate_only_div`/`richmd_kind_of`'s
-// walk-handler dispatch logic is explicitly out of scope for this chunk
-// (concurrent edits in flight; escalate rather than touch it) — this test
-// only proves the pre-existing "unknown class alongside a registered one
-// still validates the registered one" path is untouched by the extension
-// loader, not a full audit of unknown-kind detection generally.
+// behaves, nor introduce a crash. `richmd_kind_of` returns the FIRST class
+// with a registry match, so when a registered kind sits alongside an
+// unrelated unregistered class, the registered kind is still found and
+// validated — the unregistered sibling class is simply never reached.
 //
-// NOTE: a div whose classes contain NO registry hit at all (neither
-// built-in nor extension) is passed through as ordinary content by
-// `richmd_kind_of` today — this predates chunk 5 (confirmed unchanged on
-// the pre-chunk-5 baseline) and lives entirely in the walk-handler dispatch
-// this chunk was told not to modify. Flagged to the orchestrator as a
-// pre-existing gap against the "undefined kind is always a validation
-// error" invariant text, not fixed here.
+// (A previous version of this comment flagged a div whose classes contain
+// NO registry hit AT ALL — neither built-in nor extension — as a known,
+// unfixed gap against design.md §04's "a missing kind is itself a
+// validation error, not a silent pass-through" interface guarantee. That gap
+// is now fixed in richmd_kind_of (filter/richmd-filter.lua): a classed Div
+// with zero registry matches is a validation error, not a silent
+// pass-through. See test/validate.test.js's "Div with an unrecognized
+// class" suite for the direct proof; that fix is orthogonal to the
+// extension-loader behavior asserted below.
+//
+// CodeBlock deliberately does NOT get the same treatment — per
+// CONTEXT.md#term-block's Div/CodeBlock distinction, a code block's class
+// names a syntax-highlighting language by convention (` ```js `), not a
+// kind attempt, so an unrecognized CodeBlock class stays a silent
+// pass-through on purpose. See test/validate.test.js's "CodeBlock with an
+// unrecognized/language class" suite.)
 describe("richmd validate (registered class alongside an unrelated unknown class)", () => {
   let workDir;
   let mdPath;

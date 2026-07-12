@@ -120,3 +120,96 @@ describe("richmd validate (callout, two independent invalid blocks)", () => {
     assert.match(result.stderr, /also-not-real/);
   });
 });
+
+// CONTEXT.md#term-block's Div/CodeBlock distinction: `::: {.kind}` is
+// richmd's primary authoring syntax, so a fenced div's class is ALWAYS a
+// kind attempt — a Div with classes that match NOTHING in the registry is a
+// richmd block attempt with a typo'd/unknown kind name, not a foreign
+// tool's unrelated div, and must be a collected validation error, exactly
+// like an unknown kind reached via any other path (registry.lookup
+// returning nil). (CodeBlocks are handled differently on purpose — see the
+// "CodeBlock with an unrecognized/language class" suite below.)
+describe("richmd validate (Div with an unrecognized class)", () => {
+  let workDir;
+  let mdPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-validate-unknown-div-"),
+    );
+    mdPath = path.join(workDir, "unknown-kind-div.md");
+    await cp(path.join(fixturesDir, "unknown-kind-div.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero and names the unrecognized kind on stderr", async () => {
+    const result = await runCli(["validate", mdPath]);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /totally-unregistered-kind/);
+    assert.match(result.stderr, /unknown block kind/);
+  });
+});
+
+// CodeBlock is deliberately NOT symmetric with Div here (CONTEXT.md
+// #term-block's explicit Div/CodeBlock distinction, added specifically to
+// resolve this): by universal Pandoc/CommonMark convention a code block's
+// class names a syntax-highlighting language (` ```js `, ` ```python `), not
+// a kind attempt, so richmd only treats a CodeBlock as a Block when its
+// class is one it explicitly recognizes (`mermaid`, `vega-lite`, ...). An
+// unrecognized class like `js` must stay ordinary code, silently untouched
+// — asserting the OPPOSITE of the Div case above is intentional, not an
+// inconsistency.
+describe("richmd validate (CodeBlock with an unrecognized/language class)", () => {
+  let workDir;
+  let mdPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-validate-codeblock-language-"),
+    );
+    mdPath = path.join(workDir, "codeblock-unrecognized-language.md");
+    await cp(
+      path.join(fixturesDir, "codeblock-unrecognized-language.md"),
+      mdPath,
+    );
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 with no errors — an ordinary code sample, left untouched", async () => {
+    const result = await runCli(["validate", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    assert.equal(result.stderr, "");
+  });
+});
+
+// The flip side of the two cases above: genuinely unclassed content (no
+// `{.kind}` anywhere — a plain heading, paragraph, unclassed code fence, and
+// list) is never a Block at all (CONTEXT.md#term-block requires a `.kind`
+// class) and must remain completely unaffected by this fix — zero errors,
+// zero validation attempt, ordinary Pandoc content passed straight through.
+describe("richmd validate (no classes at all — ordinary content untouched)", () => {
+  let workDir;
+  let mdPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-validate-unclassed-"));
+    mdPath = path.join(workDir, "unclassed-passthrough.md");
+    await cp(path.join(fixturesDir, "unclassed-passthrough.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 with no errors", async () => {
+    const result = await runCli(["validate", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    assert.equal(result.stderr, "");
+  });
+});
