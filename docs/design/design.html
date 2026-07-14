@@ -1025,6 +1025,8 @@ footer.colophon {
 <dd><span class="enf mechanism">mechanism</span> <span>strong → weak</span></dd>
 <dt>Chips</dt>
 <dd><span class="script-chip">deciding-script</span> <span class="entry-id">P1</span> <span>script that decides · citable id</span></dd>
+<dt>Pending</dt>
+<dd><span class="badge build">build</span> <span class="since">since YYYY-MM-DD</span></dd>
 </dl>
 </details>
 
@@ -1198,6 +1200,20 @@ never in generator logic.</p>
 pair. Modifying richmd's own core source is never the extension path. See
 <a href="../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003">ADR-0003</a>.</p>
 </div>
+</div>
+</div>
+</div>
+<h2 id="pending-updates">Pending updates</h2>
+<div class="pending">
+<div class="entry"><div class="entry-head"><span class="badges"><span class="badge build">build</span> <span class="since">since 2026-07-14</span></span></div>
+<div class="body">
+<p><strong>Categorical palette for chart/vega-lite color channels</strong></p>
+<p>Designed in <a href="#07-theme-and-diagram-runtime">§07</a> and
+<a href="../adr/0007-shared-categorical-palette-for-vega-lite-specs.md#adr-0007">ADR-0007</a>:
+six <code>--richmd-color-cat-*</code> tokens, a <code>categorical</code> field on
+<code>richmdDiagramTheme()</code>, the shared Vega-Lite base config injecting it as the
+default color range, and <code>chart</code>'s bar/line marks gaining a color channel.
+Not yet built.</p>
 </div>
 </div>
 </div>
@@ -1382,7 +1398,10 @@ vega-lite block already goes through.</p>
 bind the table's first column to the <code>x</code>/category encoding and the second
 to the <code>y</code>/value encoding by position, unless <code>x=</code>/<code>y=</code> attrs name header
 columns explicitly (required once the table carries more than two
-columns); emit a minimal vega-lite spec of the requested mark type.</li>
+columns); emit a minimal vega-lite spec of the requested mark type. Every
+mark type carries a color channel keyed to the category field — the
+<a href="CONTEXT.md#term-categorical-palette">categorical palette</a> supplies the
+actual colors at render time, so expansion itself stays color-agnostic.</li>
 <li><strong>Interface</strong>: <code>expand(attrs, table_rows) -&gt; vega_lite_json | validation_error</code>,
 called during the <a href="CONTEXT.md#term-validate-phase">validate phase</a> before
 the expanded spec is handed to <code>vega-lite-check.js</code> (§05) exactly like any
@@ -1479,7 +1498,13 @@ are read from the page's live <code>--richmd-*</code> custom properties at rende
 time (via <code>getComputedStyle</code>), never hardcoded — so a diagram matches
 whatever theme (default or a consumer's reskin) is active, and
 re-renders when the theme toggle (§00) flips light/dark, exactly like
-the surrounding page's own colors do.</li>
+the surrounding page's own colors do. A <a href="CONTEXT.md#term-categorical-palette">categorical
+palette</a> of six <code>--richmd-color-cat-*</code>
+tokens is read the same live way and injected as every Vega-Lite spec's
+default color range — chart-derived or hand-authored alike, since both
+reach the shared base config identically — with an author's own explicit
+<code>scale.range</code> still winning. See
+<a href="../adr/0007-shared-categorical-palette-for-vega-lite-specs.md#adr-0007">ADR-0007</a>.</li>
 <li><strong>Interface</strong>: default mode emits CDN <code>&lt;script&gt;</code> tags for the mermaid.js
 and vega-lite runtimes; <code>--offline</code> (§02) downloads the pinned versions
 once and embeds them directly in the page instead. Container width is a

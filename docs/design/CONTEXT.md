@@ -148,3 +148,13 @@ identity. richmd ships exactly one default stylesheet, built entirely from
 `--richmd-*` CSS custom properties; a consumer reskins by overriding the
 variables or supplying a replacement stylesheet — richmd's core never
 hardcodes visual identity.
+
+### Categorical palette {#term-categorical-palette}
+
+The six `--richmd-color-cat-1` through `--richmd-color-cat-6`
+[theme](#term-theme) tokens (the first two aliasing the accent/accent-2
+tokens) read live and injected as the default color range for any
+Vega-Lite nominal channel with no `scale.range` of its own — chart-derived
+or hand-authored, per
+[ADR-0007](../adr/0007-shared-categorical-palette-for-vega-lite-specs.md#adr-0007).
+A domain with more than six values cycles the range rather than erroring.
