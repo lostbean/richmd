@@ -184,7 +184,10 @@ describe("richmd validate (CodeBlock with an unrecognized/language class)", () =
   it("exits 0 with no errors — an ordinary code sample, left untouched", async () => {
     const result = await runCli(["validate", mdPath]);
     assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
-    assert.equal(result.stderr, "");
+    // Every invocation now prints the resolved config directory to stderr
+    // unconditionally (ADR-0009) — "no errors" means no
+    // "richmd: [<kind>] ..." error line, not a literally empty stderr.
+    assert.doesNotMatch(result.stderr, /^richmd: \[/m);
   });
 });
 
@@ -210,6 +213,8 @@ describe("richmd validate (no classes at all — ordinary content untouched)", (
   it("exits 0 with no errors", async () => {
     const result = await runCli(["validate", mdPath]);
     assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
-    assert.equal(result.stderr, "");
+    // See the identical note above: the config-dir line (ADR-0009) is now
+    // always present and is not itself an error.
+    assert.doesNotMatch(result.stderr, /^richmd: \[/m);
   });
 });

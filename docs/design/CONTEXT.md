@@ -49,12 +49,76 @@ ships, plus every schema a consumer registers under its own
 [extension directory](#term-extension-directory). One registry, looked up by
 kind name, regardless of origin.
 
+### Config directory {#term-config-directory}
+
+The consumer-owned `.richmd/` directory richmd discovers for a given
+[document](#term-document): the nearest ancestor of the document's own
+directory (including that directory itself) containing a `.richmd/`
+directory, found by walking upward and stopping at the first directory
+containing `.git` (or at the document's own directory, if the walk finds
+none, or if an ancestor directory cannot be read — a permission error during
+the walk stops the walk exactly like reaching the boundary, never silently
+skips past the unreadable directory to keep climbing). "Nearest wins" — a
+document uses exactly one config directory, never a merge of several found
+along the walk. Its children are named, purpose-specific subdirectories, one
+per consumer-facing extension point richmd defines — today the
+[extension directory](#term-extension-directory) and the
+[rules directory](#term-rules-directory); a future extension point earns a
+third child under the same convention, never a parallel discovery mechanism.
+See [ADR-0009](../adr/0009-config-dir-upward-walk-bounded-at-repo-root.md#adr-0009).
+
 ### Extension directory {#term-extension-directory}
 
-A consumer-owned directory (default `.richmd/blocks/`) holding paired
-schema-fragment + Lua-filter files that add new
-[block kinds](#term-block-kind) to the [registry](#term-block-kind-registry)
-without forking richmd's core.
+The [config directory](#term-config-directory)'s `blocks/` child
+(`.richmd/blocks/`), holding paired schema-fragment + Lua-filter files that
+add new [block kinds](#term-block-kind) to the
+[registry](#term-block-kind-registry) without forking richmd's core.
+
+### Rules directory {#term-rules-directory}
+
+The [config directory](#term-config-directory)'s `rules/` child
+(`.richmd/rules/`), holding [cross-block rule](#term-cross-block-rule) Lua
+files. Optional, like the [extension directory](#term-extension-directory) —
+most documents have none.
+
+### Block projection {#term-block-projection}
+
+A frozen snapshot of a [block](#term-block) taken once, when the
+[block projection](#term-block-projection) list is built (§05) — its kind,
+attrs, location, and body text copied out at that moment, never a live
+reference into the Pandoc AST. A later phase mutating the AST (the
+[render phase](#term-render-phase) rewrites link targets and assigns slugs)
+never changes a projection already handed to a
+[cross-block rule](#term-cross-block-rule); moot in practice since every
+projection is built and consumed entirely within the
+[validate phase](#term-validate-phase), before the render phase exists. Never
+the raw Pandoc AST node a block-kind renderer works with — decouples rule
+authoring from richmd's internal AST representation. See
+[ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008).
+
+### Cross-block rule {#term-cross-block-rule}
+
+A consumer-defined check spanning more than one [block](#term-block) —
+ordering, cardinality, a required cross-link, a document-wide enum — living
+as a `.lua` file in the [rules directory](#term-rules-directory), identified
+by its filename as an [error source](#term-error-source). Runs once per
+document, as a [document-wide check](#term-document-wide-check), receiving
+the document's full ordered [block projection](#term-block-projection) list
+and reporting through the same collected-
+[validation-error](#term-validation-error) mechanism a per-block check uses.
+See
+[ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008).
+
+### Document-wide check {#term-document-wide-check}
+
+Any [validate-phase](#term-validate-phase) check whose input is more than
+one [block](#term-block) at once, rather than one block in isolation. Runs
+after every check it depends on has already collected its errors — a
+document-wide check that itself depends on another document-wide check's
+result runs after it, transitively. [Cross-block rules](#term-cross-block-rule)
+are richmd's first instance; the ordering rule is stated generally because a
+second instance is expected to compose with the first, not to redefine
+"last."
 
 ### Validate phase {#term-validate-phase}
 
@@ -75,10 +139,22 @@ and diagram-runtime script references, and emits the
 
 ### Validation error {#term-validation-error}
 
-One collected failure from the [validate phase](#term-validate-phase): the
-offending [block](#term-block)'s location, its kind, and a human-readable
-reason. Never causes an immediate exit — the phase collects every error in
-the document before reporting.
+One collected failure from the [validate phase](#term-validate-phase): an
+[error source](#term-error-source), a location, and a human-readable reason.
+Never causes an immediate exit — the phase collects every error in the
+document before reporting.
+
+### Error source {#term-error-source}
+
+The identifier a [validation error](#term-validation-error) names as its
+origin, reported in the `<source>` slot of
+`richmd: [<source>] <location>: <reason>`. Two kinds share the slot, prefix-
+distinguished so neither can collide with the other: a bare name (e.g.
+`callout`) is a [block kind](#term-block-kind); a `rule:`-prefixed name
+(e.g. `rule:foundation-ordering`) is a [cross-block rule](#term-cross-block-rule),
+identified by its filename without the `.lua` extension. A block kind and a
+rule may otherwise share a name (a rule file named `callout.lua` is legal)
+without their errors ever reading alike.
 
 ### Chart expansion {#term-chart-expansion}
 

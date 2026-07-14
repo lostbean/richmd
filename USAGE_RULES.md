@@ -363,7 +363,9 @@ every time you ask.
 ## Extending: your own block kinds
 
 Add a kind without forking richmd's own source. Drop a schema/renderer
-pair into `.richmd/blocks/` (relative to your document's own directory):
+pair into `.richmd/blocks/`, inside your document's **config directory**
+(see "Config directory discovery" below for exactly which directory that
+is):
 
 ```
 .richmd/blocks/highlight.schema.json
@@ -402,6 +404,118 @@ field, or a kind/filename mismatch) is a **fatal, load-time** error naming
 the offending file — richmd refuses to run at all rather than silently
 skipping a broken extension.
 
+### Config directory discovery
+
+richmd resolves `.richmd/blocks/` inside a **config directory** it finds by
+walking upward from the document's own directory — it does not assume
+`.richmd/` lives next to the document itself. This lets a group of
+documents nested under a shared directory (e.g. several
+`docs/design/<context>/*.md` files) point at one common
+`docs/design/.richmd/` instead of each needing its own copy.
+
+The walk, starting at the document's own directory and checking it first:
+
+1. If the directory being checked contains a `.richmd/` subdirectory, that
+   directory is the config directory — the walk stops immediately.
+   **Nearest wins**: richmd never merges kinds from more than one
+   `.richmd/` found along the way.
+2. Otherwise, if the directory being checked contains a `.git`
+   subdirectory (the repository root), the walk stops there — that
+   directory's own `.richmd/` was already checked in step 1 and was
+   absent, so richmd falls back to the **document's own directory**
+   (not the `.git` directory).
+3. Otherwise, richmd moves up to the parent directory and repeats. If an
+   ancestor directory can't be read (a permission error), the walk stops
+   there too, exactly as if a `.git` boundary had been reached.
+
+A project with no `.git` directory anywhere above the document, and no
+`.richmd/` anywhere along the walk, falls back to the document's own
+directory — identical to richmd's behavior before this discovery existed.
+
+Every `render` and `validate` invocation prints the resolved config
+directory to stderr, so which `.richmd/` a given call actually used is
+never a silent fact:
+
+```
+richmd: config directory resolved to '/path/to/docs/design'
+```
+
+(That directory's `.richmd/blocks/`, `.richmd/rules/`, etc. — not the
+`.richmd` path itself — is what gets resolved and loaded.)
+
+## Cross-block rules: your own document-wide checks
+
+Per-block validation (the schema each kind above already enforces) can't
+express a rule that spans more than one block — ordering, cardinality, a
+required cross-link, a document-wide enum. Drop a `.lua` file into
+`.richmd/rules/`, inside your document's config directory (same discovery
+as `.richmd/blocks/` above):
+
+```
+.richmd/rules/at-most-one-callout.lua
+```
+
+```lua
+return {
+  check = function(block_projections, add_error)
+    local count = 0
+    for _, bp in ipairs(block_projections) do
+      if bp.kind == "callout" then
+        count = count + 1
+        if count > 1 then
+          add_error(
+            "rule:at-most-one-callout",
+            bp.location,
+            "at most one callout block is allowed per document"
+          )
+        end
+      end
+    end
+  end,
+}
+```
+
+Given a document with two `callout` blocks, this produces:
+
+```
+richmd: [rule:at-most-one-callout] div.callout: at most one callout block is allowed per document
+```
+
+A rule runs once per document, after every per-block, link, and grammar
+check has already run — regardless of whether those checks found errors —
+against the document's full **block projection** list: one
+`{ kind, attrs, location, body_text }` entry per recognized block, in
+document order, frozen at the moment the list is built (never a live
+reference into the Pandoc AST). `kind` is the block's kind name (e.g.
+`"callout"`); `attrs` is a plain table of its resolved attributes;
+`location` is the same `"div.<kind>"` / `"codeblock.<kind>"` string a
+per-block error already uses; `body_text` is the block's content flattened
+to plain text. A rule can assume every projection it receives already
+passed its own block kind schema.
+
+The Lua file returns either `{ check = function(block_projections,
+add_error) ... end }` or a bare `check` function directly — same two
+accepted shapes as a `.richmd/blocks/*.lua` render function. `add_error` is
+the exact same error-collecting function per-block checks call into, so a
+rule's violations land in the identical list, contributing to the same
+fail-closed gate. A rule reports its own errors with itself as the
+source — always call `add_error` with `"rule:<filename-without-.lua>"` as
+the first argument (e.g. `"rule:at-most-one-callout"` for
+`at-most-one-callout.lua`). The `rule:` prefix means a rule file can share
+a name with a block kind (a rule file literally named `callout.lua` reports
+`[rule:callout]`) without its errors ever being confused with a genuine
+`callout` block's `[callout]` errors.
+
+A malformed rule file (bad Lua syntax, or a loaded value that is neither a
+function nor a table with a `check` function field) is a **fatal,
+load-time** error naming the offending file — richmd refuses to run at all,
+identical to a malformed `.richmd/blocks/` extension. A rule's `check`
+function itself raising a Lua runtime error partway through is also a hard
+failure (non-zero exit, no HTML) — but every error already collected
+before the crash (from an earlier per-block check, or an earlier rule) is
+still printed, and the crash itself is reported naming the crashing rule
+(not a block location), since the failure is document-wide.
+
 ## Failure behavior
 
 Every validation error is reported as:
@@ -413,3 +527,45 @@ richmd: [<kind>] <location>: <reason>
 All errors in a document are collected and printed together — richmd never
 stops at the first one. A document that fails validation produces **zero**
 output; a stale or partial `.html` file is never left behind.
+
+## Checking a committed .html is fresh (--check)
+
+`richmd render <file> --check` proves, without writing anything, that an
+already-committed sibling `.html` file still matches what richmd would
+generate right now — built for CI that wants to catch a committed `.html`
+that's stale or was hand-edited, without letting the CI run itself
+overwrite the committed file.
+
+`--check` changes only the write step, never what gets generated: it runs
+the exact same validate-then-render pipeline as a normal `render`, honoring
+every other flag on the same invocation (`--offline`, `--tree=<path>...`)
+exactly as it would shape a normal write. The generated HTML is captured in
+memory instead of being written, then byte-compared against the existing
+sibling `.html` file:
+
+- **Validation fails**: identical to `render` without `--check` — non-zero
+  exit, errors printed, nothing written and nothing compared. Checking
+  freshness of a document that doesn't even validate is meaningless.
+- **The sibling `.html` doesn't exist yet**: non-zero exit, a message
+  stating the file is missing.
+- **Byte-identical**: exit 0.
+- **Different**: non-zero exit, with a textual diff (enough for a CI log
+  reader to see what changed, not a sophisticated visual diff).
+
+In every case, `--check` never writes the sibling `.html` path — not on
+success, not on failure, not partially.
+
+`--check` proves freshness against **one specific, named invocation** —
+whatever flags you pass to `--check` must match the flags the committed
+file was actually generated with. A non-`--offline` `--check` against an
+`--offline`-committed file (or one committed with a different `--tree`
+list) correctly reports the file as stale for that reason — a real
+difference in how the file was produced, not a bug. Pin the flag
+combination your CI uses for `--check` to the same one your commit step
+uses.
+
+```
+richmd render report.md --check
+richmd render report.md --check --offline
+richmd render report.md --check --tree=architecture.md --tree=glossary.md
+```
