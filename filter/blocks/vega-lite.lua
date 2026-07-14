@@ -335,6 +335,13 @@ end
 -- grid line, and no view border (the outer `.richmd-diagram` panel already
 -- draws one). No hex value is hardcoded here (design.md §00 principle P3 /
 -- §07): every color comes from the shared `richmdDiagramTheme()` object.
+--
+-- `range.category` (ADR-0007) injects `c.categorical` — the six
+-- `--richmd-color-cat-*` tokens — as the DEFAULT color range for any
+-- nominal color channel, chart-derived or hand-authored alike, the moment
+-- the spec doesn't set its own `scale.range`/`config.range.category`; an
+-- author's own explicit range still wins via `richmdMergeConfig`'s
+-- whole-array replacement (arrays are never merged element-wise).
 local function vega_lite_base_config_js()
   return [[function (c) {
     return {
@@ -356,6 +363,9 @@ local function vega_lite_base_config_js()
       },
       view: {
         stroke: "transparent",
+      },
+      range: {
+        category: c.categorical,
       },
     };
   }]]

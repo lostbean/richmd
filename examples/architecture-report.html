@@ -97,6 +97,14 @@
         --richmd-accent2-700: #0a5a70;
         --richmd-accent2-900: #073445;
 
+        /* categorical palette — cat-1/cat-2 alias accent/accent-2; cat-3..6 are new
+       hues (green, amber, magenta, red) chosen and validated (CVD-safe order,
+       WCAG contrast) for distinctness from each other and from accent/accent2 */
+        --richmd-color-cat-3: #16a34a;
+        --richmd-color-cat-4: #b45309;
+        --richmd-color-cat-5: #db2777;
+        --richmd-color-cat-6: #b91c1c;
+
         /* semantic ramps — callouts, badges, stat deltas */
         --richmd-info-100: #e7f0fe;
         --richmd-info-300: #a9c6f5;
@@ -208,6 +216,10 @@
           --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
           --richmd-color-accent2-solid: #22d3ee;
           --richmd-color-accent2-text: #67e0f2;
+          --richmd-color-cat-3: #22a355;
+          --richmd-color-cat-4: #c98500;
+          --richmd-color-cat-5: #d55181;
+          --richmd-color-cat-6: #d9483f;
           --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
           --richmd-color-info-border: rgba(147, 197, 253, 0.3);
           --richmd-color-info-solid: #60a5fa;
@@ -250,6 +262,10 @@
         --richmd-color-accent2-tint: var(--richmd-accent2-100);
         --richmd-color-accent2-solid: var(--richmd-accent2-500);
         --richmd-color-accent2-text: var(--richmd-accent2-700);
+        --richmd-color-cat-3: #16a34a;
+        --richmd-color-cat-4: #b45309;
+        --richmd-color-cat-5: #db2777;
+        --richmd-color-cat-6: #b91c1c;
         --richmd-color-info-tint: var(--richmd-info-100);
         --richmd-color-info-border: var(--richmd-info-300);
         --richmd-color-info-solid: var(--richmd-info-500);
@@ -287,6 +303,10 @@
         --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
         --richmd-color-accent2-solid: #22d3ee;
         --richmd-color-accent2-text: #67e0f2;
+        --richmd-color-cat-3: #22a355;
+        --richmd-color-cat-4: #c98500;
+        --richmd-color-cat-5: #d55181;
+        --richmd-color-cat-6: #d9483f;
         --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
         --richmd-color-info-border: rgba(147, 197, 253, 0.3);
         --richmd-color-info-solid: #60a5fa;
@@ -325,6 +345,10 @@
         --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
         --richmd-color-accent2-solid: #22d3ee;
         --richmd-color-accent2-text: #67e0f2;
+        --richmd-color-cat-3: #22a355;
+        --richmd-color-cat-4: #c98500;
+        --richmd-color-cat-5: #d55181;
+        --richmd-color-cat-6: #d9483f;
         --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
         --richmd-color-info-border: rgba(147, 197, 253, 0.3);
         --richmd-color-info-solid: #60a5fa;
@@ -1088,6 +1112,8 @@
             value = value && value.trim();
             return value || fallback;
           }
+          var accentSolid = v("--richmd-color-accent-solid", "#4f46e5");
+          var accent2Solid = v("--richmd-color-accent2-solid", "#0891b2");
           return {
             bg: v("--richmd-color-bg", "#ffffff"),
             bgAlt: v("--richmd-color-bg-alt", "#f0f0f0"),
@@ -1098,11 +1124,19 @@
             text: v("--richmd-color-text", "#000000"),
             textMuted: v("--richmd-color-text-muted", "rgba(0,0,0,0.62)"),
             textFaint: v("--richmd-color-text-faint", "rgba(0,0,0,0.4)"),
-            accentSolid: v("--richmd-color-accent-solid", "#4f46e5"),
+            accentSolid: accentSolid,
             accentText: v("--richmd-color-accent-text", "#4f46e5"),
             accentTint: v("--richmd-color-accent-tint", "#eef0fe"),
-            accent2Solid: v("--richmd-color-accent2-solid", "#0891b2"),
+            accent2Solid: accent2Solid,
             accent2Text: v("--richmd-color-accent2-text", "#0891b2"),
+            categorical: [
+              accentSolid,
+              accent2Solid,
+              v("--richmd-color-cat-3", "#16a34a"),
+              v("--richmd-color-cat-4", "#b45309"),
+              v("--richmd-color-cat-5", "#db2777"),
+              v("--richmd-color-cat-6", "#b91c1c"),
+            ],
             fontBody: v("--richmd-font-body", "sans-serif"),
           };
         };
@@ -1192,7 +1226,7 @@
             <div class="richmd-diagram-title">Mermaid — flowchart</div>
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-519255858"
+              id="richmd-mermaid-640784078"
               style="display: none"
             >
 flowchart LR
@@ -1205,7 +1239,7 @@ flowchart LR
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-519255858-target"
+              id="richmd-mermaid-640784078-target"
             ></div>
           </div>
           <script type="module">
@@ -1214,12 +1248,12 @@ flowchart LR
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_519255858() {
+            function renderMermaid_richmd_mermaid_640784078() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-519255858",
+                "richmd-mermaid-640784078",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-519255858-target",
+                "richmd-mermaid-640784078-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1251,7 +1285,7 @@ flowchart LR
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-519255858-target-svg",
+                  "richmd-mermaid-640784078-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
@@ -1259,7 +1293,7 @@ flowchart LR
                 })
                 .catch(function (err) {
                   console.error(
-                    'richmd: mermaid diagram "richmd-mermaid-519255858" failed to render: ' +
+                    'richmd: mermaid diagram "richmd-mermaid-640784078" failed to render: ' +
                       (err && err.message ? err.message : err),
                   );
                   sourceEl.style.display = "block";
@@ -1269,9 +1303,9 @@ flowchart LR
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_519255858,
+              renderMermaid_richmd_mermaid_640784078,
             );
-            renderMermaid_richmd_mermaid_519255858();
+            renderMermaid_richmd_mermaid_640784078();
           </script>
         </div>
         <h2 id="components">Components</h2>
@@ -1378,7 +1412,7 @@ flowchart LR
             <div class="richmd-diagram-title">Mermaid — sequence</div>
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-762274176"
+              id="richmd-mermaid-436405591"
               style="display: none"
             >
 sequenceDiagram
@@ -1398,7 +1432,7 @@ sequenceDiagram
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-762274176-target"
+              id="richmd-mermaid-436405591-target"
             ></div>
           </div>
           <script type="module">
@@ -1407,12 +1441,12 @@ sequenceDiagram
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_762274176() {
+            function renderMermaid_richmd_mermaid_436405591() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-762274176",
+                "richmd-mermaid-436405591",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-762274176-target",
+                "richmd-mermaid-436405591-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1444,7 +1478,7 @@ sequenceDiagram
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-762274176-target-svg",
+                  "richmd-mermaid-436405591-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
@@ -1452,7 +1486,7 @@ sequenceDiagram
                 })
                 .catch(function (err) {
                   console.error(
-                    'richmd: mermaid diagram "richmd-mermaid-762274176" failed to render: ' +
+                    'richmd: mermaid diagram "richmd-mermaid-436405591" failed to render: ' +
                       (err && err.message ? err.message : err),
                   );
                   sourceEl.style.display = "block";
@@ -1462,9 +1496,9 @@ sequenceDiagram
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_762274176,
+              renderMermaid_richmd_mermaid_436405591,
             );
-            renderMermaid_richmd_mermaid_762274176();
+            renderMermaid_richmd_mermaid_436405591();
           </script>
         </div>
         <h2 id="trust-boundary">Trust boundary</h2>

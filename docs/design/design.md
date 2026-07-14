@@ -167,19 +167,6 @@ pair. Modifying richmd's own core source is never the extension path. See
 [ADR-0003](../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003).
 :::
 
-## Pending updates
-
-:::pending {kind=build since=2026-07-14}
-**Categorical palette for chart/vega-lite color channels**
-
-Designed in [§07](#07-theme-and-diagram-runtime) and
-[ADR-0007](../adr/0007-shared-categorical-palette-for-vega-lite-specs.md#adr-0007):
-six `--richmd-color-cat-*` tokens, a `categorical` field on
-`richmdDiagramTheme()`, the shared Vega-Lite base config injecting it as the
-default color range, and `chart`'s bar/line marks gaining a color channel.
-Not yet built.
-:::
-
 ## 01 System at a glance
 
 richmd is one pipeline: parse, validate, gate, render. The

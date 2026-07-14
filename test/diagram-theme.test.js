@@ -206,6 +206,94 @@ describe("richmd render — shared diagram-theme script", () => {
     assert.equal(colors.fontBody, "Inter, system-ui, sans-serif");
   });
 
+  it("categorical field: a 6-entry array whose first two entries are the SAME values as accentSolid/accent2Solid (reused, not re-read), and whose remaining four are read from --richmd-color-cat-3..6 (executed via the same DOM stub)", async () => {
+    const script = extractDiagramThemeScript(html);
+    assert.ok(script);
+
+    const fakeCssVars = {
+      "--richmd-color-accent-solid": "#818cf8",
+      "--richmd-color-accent2-solid": "#22d3ee",
+      "--richmd-color-cat-3": "#22a355",
+      "--richmd-color-cat-4": "#c98500",
+      "--richmd-color-cat-5": "#d55181",
+      "--richmd-color-cat-6": "#d9483f",
+    };
+
+    const fakeDocEl = { tagName: "DIV" };
+    const fakeDocument = {
+      querySelector(sel) {
+        if (sel.includes("richmd-doc")) return fakeDocEl;
+        return null;
+      },
+      documentElement: fakeDocEl,
+      addEventListener() {},
+    };
+
+    function fakeGetComputedStyle() {
+      return {
+        getPropertyValue(name) {
+          return fakeCssVars[name] || "";
+        },
+      };
+    }
+
+    const fn = new Function(
+      "document",
+      "getComputedStyle",
+      "window",
+      script + "\n;return window.richmdDiagramTheme();",
+    );
+    const colors = fn(fakeDocument, fakeGetComputedStyle, {});
+
+    assert.ok(Array.isArray(colors.categorical));
+    assert.equal(colors.categorical.length, 6);
+    assert.deepEqual(colors.categorical, [
+      "#818cf8",
+      "#22d3ee",
+      "#22a355",
+      "#c98500",
+      "#d55181",
+      "#d9483f",
+    ]);
+    // The first two entries must literally equal the already-computed
+    // accentSolid/accent2Solid fields — proving reuse, not a second
+    // independent CSS read.
+    assert.equal(colors.categorical[0], colors.accentSolid);
+    assert.equal(colors.categorical[1], colors.accent2Solid);
+  });
+
+  it("categorical field falls back to hardcoded defaults (matching theme/default.css's light-mode values) when the CSS custom properties are absent", async () => {
+    const script = extractDiagramThemeScript(html);
+    assert.ok(script);
+
+    const fakeDocEl = { tagName: "DIV" };
+    const fakeDocument = {
+      querySelector(sel) {
+        if (sel.includes("richmd-doc")) return fakeDocEl;
+        return null;
+      },
+      documentElement: fakeDocEl,
+      addEventListener() {},
+    };
+    function fakeGetComputedStyle() {
+      return { getPropertyValue: () => "" };
+    }
+
+    const fn = new Function(
+      "document",
+      "getComputedStyle",
+      "window",
+      script + "\n;return window.richmdDiagramTheme();",
+    );
+    const colors = fn(fakeDocument, fakeGetComputedStyle, {});
+
+    assert.equal(colors.categorical.length, 6);
+    assert.equal(colors.categorical[2], "#16a34a");
+    assert.equal(colors.categorical[3], "#b45309");
+    assert.equal(colors.categorical[4], "#db2777");
+    assert.equal(colors.categorical[5], "#b91c1c");
+  });
+
   it("richmdRerenderDiagrams calls every callback pushed onto richmdDiagramRerenders, and richmd-theme-changed triggers it", async () => {
     const script = extractDiagramThemeScript(html);
     assert.ok(script);

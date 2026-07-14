@@ -97,6 +97,14 @@
         --richmd-accent2-700: #0a5a70;
         --richmd-accent2-900: #073445;
 
+        /* categorical palette — cat-1/cat-2 alias accent/accent-2; cat-3..6 are new
+       hues (green, amber, magenta, red) chosen and validated (CVD-safe order,
+       WCAG contrast) for distinctness from each other and from accent/accent2 */
+        --richmd-color-cat-3: #16a34a;
+        --richmd-color-cat-4: #b45309;
+        --richmd-color-cat-5: #db2777;
+        --richmd-color-cat-6: #b91c1c;
+
         /* semantic ramps — callouts, badges, stat deltas */
         --richmd-info-100: #e7f0fe;
         --richmd-info-300: #a9c6f5;
@@ -208,6 +216,10 @@
           --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
           --richmd-color-accent2-solid: #22d3ee;
           --richmd-color-accent2-text: #67e0f2;
+          --richmd-color-cat-3: #22a355;
+          --richmd-color-cat-4: #c98500;
+          --richmd-color-cat-5: #d55181;
+          --richmd-color-cat-6: #d9483f;
           --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
           --richmd-color-info-border: rgba(147, 197, 253, 0.3);
           --richmd-color-info-solid: #60a5fa;
@@ -250,6 +262,10 @@
         --richmd-color-accent2-tint: var(--richmd-accent2-100);
         --richmd-color-accent2-solid: var(--richmd-accent2-500);
         --richmd-color-accent2-text: var(--richmd-accent2-700);
+        --richmd-color-cat-3: #16a34a;
+        --richmd-color-cat-4: #b45309;
+        --richmd-color-cat-5: #db2777;
+        --richmd-color-cat-6: #b91c1c;
         --richmd-color-info-tint: var(--richmd-info-100);
         --richmd-color-info-border: var(--richmd-info-300);
         --richmd-color-info-solid: var(--richmd-info-500);
@@ -287,6 +303,10 @@
         --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
         --richmd-color-accent2-solid: #22d3ee;
         --richmd-color-accent2-text: #67e0f2;
+        --richmd-color-cat-3: #22a355;
+        --richmd-color-cat-4: #c98500;
+        --richmd-color-cat-5: #d55181;
+        --richmd-color-cat-6: #d9483f;
         --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
         --richmd-color-info-border: rgba(147, 197, 253, 0.3);
         --richmd-color-info-solid: #60a5fa;
@@ -325,6 +345,10 @@
         --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
         --richmd-color-accent2-solid: #22d3ee;
         --richmd-color-accent2-text: #67e0f2;
+        --richmd-color-cat-3: #22a355;
+        --richmd-color-cat-4: #c98500;
+        --richmd-color-cat-5: #d55181;
+        --richmd-color-cat-6: #d9483f;
         --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
         --richmd-color-info-border: rgba(147, 197, 253, 0.3);
         --richmd-color-info-solid: #60a5fa;
@@ -1088,6 +1112,8 @@
             value = value && value.trim();
             return value || fallback;
           }
+          var accentSolid = v("--richmd-color-accent-solid", "#4f46e5");
+          var accent2Solid = v("--richmd-color-accent2-solid", "#0891b2");
           return {
             bg: v("--richmd-color-bg", "#ffffff"),
             bgAlt: v("--richmd-color-bg-alt", "#f0f0f0"),
@@ -1098,11 +1124,19 @@
             text: v("--richmd-color-text", "#000000"),
             textMuted: v("--richmd-color-text-muted", "rgba(0,0,0,0.62)"),
             textFaint: v("--richmd-color-text-faint", "rgba(0,0,0,0.4)"),
-            accentSolid: v("--richmd-color-accent-solid", "#4f46e5"),
+            accentSolid: accentSolid,
             accentText: v("--richmd-color-accent-text", "#4f46e5"),
             accentTint: v("--richmd-color-accent-tint", "#eef0fe"),
-            accent2Solid: v("--richmd-color-accent2-solid", "#0891b2"),
+            accent2Solid: accent2Solid,
             accent2Text: v("--richmd-color-accent2-text", "#0891b2"),
+            categorical: [
+              accentSolid,
+              accent2Solid,
+              v("--richmd-color-cat-3", "#16a34a"),
+              v("--richmd-color-cat-4", "#b45309"),
+              v("--richmd-color-cat-5", "#db2777"),
+              v("--richmd-color-cat-6", "#b91c1c"),
+            ],
             fontBody: v("--richmd-font-body", "sans-serif"),
           };
         };
@@ -1225,7 +1259,7 @@
           <div class="richmd-diagram">
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-593393198"
+              id="richmd-mermaid-762157412"
               style="display: none"
             >
 graph TD
@@ -1240,7 +1274,7 @@ graph TD
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-593393198-target"
+              id="richmd-mermaid-762157412-target"
             ></div>
           </div>
           <script type="module">
@@ -1249,12 +1283,12 @@ graph TD
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_593393198() {
+            function renderMermaid_richmd_mermaid_762157412() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-593393198",
+                "richmd-mermaid-762157412",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-593393198-target",
+                "richmd-mermaid-762157412-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1286,7 +1320,7 @@ graph TD
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-593393198-target-svg",
+                  "richmd-mermaid-762157412-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
@@ -1294,7 +1328,7 @@ graph TD
                 })
                 .catch(function (err) {
                   console.error(
-                    'richmd: mermaid diagram "richmd-mermaid-593393198" failed to render: ' +
+                    'richmd: mermaid diagram "richmd-mermaid-762157412" failed to render: ' +
                       (err && err.message ? err.message : err),
                   );
                   sourceEl.style.display = "block";
@@ -1304,9 +1338,9 @@ graph TD
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_593393198,
+              renderMermaid_richmd_mermaid_762157412,
             );
-            renderMermaid_richmd_mermaid_593393198();
+            renderMermaid_richmd_mermaid_762157412();
           </script>
         </div>
         <p>
@@ -1316,7 +1350,7 @@ graph TD
         </p>
         <div class="richmd-diagram-wrapper">
           <div class="richmd-diagram">
-            <div id="richmd-vega-517384915" class="richmd-vega"></div>
+            <div id="richmd-vega-362617164" class="richmd-vega"></div>
             <script type="application/json" class="richmd-vega-lite-spec">
               {
                 "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -1388,9 +1422,9 @@ graph TD
                 var width = target.getBoundingClientRect().width;
                 return width > 0 ? width : null;
               }
-              function embedRichmdVega_richmd_vega_517384915() {
+              function embedRichmdVega_richmd_vega_362617164() {
                 var containerEl = document.getElementById(
-                  "richmd-vega-517384915",
+                  "richmd-vega-362617164",
                 );
                 var specEl = containerEl.nextElementSibling;
                 var spec = JSON.parse(specEl.textContent);
@@ -1418,6 +1452,9 @@ graph TD
                     view: {
                       stroke: "transparent",
                     },
+                    range: {
+                      category: c.categorical,
+                    },
                   };
                 })(colors);
                 var mergedConfig = richmdMergeConfig(
@@ -1433,25 +1470,25 @@ graph TD
                     mergedSpec.width = measuredWidth;
                   }
                 }
-                vegaEmbed("#richmd-vega-517384915", mergedSpec, {
+                vegaEmbed("#richmd-vega-362617164", mergedSpec, {
                   actions: false,
                 });
               }
               window.richmdDiagramRerenders =
                 window.richmdDiagramRerenders || [];
               window.richmdDiagramRerenders.push(
-                embedRichmdVega_richmd_vega_517384915,
+                embedRichmdVega_richmd_vega_362617164,
               );
-              embedRichmdVega_richmd_vega_517384915();
-              var resizeRaf_richmd_vega_517384915 = null;
+              embedRichmdVega_richmd_vega_362617164();
+              var resizeRaf_richmd_vega_362617164 = null;
               window.addEventListener("resize", function () {
-                if (resizeRaf_richmd_vega_517384915 !== null) {
-                  cancelAnimationFrame(resizeRaf_richmd_vega_517384915);
+                if (resizeRaf_richmd_vega_362617164 !== null) {
+                  cancelAnimationFrame(resizeRaf_richmd_vega_362617164);
                 }
-                resizeRaf_richmd_vega_517384915 = requestAnimationFrame(
+                resizeRaf_richmd_vega_362617164 = requestAnimationFrame(
                   function () {
-                    resizeRaf_richmd_vega_517384915 = null;
-                    embedRichmdVega_richmd_vega_517384915();
+                    resizeRaf_richmd_vega_362617164 = null;
+                    embedRichmdVega_richmd_vega_362617164();
                   },
                 );
               });
@@ -1465,7 +1502,7 @@ graph TD
         </p>
         <div class="richmd-diagram-wrapper">
           <div class="richmd-diagram">
-            <div id="richmd-vega-38596106" class="richmd-vega"></div>
+            <div id="richmd-vega-431120256" class="richmd-vega"></div>
             <script type="application/json" class="richmd-vega-lite-spec">
               {
                 "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -1484,7 +1521,8 @@ graph TD
                     "sort": null,
                     "axis": { "labelAngle": 0 }
                   },
-                  "y": { "field": "Incidents", "type": "quantitative" }
+                  "y": { "field": "Incidents", "type": "quantitative" },
+                  "color": { "field": "Month", "type": "nominal" }
                 }
               }
             </script>
@@ -1525,9 +1563,9 @@ graph TD
                 var width = target.getBoundingClientRect().width;
                 return width > 0 ? width : null;
               }
-              function embedRichmdVega_richmd_vega_38596106() {
+              function embedRichmdVega_richmd_vega_431120256() {
                 var containerEl = document.getElementById(
-                  "richmd-vega-38596106",
+                  "richmd-vega-431120256",
                 );
                 var specEl = containerEl.nextElementSibling;
                 var spec = JSON.parse(specEl.textContent);
@@ -1555,6 +1593,9 @@ graph TD
                     view: {
                       stroke: "transparent",
                     },
+                    range: {
+                      category: c.categorical,
+                    },
                   };
                 })(colors);
                 var mergedConfig = richmdMergeConfig(
@@ -1570,25 +1611,25 @@ graph TD
                     mergedSpec.width = measuredWidth;
                   }
                 }
-                vegaEmbed("#richmd-vega-38596106", mergedSpec, {
+                vegaEmbed("#richmd-vega-431120256", mergedSpec, {
                   actions: false,
                 });
               }
               window.richmdDiagramRerenders =
                 window.richmdDiagramRerenders || [];
               window.richmdDiagramRerenders.push(
-                embedRichmdVega_richmd_vega_38596106,
+                embedRichmdVega_richmd_vega_431120256,
               );
-              embedRichmdVega_richmd_vega_38596106();
-              var resizeRaf_richmd_vega_38596106 = null;
+              embedRichmdVega_richmd_vega_431120256();
+              var resizeRaf_richmd_vega_431120256 = null;
               window.addEventListener("resize", function () {
-                if (resizeRaf_richmd_vega_38596106 !== null) {
-                  cancelAnimationFrame(resizeRaf_richmd_vega_38596106);
+                if (resizeRaf_richmd_vega_431120256 !== null) {
+                  cancelAnimationFrame(resizeRaf_richmd_vega_431120256);
                 }
-                resizeRaf_richmd_vega_38596106 = requestAnimationFrame(
+                resizeRaf_richmd_vega_431120256 = requestAnimationFrame(
                   function () {
-                    resizeRaf_richmd_vega_38596106 = null;
-                    embedRichmdVega_richmd_vega_38596106();
+                    resizeRaf_richmd_vega_431120256 = null;
+                    embedRichmdVega_richmd_vega_431120256();
                   },
                 );
               });

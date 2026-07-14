@@ -468,6 +468,8 @@ local function diagram_theme_script_html()
       value = value && value.trim();
       return value || fallback;
     }
+    var accentSolid = v("--richmd-color-accent-solid", "#4f46e5");
+    var accent2Solid = v("--richmd-color-accent2-solid", "#0891b2");
     return {
       bg: v("--richmd-color-bg", "#ffffff"),
       bgAlt: v("--richmd-color-bg-alt", "#f0f0f0"),
@@ -478,11 +480,19 @@ local function diagram_theme_script_html()
       text: v("--richmd-color-text", "#000000"),
       textMuted: v("--richmd-color-text-muted", "rgba(0,0,0,0.62)"),
       textFaint: v("--richmd-color-text-faint", "rgba(0,0,0,0.4)"),
-      accentSolid: v("--richmd-color-accent-solid", "#4f46e5"),
+      accentSolid: accentSolid,
       accentText: v("--richmd-color-accent-text", "#4f46e5"),
       accentTint: v("--richmd-color-accent-tint", "#eef0fe"),
-      accent2Solid: v("--richmd-color-accent2-solid", "#0891b2"),
+      accent2Solid: accent2Solid,
       accent2Text: v("--richmd-color-accent2-text", "#0891b2"),
+      categorical: [
+        accentSolid,
+        accent2Solid,
+        v("--richmd-color-cat-3", "#16a34a"),
+        v("--richmd-color-cat-4", "#b45309"),
+        v("--richmd-color-cat-5", "#db2777"),
+        v("--richmd-color-cat-6", "#b91c1c"),
+      ],
       fontBody: v("--richmd-font-body", "sans-serif"),
     };
   };

@@ -290,6 +290,14 @@ the slice size (`theta`). For `bar`/`line`, x-axis category labels render
 horizontally by default rather than auto-rotating aggressively; Vega-Lite
 still rotates them when they genuinely don't fit.
 
+Every mark type (`bar`, `line`, `pie`) carries a color channel keyed to the
+category column, so each category renders in a distinct color from
+richmd's theme-aware categorical palette (the six `--richmd-color-cat-1`
+through `-6` tokens, read live from the active theme); the palette cycles
+if a table has more than 6 categories. The legend stays visible for all
+three mark types — it is not hidden, even though it is redundant with
+`bar`/`line`'s own x-axis category labels.
+
 Failure cases, all reported at validate time:
 
 - Fewer than 2 columns: `"table has N column(s); a chart block needs at
