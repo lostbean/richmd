@@ -1308,7 +1308,7 @@
           <div class="richmd-diagram">
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-154432361"
+              id="richmd-mermaid-809432686"
               style="display: none"
             >
 graph TD
@@ -1325,7 +1325,7 @@ graph TD
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-154432361-target"
+              id="richmd-mermaid-809432686-target"
             ></div>
           </div>
           <script type="module">
@@ -1334,12 +1334,12 @@ graph TD
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_154432361() {
+            function renderMermaid_richmd_mermaid_809432686() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-154432361",
+                "richmd-mermaid-809432686",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-154432361-target",
+                "richmd-mermaid-809432686-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1371,18 +1371,27 @@ graph TD
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-154432361-target-svg",
+                  "richmd-mermaid-809432686-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
                   targetEl.innerHTML = result.svg;
+                })
+                .catch(function (err) {
+                  console.error(
+                    'richmd: mermaid diagram "richmd-mermaid-809432686" failed to render: ' +
+                      (err && err.message ? err.message : err),
+                  );
+                  sourceEl.style.display = "block";
+                  targetEl.innerHTML =
+                    '<div class="richmd-mermaid-error">Mermaid diagram failed to render (see console) — showing raw source below.</div>';
                 });
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_154432361,
+              renderMermaid_richmd_mermaid_809432686,
             );
-            renderMermaid_richmd_mermaid_154432361();
+            renderMermaid_richmd_mermaid_809432686();
           </script>
         </div>
         <h2 id="reference-mitigation-patterns">

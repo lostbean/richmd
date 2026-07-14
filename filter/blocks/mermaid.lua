@@ -240,6 +240,17 @@ end
 -- with freshly-read colors — this is the "expose a way to re-render"
 -- requirement from design.md §07 / this chunk's work order.
 --
+-- The `.render()` promise's `.catch()` handles the render-time failure
+-- mermaid-check.js's build-time syntax check cannot catch (e.g.
+-- semantically-invalid diagrams mermaid's own grammar parser accepts but
+-- its renderer rejects): it logs the diagram id and the error to the
+-- console, then un-hides the source <pre> (undoing its default
+-- `display:none`) and replaces the target div's contents with a short
+-- visible error notice, so a failed diagram reads as "broken" rather than
+-- as blank space with no signal at all. This lives inside the shared
+-- renderMermaid_<id> function itself (not appended only to the first call)
+-- so re-renders on theme toggle get the same failure handling.
+--
 -- Default mode (RICHMD_OFFLINE unset, ADR-0004's default): a CDN
 -- <script type="module"> that imports mermaid and assigns it to
 -- `window.mermaid` (mermaid's ESM export is scoped to the importing module,
@@ -301,6 +312,13 @@ local function render(block, resolved_attrs)
     .. "-svg', sourceEl.textContent)\n"
     .. "      .then(function (result) {\n"
     .. "        targetEl.innerHTML = result.svg;\n"
+    .. "      })\n"
+    .. "      .catch(function (err) {\n"
+    .. "        console.error('richmd: mermaid diagram \""
+    .. diagram_id
+    .. "\" failed to render: ' + (err && err.message ? err.message : err));\n"
+    .. "        sourceEl.style.display = 'block';\n"
+    .. "        targetEl.innerHTML = '<div class=\"richmd-mermaid-error\">Mermaid diagram failed to render (see console) — showing raw source below.</div>';\n"
     .. "      });\n"
     .. "  }\n"
     .. "  window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];\n"

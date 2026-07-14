@@ -101,6 +101,30 @@ describe("richmd render (mermaid, valid input)", () => {
     const html = await readFile(htmlPath, "utf8");
     assert.match(html, /window\.richmdDiagramRerenders\.push\(/);
   });
+
+  it("adds a runtime .catch() handler that logs and reveals the source on render failure", async () => {
+    const html = await readFile(htmlPath, "utf8");
+
+    // A .catch() must follow the .then() on the mermaid.render() promise
+    // chain, inside the same shared renderMermaid_<id> function (i.e.
+    // before that function's closing brace and before the
+    // richmdDiagramRerenders.push line that reuses it).
+    const renderFnMatch = html.match(
+      /function renderMermaid_\w+\(\)\s*\{([\s\S]*?)\n\s*\}\s*window\.richmdDiagramRerenders\s*=[\s\S]*?window\.richmdDiagramRerenders\.push\(/,
+    );
+    assert.ok(
+      renderFnMatch,
+      "expected to find the shared renderMermaid_<id> function body",
+    );
+    const fnBody = renderFnMatch[1];
+
+    assert.match(fnBody, /\.catch\(/);
+    assert.match(fnBody, /console\.error\(/);
+    // Failure must un-hide the source <pre> (remove/override display:none)
+    // and set some visible error content distinct from the success path.
+    assert.match(fnBody, /display\s*=\s*['"](?!none)/);
+    assert.match(fnBody, /targetEl\.innerHTML\s*=/);
+  });
 });
 
 describe("richmd render (mermaid, valid input with title attr)", () => {

@@ -1192,7 +1192,7 @@
             <div class="richmd-diagram-title">Mermaid — flowchart</div>
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-592157335"
+              id="richmd-mermaid-519255858"
               style="display: none"
             >
 flowchart LR
@@ -1205,7 +1205,7 @@ flowchart LR
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-592157335-target"
+              id="richmd-mermaid-519255858-target"
             ></div>
           </div>
           <script type="module">
@@ -1214,12 +1214,12 @@ flowchart LR
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_592157335() {
+            function renderMermaid_richmd_mermaid_519255858() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-592157335",
+                "richmd-mermaid-519255858",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-592157335-target",
+                "richmd-mermaid-519255858-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1251,18 +1251,27 @@ flowchart LR
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-592157335-target-svg",
+                  "richmd-mermaid-519255858-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
                   targetEl.innerHTML = result.svg;
+                })
+                .catch(function (err) {
+                  console.error(
+                    'richmd: mermaid diagram "richmd-mermaid-519255858" failed to render: ' +
+                      (err && err.message ? err.message : err),
+                  );
+                  sourceEl.style.display = "block";
+                  targetEl.innerHTML =
+                    '<div class="richmd-mermaid-error">Mermaid diagram failed to render (see console) — showing raw source below.</div>';
                 });
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_592157335,
+              renderMermaid_richmd_mermaid_519255858,
             );
-            renderMermaid_richmd_mermaid_592157335();
+            renderMermaid_richmd_mermaid_519255858();
           </script>
         </div>
         <h2 id="components">Components</h2>
@@ -1369,7 +1378,7 @@ flowchart LR
             <div class="richmd-diagram-title">Mermaid — sequence</div>
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-990201185"
+              id="richmd-mermaid-762274176"
               style="display: none"
             >
 sequenceDiagram
@@ -1389,7 +1398,7 @@ sequenceDiagram
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-990201185-target"
+              id="richmd-mermaid-762274176-target"
             ></div>
           </div>
           <script type="module">
@@ -1398,12 +1407,12 @@ sequenceDiagram
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_990201185() {
+            function renderMermaid_richmd_mermaid_762274176() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-990201185",
+                "richmd-mermaid-762274176",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-990201185-target",
+                "richmd-mermaid-762274176-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1435,18 +1444,27 @@ sequenceDiagram
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-990201185-target-svg",
+                  "richmd-mermaid-762274176-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
                   targetEl.innerHTML = result.svg;
+                })
+                .catch(function (err) {
+                  console.error(
+                    'richmd: mermaid diagram "richmd-mermaid-762274176" failed to render: ' +
+                      (err && err.message ? err.message : err),
+                  );
+                  sourceEl.style.display = "block";
+                  targetEl.innerHTML =
+                    '<div class="richmd-mermaid-error">Mermaid diagram failed to render (see console) — showing raw source below.</div>';
                 });
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_990201185,
+              renderMermaid_richmd_mermaid_762274176,
             );
-            renderMermaid_richmd_mermaid_990201185();
+            renderMermaid_richmd_mermaid_762274176();
           </script>
         </div>
         <h2 id="trust-boundary">Trust boundary</h2>

@@ -358,14 +358,14 @@ local function build_spec(attrs, table_node)
       .. '"}, '
       .. '"color": {"field": '
       .. json_string(x_name)
-      .. ', "type": "nominal"}'
+      .. ', "type": "nominal", "sort": null}'
       .. "}"
   else
     mark = json_string(attrs.type) -- "bar" or "line"
     encoding = "{"
       .. '"x": {"field": '
       .. json_string(x_name)
-      .. ', "type": "nominal"}, '
+      .. ', "type": "nominal", "sort": null}, '
       .. '"y": {"field": '
       .. json_string(y_name)
       .. ', "type": "'
