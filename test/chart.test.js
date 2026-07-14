@@ -155,6 +155,35 @@ describe("richmd render (chart, bar type, non-alphabetical row order) — regres
   });
 });
 
+describe("richmd render (chart, bar type, x-axis label angle) — regression", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-chart-bar-label-angle-"),
+    );
+    mdPath = path.join(workDir, "chart-bar-valid.md");
+    htmlPath = path.join(workDir, "chart-bar-valid.html");
+    await cp(path.join(fixturesDir, "chart-bar-valid.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("sets the x channel's axis labelAngle to 0 rather than leaving rotation unset (prevents Vega-Lite's eager auto-rotation from truncating short category labels)", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /"x":\s*\{[^}]*"axis":\s*\{\s*"labelAngle":\s*0\s*\}[^}]*\}/,
+    );
+  });
+});
+
 describe("richmd render (chart, pie type, 2-column table)", () => {
   let workDir;
   let mdPath;

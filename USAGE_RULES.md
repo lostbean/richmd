@@ -286,7 +286,9 @@ a table with more than two columns requires explicit `x=`/`y=` attrs naming
 the header columns to use, since position alone becomes ambiguous — richmd
 never guesses or silently truncates to the first two columns. For `pie`,
 the first column becomes the slice color/category and the second becomes
-the slice size (`theta`).
+the slice size (`theta`). For `bar`/`line`, x-axis category labels render
+horizontally by default rather than auto-rotating aggressively; Vega-Lite
+still rotates them when they genuinely don't fit.
 
 Failure cases, all reported at validate time:
 
