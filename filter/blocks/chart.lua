@@ -365,7 +365,12 @@ local function build_spec(attrs, table_node)
     encoding = "{"
       .. '"x": {"field": '
       .. json_string(x_name)
-      .. ', "type": "nominal", "sort": null}, '
+      -- "axis": {"labelAngle": 0} is a preference, not a hard lock — it
+      -- tells Vega-Lite to prefer horizontal category labels rather than
+      -- leaving rotation unset (which triggers its more eager auto-rotation
+      -- heuristic and truncates short labels even when there's ample width).
+      -- Vega-Lite still rotates when labels genuinely don't fit at 0°.
+      .. ', "type": "nominal", "sort": null, "axis": {"labelAngle": 0}}, '
       .. '"y": {"field": '
       .. json_string(y_name)
       .. ', "type": "'
