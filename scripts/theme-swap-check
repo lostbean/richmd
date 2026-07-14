@@ -161,6 +161,10 @@ const comparisons = [
   ["richmd-color-text", "body text color"],
   ["richmd-font-heading", "heading display font"],
   ["richmd-font-body", "body font"],
+  ["richmd-color-cat-3", "categorical palette slot 3"],
+  ["richmd-color-cat-4", "categorical palette slot 4"],
+  ["richmd-color-cat-5", "categorical palette slot 5"],
+  ["richmd-color-cat-6", "categorical palette slot 6"],
 ];
 
 const mismatches = [];

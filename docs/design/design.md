@@ -336,7 +336,10 @@ vega-lite block already goes through.
   bind the table's first column to the `x`/category encoding and the second
   to the `y`/value encoding by position, unless `x=`/`y=` attrs name header
   columns explicitly (required once the table carries more than two
-  columns); emit a minimal vega-lite spec of the requested mark type.
+  columns); emit a minimal vega-lite spec of the requested mark type. Every
+  mark type carries a color channel keyed to the category field — the
+  [categorical palette](CONTEXT.md#term-categorical-palette) supplies the
+  actual colors at render time, so expansion itself stays color-agnostic.
 - **Interface**: `expand(attrs, table_rows) -> vega_lite_json | validation_error`,
   called during the [validate phase](CONTEXT.md#term-validate-phase) before
   the expanded spec is handed to `vega-lite-check.js` (§05) exactly like any
@@ -434,7 +437,13 @@ vega-lite source becomes a rendered visual in the reader's browser.
   time (via `getComputedStyle`), never hardcoded — so a diagram matches
   whatever theme (default or a consumer's reskin) is active, and
   re-renders when the theme toggle (§00) flips light/dark, exactly like
-  the surrounding page's own colors do.
+  the surrounding page's own colors do. A [categorical
+  palette](CONTEXT.md#term-categorical-palette) of six `--richmd-color-cat-*`
+  tokens is read the same live way and injected as every Vega-Lite spec's
+  default color range — chart-derived or hand-authored alike, since both
+  reach the shared base config identically — with an author's own explicit
+  `scale.range` still winning. See
+  [ADR-0007](../adr/0007-shared-categorical-palette-for-vega-lite-specs.md#adr-0007).
 - **Interface**: default mode emits CDN `<script>` tags for the mermaid.js
   and vega-lite runtimes; `--offline` (§02) downloads the pinned versions
   once and embeds them directly in the page instead. Container width is a

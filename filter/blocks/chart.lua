@@ -375,7 +375,19 @@ local function build_spec(attrs, table_node)
       .. json_string(y_name)
       .. ', "type": "'
       .. y_type
-      .. '"}'
+      .. '"}, '
+      -- "color" is keyed to the SAME field "x" already binds to (the
+      -- category/first column) — ADR-0006's column binding is untouched,
+      -- this is not a new column semantic, just a second encoding channel
+      -- reading the existing x field. The categorical palette itself lives
+      -- entirely in vega-lite.lua's shared base config (ADR-0007); this
+      -- expansion stays color-agnostic and only supplies the channel
+      -- (design.md §04.1). No "legend": null here — the legend stays
+      -- visible (default Vega-Lite behavior), matching pie's own color
+      -- channel below, which has always shown its legend unchanged.
+      .. '"color": {"field": '
+      .. json_string(x_name)
+      .. ', "type": "nominal"}'
       .. "}"
   end
 

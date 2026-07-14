@@ -1382,7 +1382,10 @@ vega-lite block already goes through.</p>
 bind the table's first column to the <code>x</code>/category encoding and the second
 to the <code>y</code>/value encoding by position, unless <code>x=</code>/<code>y=</code> attrs name header
 columns explicitly (required once the table carries more than two
-columns); emit a minimal vega-lite spec of the requested mark type.</li>
+columns); emit a minimal vega-lite spec of the requested mark type. Every
+mark type carries a color channel keyed to the category field — the
+<a href="CONTEXT.md#term-categorical-palette">categorical palette</a> supplies the
+actual colors at render time, so expansion itself stays color-agnostic.</li>
 <li><strong>Interface</strong>: <code>expand(attrs, table_rows) -&gt; vega_lite_json | validation_error</code>,
 called during the <a href="CONTEXT.md#term-validate-phase">validate phase</a> before
 the expanded spec is handed to <code>vega-lite-check.js</code> (§05) exactly like any
@@ -1479,7 +1482,13 @@ are read from the page's live <code>--richmd-*</code> custom properties at rende
 time (via <code>getComputedStyle</code>), never hardcoded — so a diagram matches
 whatever theme (default or a consumer's reskin) is active, and
 re-renders when the theme toggle (§00) flips light/dark, exactly like
-the surrounding page's own colors do.</li>
+the surrounding page's own colors do. A <a href="CONTEXT.md#term-categorical-palette">categorical
+palette</a> of six <code>--richmd-color-cat-*</code>
+tokens is read the same live way and injected as every Vega-Lite spec's
+default color range — chart-derived or hand-authored alike, since both
+reach the shared base config identically — with an author's own explicit
+<code>scale.range</code> still winning. See
+<a href="../adr/0007-shared-categorical-palette-for-vega-lite-specs.md#adr-0007">ADR-0007</a>.</li>
 <li><strong>Interface</strong>: default mode emits CDN <code>&lt;script&gt;</code> tags for the mermaid.js
 and vega-lite runtimes; <code>--offline</code> (§02) downloads the pinned versions
 once and embeds them directly in the page instead. Container width is a

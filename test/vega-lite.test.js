@@ -284,6 +284,147 @@ describe("richmd render (vega-lite, spec with its own config) — author config 
   });
 });
 
+describe("richmd render (vega-lite, spec with its own config.range.category) — author's categorical range wins over richmd's injected palette", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-vega-lite-author-range-"),
+    );
+    mdPath = path.join(workDir, "vega-lite-author-range-category.md");
+    htmlPath = path.join(workDir, "vega-lite-author-range-category.html");
+    await cp(
+      path.join(fixturesDir, "vega-lite-author-range-category.md"),
+      mdPath,
+    );
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and the embedded spec JSON still has the author's own config.range.category verbatim", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /"category":\s*\[\s*"#111111",\s*"#222222"\s*\]/);
+  });
+
+  it("richmdMergeConfig itself: given a base config with richmd's 6-color categorical range and an override with the author's own 2-color range, the merged result is the author's array VERBATIM — not concatenated, not element-wise merged (this is the mechanism the ADR-0007 'author wins' guarantee actually depends on)", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    const scriptMatches = [
+      ...html.matchAll(/<script>([\s\S]*?)<\/script>/g),
+    ].map((m) => m[1]);
+    const script = scriptMatches.find((s) => s.includes("richmdMergeConfig"));
+    assert.ok(script, "expected to find the script defining richmdMergeConfig");
+
+    const mergeFnSource = script.match(
+      /function richmdMergeConfig\([\s\S]*?\n {2}\}/,
+    );
+    assert.ok(
+      mergeFnSource,
+      "expected to isolate richmdMergeConfig's own source",
+    );
+
+    const fn = new Function(
+      mergeFnSource[0] +
+        "\n;return richmdMergeConfig(" +
+        "{range: {category: ['#4f46e5', '#0891b2', '#16a34a', '#b45309', '#db2777', '#b91c1c']}}, " +
+        "{range: {category: ['#111111', '#222222']}}" +
+        ");",
+    );
+    const merged = fn();
+    assert.deepEqual(merged.range.category, ["#111111", "#222222"]);
+  });
+
+  it("the merged config's range.category is NOT richmd's 6-color palette (would falsely pass if the merge silently ignored the author's override or concatenated arrays instead of replacing wholesale)", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.doesNotMatch(html, /"category":\s*\[\s*"#4f46e5"/);
+  });
+});
+
+describe("richmd render (vega-lite, nominal color channel with no explicit range) — richmd's categorical palette applies by default", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-vega-lite-default-range-"),
+    );
+    mdPath = path.join(workDir, "vega-lite-nominal-color-no-range.md");
+    htmlPath = path.join(workDir, "vega-lite-nominal-color-no-range.html");
+    await cp(
+      path.join(fixturesDir, "vega-lite-nominal-color-no-range.md"),
+      mdPath,
+    );
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and the base config JS includes a range.category key sourced from richmdDiagramTheme()'s categorical field", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /range:\s*\{\s*category:\s*c\.categorical\s*,?\s*\}/);
+  });
+
+  it("the merged config actually carries a 6-entry range.category array end to end (base config function invoked with a real richmdDiagramTheme()-shaped color object)", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+
+    // Isolate the base-config-building function (an anonymous `function (c) {
+    // ... }` assigned inline as an argument to richmdMergeConfig's call
+    // site) the same way the existing author-config test isolates
+    // richmdMergeConfig itself, then invoke it with a fake theme color
+    // object shaped exactly like richmdDiagramTheme()'s real return value.
+    const scriptMatches = [
+      ...html.matchAll(/<script>([\s\S]*?)<\/script>/g),
+    ].map((m) => m[1]);
+    const script = scriptMatches.find(
+      (s) => s.includes("richmdMergeConfig") && s.includes("range"),
+    );
+    assert.ok(script, "expected to find the script building the base config");
+
+    const baseConfigFnSource = script.match(
+      /function \(c\) \{[\s\S]*?\n {2}\}/,
+    );
+    assert.ok(
+      baseConfigFnSource,
+      "expected to isolate the base-config-building function's own source",
+    );
+
+    const fn = new Function("return (" + baseConfigFnSource[0] + ");");
+    const baseConfigFn = fn();
+    const fakeColors = {
+      textMuted: "#666666",
+      border: "#dddddd",
+      fontBody: "Inter, sans-serif",
+      categorical: [
+        "#4f46e5",
+        "#0891b2",
+        "#16a34a",
+        "#b45309",
+        "#db2777",
+        "#b91c1c",
+      ],
+    };
+    const config = baseConfigFn(fakeColors);
+    assert.ok(Array.isArray(config.range.category));
+    assert.equal(config.range.category.length, 6);
+    assert.deepEqual(config.range.category, fakeColors.categorical);
+  });
+});
+
 describe("richmd render (vega-lite, valid input with title attr)", () => {
   let workDir;
   let mdPath;

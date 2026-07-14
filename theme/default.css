@@ -50,6 +50,14 @@
   --richmd-accent2-700: #0a5a70;
   --richmd-accent2-900: #073445;
 
+  /* categorical palette — cat-1/cat-2 alias accent/accent-2; cat-3..6 are new
+     hues (green, amber, magenta, red) chosen and validated (CVD-safe order,
+     WCAG contrast) for distinctness from each other and from accent/accent2 */
+  --richmd-color-cat-3: #16a34a;
+  --richmd-color-cat-4: #b45309;
+  --richmd-color-cat-5: #db2777;
+  --richmd-color-cat-6: #b91c1c;
+
   /* semantic ramps — callouts, badges, stat deltas */
   --richmd-info-100: #e7f0fe;
   --richmd-info-300: #a9c6f5;
@@ -158,6 +166,10 @@
     --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
     --richmd-color-accent2-solid: #22d3ee;
     --richmd-color-accent2-text: #67e0f2;
+    --richmd-color-cat-3: #22a355;
+    --richmd-color-cat-4: #c98500;
+    --richmd-color-cat-5: #d55181;
+    --richmd-color-cat-6: #d9483f;
     --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
     --richmd-color-info-border: rgba(147, 197, 253, 0.3);
     --richmd-color-info-solid: #60a5fa;
@@ -200,6 +212,10 @@
   --richmd-color-accent2-tint: var(--richmd-accent2-100);
   --richmd-color-accent2-solid: var(--richmd-accent2-500);
   --richmd-color-accent2-text: var(--richmd-accent2-700);
+  --richmd-color-cat-3: #16a34a;
+  --richmd-color-cat-4: #b45309;
+  --richmd-color-cat-5: #db2777;
+  --richmd-color-cat-6: #b91c1c;
   --richmd-color-info-tint: var(--richmd-info-100);
   --richmd-color-info-border: var(--richmd-info-300);
   --richmd-color-info-solid: var(--richmd-info-500);
@@ -237,6 +253,10 @@
   --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
   --richmd-color-accent2-solid: #22d3ee;
   --richmd-color-accent2-text: #67e0f2;
+  --richmd-color-cat-3: #22a355;
+  --richmd-color-cat-4: #c98500;
+  --richmd-color-cat-5: #d55181;
+  --richmd-color-cat-6: #d9483f;
   --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
   --richmd-color-info-border: rgba(147, 197, 253, 0.3);
   --richmd-color-info-solid: #60a5fa;
@@ -275,6 +295,10 @@
   --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
   --richmd-color-accent2-solid: #22d3ee;
   --richmd-color-accent2-text: #67e0f2;
+  --richmd-color-cat-3: #22a355;
+  --richmd-color-cat-4: #c98500;
+  --richmd-color-cat-5: #d55181;
+  --richmd-color-cat-6: #d9483f;
   --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
   --richmd-color-info-border: rgba(147, 197, 253, 0.3);
   --richmd-color-info-solid: #60a5fa;
