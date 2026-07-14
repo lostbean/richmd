@@ -219,7 +219,11 @@ graph TD
 Body: **required** — must be syntactically valid mermaid source. A
 malformed diagram fails validation with the parser's own line/column error,
 not a generic message. `title`, when present, renders above the diagram
-inside the shared diagram panel.
+inside the shared diagram panel. If a diagram's source is valid at build
+time but still fails to render in the browser (a render-time error the
+syntax-only build-time check cannot catch), richmd shows the raw diagram
+source instead of blank space, with the error logged to the browser
+console.
 
 ### `vega-lite` (fenced code block)
 

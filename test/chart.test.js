@@ -114,6 +114,47 @@ describe("richmd render (chart, line type, 2-column table)", () => {
   });
 });
 
+describe("richmd render (chart, bar type, non-alphabetical row order) — regression", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-chart-bar-unordered-"),
+    );
+    mdPath = path.join(workDir, "chart-bar-unordered.md");
+    htmlPath = path.join(workDir, "chart-bar-unordered.html");
+    await cp(path.join(fixturesDir, "chart-bar-unordered.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("preserves the markdown table's row order instead of Vega-Lite's default alphabetical nominal sort", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+
+    // The x channel must explicitly disable Vega-Lite's default
+    // ascending-alphabetical nominal sort, so data.values order (i.e. the
+    // markdown table's row order) is what actually renders.
+    assert.match(html, /"x":\s*\{[^}]*"sort":\s*null[^}]*\}/);
+
+    // "Low estimate" appears before "High estimate" in the source table,
+    // which is NOT alphabetical order — data.values must preserve that.
+    const lowIndex = html.indexOf("Low estimate");
+    const highIndex = html.indexOf("High estimate");
+    assert.ok(lowIndex >= 0, "expected 'Low estimate' to appear in output");
+    assert.ok(highIndex >= 0, "expected 'High estimate' to appear in output");
+    assert.ok(
+      lowIndex < highIndex,
+      "expected 'Low estimate' to appear before 'High estimate' (document order), not alphabetical order",
+    );
+  });
+});
+
 describe("richmd render (chart, pie type, 2-column table)", () => {
   let workDir;
   let mdPath;
@@ -139,6 +180,9 @@ describe("richmd render (chart, pie type, 2-column table)", () => {
     assert.match(html, /"color":\s*\{[^}]*"field":\s*"Browser"/);
     // pie encoding must NOT use x/y channels.
     assert.doesNotMatch(html, /"encoding":\s*\{[^}]*"x":/);
+    // color/category channel must not fall back to Vega-Lite's default
+    // ascending-alphabetical nominal sort — document order wins.
+    assert.match(html, /"color":\s*\{[^}]*"sort":\s*null[^}]*\}/);
   });
 });
 

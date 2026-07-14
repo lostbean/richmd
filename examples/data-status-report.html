@@ -1225,7 +1225,7 @@
           <div class="richmd-diagram">
             <pre
               class="mermaid richmd-mermaid"
-              id="richmd-mermaid-913370673"
+              id="richmd-mermaid-790245407"
               style="display: none"
             >
 graph TD
@@ -1240,7 +1240,7 @@ graph TD
             >
             <div
               class="richmd-mermaid"
-              id="richmd-mermaid-913370673-target"
+              id="richmd-mermaid-790245407-target"
             ></div>
           </div>
           <script type="module">
@@ -1249,12 +1249,12 @@ graph TD
                 await import("https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs");
               window.mermaid = mermaidModule.default;
             }
-            function renderMermaid_richmd_mermaid_913370673() {
+            function renderMermaid_richmd_mermaid_790245407() {
               var sourceEl = document.getElementById(
-                "richmd-mermaid-913370673",
+                "richmd-mermaid-790245407",
               );
               var targetEl = document.getElementById(
-                "richmd-mermaid-913370673-target",
+                "richmd-mermaid-790245407-target",
               );
               if (!sourceEl || !targetEl || !window.mermaid) return;
               var colors = window.richmdDiagramTheme
@@ -1286,18 +1286,27 @@ graph TD
               });
               window.mermaid
                 .render(
-                  "richmd-mermaid-913370673-target-svg",
+                  "richmd-mermaid-790245407-target-svg",
                   sourceEl.textContent,
                 )
                 .then(function (result) {
                   targetEl.innerHTML = result.svg;
+                })
+                .catch(function (err) {
+                  console.error(
+                    'richmd: mermaid diagram "richmd-mermaid-790245407" failed to render: ' +
+                      (err && err.message ? err.message : err),
+                  );
+                  sourceEl.style.display = "block";
+                  targetEl.innerHTML =
+                    '<div class="richmd-mermaid-error">Mermaid diagram failed to render (see console) — showing raw source below.</div>';
                 });
             }
             window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
             window.richmdDiagramRerenders.push(
-              renderMermaid_richmd_mermaid_913370673,
+              renderMermaid_richmd_mermaid_790245407,
             );
-            renderMermaid_richmd_mermaid_913370673();
+            renderMermaid_richmd_mermaid_790245407();
           </script>
         </div>
         <p>
@@ -1307,7 +1316,7 @@ graph TD
         </p>
         <div class="richmd-diagram-wrapper">
           <div class="richmd-diagram">
-            <div id="richmd-vega-255627355" class="richmd-vega"></div>
+            <div id="richmd-vega-216666741" class="richmd-vega"></div>
             <script type="application/json" class="richmd-vega-lite-spec">
               {
                 "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -1379,9 +1388,9 @@ graph TD
                 var width = target.getBoundingClientRect().width;
                 return width > 0 ? width : null;
               }
-              function embedRichmdVega_richmd_vega_255627355() {
+              function embedRichmdVega_richmd_vega_216666741() {
                 var containerEl = document.getElementById(
-                  "richmd-vega-255627355",
+                  "richmd-vega-216666741",
                 );
                 var specEl = containerEl.nextElementSibling;
                 var spec = JSON.parse(specEl.textContent);
@@ -1424,25 +1433,25 @@ graph TD
                     mergedSpec.width = measuredWidth;
                   }
                 }
-                vegaEmbed("#richmd-vega-255627355", mergedSpec, {
+                vegaEmbed("#richmd-vega-216666741", mergedSpec, {
                   actions: false,
                 });
               }
               window.richmdDiagramRerenders =
                 window.richmdDiagramRerenders || [];
               window.richmdDiagramRerenders.push(
-                embedRichmdVega_richmd_vega_255627355,
+                embedRichmdVega_richmd_vega_216666741,
               );
-              embedRichmdVega_richmd_vega_255627355();
-              var resizeRaf_richmd_vega_255627355 = null;
+              embedRichmdVega_richmd_vega_216666741();
+              var resizeRaf_richmd_vega_216666741 = null;
               window.addEventListener("resize", function () {
-                if (resizeRaf_richmd_vega_255627355 !== null) {
-                  cancelAnimationFrame(resizeRaf_richmd_vega_255627355);
+                if (resizeRaf_richmd_vega_216666741 !== null) {
+                  cancelAnimationFrame(resizeRaf_richmd_vega_216666741);
                 }
-                resizeRaf_richmd_vega_255627355 = requestAnimationFrame(
+                resizeRaf_richmd_vega_216666741 = requestAnimationFrame(
                   function () {
-                    resizeRaf_richmd_vega_255627355 = null;
-                    embedRichmdVega_richmd_vega_255627355();
+                    resizeRaf_richmd_vega_216666741 = null;
+                    embedRichmdVega_richmd_vega_216666741();
                   },
                 );
               });
@@ -1456,7 +1465,7 @@ graph TD
         </p>
         <div class="richmd-diagram-wrapper">
           <div class="richmd-diagram">
-            <div id="richmd-vega-175094760" class="richmd-vega"></div>
+            <div id="richmd-vega-753969803" class="richmd-vega"></div>
             <script type="application/json" class="richmd-vega-lite-spec">
               {
                 "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
@@ -1469,7 +1478,7 @@ graph TD
                 },
                 "mark": "bar",
                 "encoding": {
-                  "x": { "field": "Month", "type": "nominal" },
+                  "x": { "field": "Month", "type": "nominal", "sort": null },
                   "y": { "field": "Incidents", "type": "quantitative" }
                 }
               }
@@ -1511,9 +1520,9 @@ graph TD
                 var width = target.getBoundingClientRect().width;
                 return width > 0 ? width : null;
               }
-              function embedRichmdVega_richmd_vega_175094760() {
+              function embedRichmdVega_richmd_vega_753969803() {
                 var containerEl = document.getElementById(
-                  "richmd-vega-175094760",
+                  "richmd-vega-753969803",
                 );
                 var specEl = containerEl.nextElementSibling;
                 var spec = JSON.parse(specEl.textContent);
@@ -1556,25 +1565,25 @@ graph TD
                     mergedSpec.width = measuredWidth;
                   }
                 }
-                vegaEmbed("#richmd-vega-175094760", mergedSpec, {
+                vegaEmbed("#richmd-vega-753969803", mergedSpec, {
                   actions: false,
                 });
               }
               window.richmdDiagramRerenders =
                 window.richmdDiagramRerenders || [];
               window.richmdDiagramRerenders.push(
-                embedRichmdVega_richmd_vega_175094760,
+                embedRichmdVega_richmd_vega_753969803,
               );
-              embedRichmdVega_richmd_vega_175094760();
-              var resizeRaf_richmd_vega_175094760 = null;
+              embedRichmdVega_richmd_vega_753969803();
+              var resizeRaf_richmd_vega_753969803 = null;
               window.addEventListener("resize", function () {
-                if (resizeRaf_richmd_vega_175094760 !== null) {
-                  cancelAnimationFrame(resizeRaf_richmd_vega_175094760);
+                if (resizeRaf_richmd_vega_753969803 !== null) {
+                  cancelAnimationFrame(resizeRaf_richmd_vega_753969803);
                 }
-                resizeRaf_richmd_vega_175094760 = requestAnimationFrame(
+                resizeRaf_richmd_vega_753969803 = requestAnimationFrame(
                   function () {
-                    resizeRaf_richmd_vega_175094760 = null;
-                    embedRichmdVega_richmd_vega_175094760();
+                    resizeRaf_richmd_vega_753969803 = null;
+                    embedRichmdVega_richmd_vega_753969803();
                   },
                 );
               });
