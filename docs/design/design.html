@@ -1145,6 +1145,13 @@ reporting or exiting — never an early return on the first problem found.</p>
 </div>
 </div>
 <div class="entry invariant">
+<div class="entry-head"><span class="label">Document-wide checks run after what they depend on</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill robustness">robustness</span></span></div>
+<div class="body">
+<p>A <a href="CONTEXT.md#term-document-wide-check">document-wide check</a> runs only after
+every check whose output it depends on has already collected its errors.</p>
+</div>
+</div>
+<div class="entry invariant">
 <div class="entry-head"><span class="label">Cross-document links always resolve</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill robustness">robustness</span></span></div>
 <div class="body">
 <p>Every relative <a href="CONTEXT.md#term-cross-document-link">cross-document link</a> is
@@ -1210,7 +1217,7 @@ Lua filter — not two Pandoc invocations. See
 <div class="diagram"><pre class="mermaid">graph TD
     Doc[&quot;Document (.md)&quot;]
     Parse[&quot;Pandoc parse → AST&quot;]
-    Validate[&quot;Validate phase\nschema lookup per block\n+ grammar validators&quot;]
+    Validate[&quot;Validate phase\nschema lookup per block\n+ grammar validators\n+ cross-block rules&quot;]
     Gate{&quot;Errors empty?&quot;}
     Render[&quot;Render phase\nlink rewrite · slugify\ntheme + diagram runtime&quot;]
     Page[&quot;Rendered page (.html)&quot;]
@@ -1247,8 +1254,8 @@ stderr, never touches disk beyond reading input. Built for CI/pre-commit
 gates that should not produce discardable build artifacts.</p>
 </div>
 </article>
-<article class="card" id="richmd-render-file-offline-tree-path">
-<div class="entry-head"><span class="label"><code>richmd render &lt;file&gt; [--offline] [--tree=&lt;path&gt;...]</code></span></div>
+<article class="card" id="richmd-render-file-offline-tree-path-check">
+<div class="entry-head"><span class="label"><code>richmd render &lt;file&gt; [--offline] [--tree=&lt;path&gt;...] [--check]</code></span></div>
 <div class="body">
 <p><strong>Run the full pipeline.</strong> Same filter, both phases. <code>--offline</code> switches
 the <a href="CONTEXT.md#term-render-phase">render phase</a> into
@@ -1258,7 +1265,16 @@ Repeatable <code>--tree=&lt;path&gt;</code> names sibling <code>.md</code> paths
 <a href="CONTEXT.md#term-in-tree-link">in-tree</a> for link classification (literal
 paths only — richmd does no glob-expansion; the shell or caller expands
 globs before argv). Writes the sibling <code>.html</code> file only when the validate
-phase collects zero errors.</p>
+phase collects zero errors. <code>--check</code> changes only the write step, never
+what gets generated: every other flag on the same invocation shapes the
+in-memory result exactly as it would shape a write, and <code>--check</code> then
+byte-compares that same result against the existing sibling <code>.html</code> file
+instead of writing it — exiting 0 when identical, non-zero (with a diff)
+when the committed file is stale, missing, or was committed under a
+different flag combination than this invocation used (e.g. a non-<code>--offline</code>
+check against an <code>--offline</code>-committed file reports stale for that reason,
+not silent content drift). Built for CI proving a committed <code>.html</code> matches
+one specific, named invocation, never hand-edited or left stale.</p>
 </div>
 </article>
 </div>
@@ -1274,18 +1290,30 @@ walk; own the phase boundary itself.</li>
 a <a href="CONTEXT.md#term-document">document</a> path and the <code>--offline</code> flag;
 produces either a <a href="CONTEXT.md#term-rendered-page">rendered page</a> or a
 non-zero exit with printed
-<a href="CONTEXT.md#term-validation-error">validation errors</a>.</li>
+<a href="CONTEXT.md#term-validation-error">validation errors</a>. Resolves the
+document's <a href="CONTEXT.md#term-config-directory">config directory</a> once at
+startup, before either phase runs, by walking upward from the document's
+own directory per <a href="../adr/0009-config-dir-upward-walk-bounded-at-repo-root.md#adr-0009">ADR-0009</a>;
+the resolved path is printed to stderr on every invocation, so which
+<code>.richmd/</code> a given render or validate call actually used is never a silent
+fact two sibling documents could disagree on unnoticed.</li>
 <li><strong>Interacts with</strong>: the <a href="#04-block-kind-registry">block kind registry</a> for
 per-block schema lookup; the
-<a href="#05-grammar-validators">grammar validators</a> via shell-out for
-mermaid/vega-lite blocks; the
-<a href="#06-link-resolver-and-slugifier">link resolver and slugifier</a> during the
-render pass; the <a href="#07-theme-and-diagram-runtime">theme and diagram runtime</a>
+<a href="#06-grammar-validators">grammar validators</a> via shell-out for
+mermaid/vega-lite blocks; <a href="#05-cross-block-rules">cross-block rules</a> as a
+<a href="CONTEXT.md#term-document-wide-check">document-wide check</a>; the
+<a href="#07-link-resolver-and-slugifier">link resolver and slugifier</a> during the
+render pass; the <a href="#08-theme-and-diagram-runtime">theme and diagram runtime</a>
 component for the final HTML injection.</li>
 <li><strong>Invariants held</strong>: fail-closed gate, all-errors-collected (both §00).</li>
 <li><strong>Failure behavior</strong>: any Lua runtime error during either phase is a hard
-filter failure — printed with the block location that triggered it,
-non-zero exit, no partial HTML written.</li>
+filter failure — printed with the <a href="CONTEXT.md#term-error-source">error source</a>
+and location that triggered it, non-zero exit, no partial HTML written.
+Every <a href="CONTEXT.md#term-validation-error">validation error</a> already
+collected before the crash is still printed alongside it — a runtime
+crash partway through validate never discards errors an earlier check in
+the same phase already gathered, only the crashing check's own remaining
+work is lost.</li>
 </ul>
 <h2 id="04-block-kind-registry-04-block-kind-registry"><span class="secno">04</span> · Block kind registry {#04-block-kind-registry}</h2>
 <p><strong>Owns schema lookup for every block kind, built-in or extended.</strong> A single
@@ -1295,10 +1323,11 @@ attrs, allowed values, body shape) plus its Lua render function.</p>
 <ul>
 <li><strong>Responsibility</strong>: load richmd's built-in schemas (callout, cards, stat
 tile, stat grid, TOC, labeled block, embedded SVG) and merge in every
-schema found under the consumer's
-<a href="CONTEXT.md#term-extension-directory">extension directory</a>
-(<code>.richmd/blocks/</code> by default); resolve a block's kind name to its schema
-and renderer for both filter phases.</li>
+schema found under the <a href="#03-filter-core">filter core</a>'s resolved
+<a href="CONTEXT.md#term-config-directory">config directory</a>'s
+<a href="CONTEXT.md#term-extension-directory">extension directory</a> child
+(<code>.richmd/blocks/</code>); resolve a block's kind name to its schema and
+renderer for both filter phases.</li>
 <li><strong>Interface</strong>: <code>lookup(kind_name) -&gt; {schema, render_fn} | nil</code>; for a
 <a href="CONTEXT.md#term-block">Block</a> whose class is always a kind attempt (a
 fenced div), a missing kind is itself a
@@ -1374,8 +1403,8 @@ metadata, never a substitute for the title text itself</p>
 only built-in kind whose Lua render function emits a different block kind's
 source (a <code>```vega-lite</code> fenced block) rather than final HTML directly —
 composition, not a special case: the expanded spec re-enters the same
-<a href="#05-grammar-validators">grammar validator</a> and
-<a href="#07-theme-and-diagram-runtime">diagram runtime</a> every hand-authored
+<a href="#06-grammar-validators">grammar validator</a> and
+<a href="#08-theme-and-diagram-runtime">diagram runtime</a> every hand-authored
 vega-lite block already goes through.</p>
 <ul>
 <li><strong>Responsibility</strong>: read the block's markdown-table body and <code>type</code> attr;
@@ -1388,12 +1417,12 @@ mark type carries a color channel keyed to the category field — the
 actual colors at render time, so expansion itself stays color-agnostic.</li>
 <li><strong>Interface</strong>: <code>expand(attrs, table_rows) -&gt; vega_lite_json | validation_error</code>,
 called during the <a href="CONTEXT.md#term-validate-phase">validate phase</a> before
-the expanded spec is handed to <code>vega-lite-check.js</code> (§05) exactly like any
+the expanded spec is handed to <code>vega-lite-check.js</code> (§06) exactly like any
 other vega-lite block.</li>
 <li><strong>Interacts with</strong>: the <a href="#04-block-kind-registry">block kind registry</a>,
 which dispatches <code>chart</code> blocks here instead of straight to HTML; the
-<a href="#05-grammar-validators">grammar validators</a>, which validate the expanded
-output; the <a href="#07-theme-and-diagram-runtime">theme and diagram runtime</a>,
+<a href="#06-grammar-validators">grammar validators</a>, which validate the expanded
+output; the <a href="#08-theme-and-diagram-runtime">theme and diagram runtime</a>,
 which renders it identically to a hand-authored chart.</li>
 <li><strong>Invariants held</strong>: schema-driven validation (§00) — a <code>chart</code> block with
 more than two columns and no explicit <code>x=</code>/<code>y=</code> binding is a
@@ -1405,7 +1434,64 @@ never a guessed encoding.</li>
 table too wide for positional binding is rejected before expansion is
 attempted, never silently truncated to two columns.</li>
 </ul>
-<h2 id="05-grammar-validators-05-grammar-validators"><span class="secno">05</span> · Grammar validators {#05-grammar-validators}</h2>
+<h2 id="05-cross-block-rules-05-cross-block-rules"><span class="secno">05</span> · Cross-block rules {#05-cross-block-rules}</h2>
+<p><strong>Owns <a href="CONTEXT.md#term-document-wide-check">document-wide checks</a></strong> —
+ordering, cardinality, required cross-links, document-wide enums. A
+generalization of §04's schema-driven validation from one block to the whole
+document, not a new validation model.</p>
+<ul>
+<li><strong>Responsibility</strong>: load every <code>.lua</code> file found in the
+<a href="CONTEXT.md#term-rules-directory">rules directory</a>; build the document's
+ordered <a href="CONTEXT.md#term-block-projection">block projection</a> list once per
+document, after every per-block, link, and grammar check has already run;
+run each loaded <a href="CONTEXT.md#term-cross-block-rule">cross-block rule</a> once
+against that list.</li>
+<li><strong>Interface</strong>: a rule file returns <code>{ check = function(block_projections, add_error) ... end }</code>, or a bare <code>function</code> of the same signature — the
+same <code>add_error</code> closure per-block checks already call into, so a rule's
+violations land in the identical collected-errors list. A rule can assume
+every projection it receives already passed its own
+<a href="CONTEXT.md#term-block-kind-schema">block kind schema</a> (§00 invariant). A
+violation's reported <a href="CONTEXT.md#term-error-source">error source</a> is the
+rule's own filename, <code>rule:</code>-prefixed (e.g. <code>rule:foundation-ordering</code>) so
+it can never collide with a same-named block kind; its <code>&lt;location&gt;</code> names
+the latest block the rule found offending.</li>
+<li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>, which invokes the
+rules directory load once at startup and the check pass once per document,
+identically to how the <a href="#04-block-kind-registry">block kind registry</a>'s
+extension directory already loads; the same collected-errors list every
+other validate-phase check writes into.</li>
+<li><strong>Invariants held</strong>: schema-driven validation (§00, widened from per-block
+to document-wide by this component); all-errors-collected (§00);
+document-wide checks run after what they depend on (§00, the invariant
+this component introduces cross-block rules as the first instance of).</li>
+<li><strong>Failure behavior</strong>: a malformed rule file (invalid Lua, a value that is
+neither a function nor a table with a <code>check</code> function field) is a
+load-time error naming the offending file and which of those shapes was
+found — fatal, identical to a malformed
+<a href="CONTEXT.md#term-extension-directory">extension directory</a> file (§04) —
+the filter refuses to run rather than silently skipping a broken rule. A
+rule that itself raises a Lua runtime error during its check pass is a
+hard filter failure naming the rule (not a block location, since the
+failure is document-wide) — every error already collected by an earlier
+per-block, link, grammar, or rule check up to that point is still printed
+before the non-zero exit; only the crashing rule's own remaining checks
+are lost, exactly as any other in-phase runtime error (§03) preserves
+errors gathered before it struck.</li>
+</ul>
+<div class="callout info">
+<div class="entry-head"><span class="label">Still not a semantic validator</span></div>
+<div class="body">
+<p>A <a href="CONTEXT.md#term-cross-block-rule">cross-block rule</a> sees only
+<a href="CONTEXT.md#term-block-projection">block projections</a> — kind, attrs,
+location, body text. It can enforce document structure (ordering,
+cardinality, required links) but has no access to a mermaid diagram's parsed
+graph or a vega-lite spec's field bindings — the
+<a href="#00-foundation">&quot;not a semantic validator for diagrams/charts&quot; no-goal</a>
+still holds.</p>
+</div>
+</div>
+<p>See <a href="../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008">ADR-0008</a>.</p>
+<h2 id="06-grammar-validators-06-grammar-validators"><span class="secno">06</span> · Grammar validators {#06-grammar-validators}</h2>
 <p><strong>Owns real grammar checking for mermaid and vega-lite.</strong> Neither has a
 native Lua grammar library, so each gets a small, tightly-scoped Node.js
 helper script the filter shells out to — not the full mermaid-cli/Puppeteer
@@ -1437,7 +1523,7 @@ whose field references do not exist in its data, passes this gate — see the
 &quot;not a semantic validator&quot; no-goal (§00).</p>
 </div>
 </div>
-<h2 id="06-link-resolver-and-slugifier-06-link-resolver-and-slugifier"><span class="secno">06</span> · Link resolver and slugifier {#06-link-resolver-and-slugifier}</h2>
+<h2 id="07-link-resolver-and-slugifier-07-link-resolver-and-slugifier"><span class="secno">07</span> · Link resolver and slugifier {#07-link-resolver-and-slugifier}</h2>
 <p><strong>Owns cross-document link rewriting and heading-anchor stability.</strong> Two
 related passes during the render phase, both grounded in the same
 filesystem/AST walk the validate phase already did.</p>
@@ -1467,7 +1553,7 @@ render time this pass only rewrites and classifies, never discovers new
 failures. A <code>--tree</code> path that does not match any link in the document is
 not an error — silently unused, exactly like an unmatched glob would be.</li>
 </ul>
-<h2 id="07-theme-and-diagram-runtime-07-theme-and-diagram-runtime"><span class="secno">07</span> · Theme and diagram runtime {#07-theme-and-diagram-runtime}</h2>
+<h2 id="08-theme-and-diagram-runtime-08-theme-and-diagram-runtime"><span class="secno">08</span> · Theme and diagram runtime {#08-theme-and-diagram-runtime}</h2>
 <p><strong>Owns the visual identity and how diagrams/charts actually become
 pictures.</strong> Two closely related concerns: the CSS asset, and how mermaid/
 vega-lite source becomes a rendered visual in the reader's browser.</p>
@@ -1516,7 +1602,7 @@ silent one. See
 <a href="../adr/0004-cdn-default-offline-bundling-opt-in.md#adr-0004">ADR-0004</a>.</p>
 </div>
 </div>
-<h2 id="08-ci-08-ci"><span class="secno">08</span> · CI {#08-ci}</h2>
+<h2 id="09-ci-09-ci"><span class="secno">09</span> · CI {#09-ci}</h2>
 <p><strong>Owns proving the gate on every push, not just on the author's machine.</strong>
 CI runs a strict superset of what <a href="https://github.com/lostbean/richmd/blob/main/lefthook.yml">lefthook</a>
 runs locally: every check lefthook's pre-commit hook runs (format, the design
@@ -1540,7 +1626,7 @@ pull request.</li>
 <a href="https://github.com/lostbean/richmd/blob/main/flake.nix">flake.nix</a>
 devShell so CI's toolchain versions can never drift from a contributor's
 local <code>nix develop</code> shell.</li>
-<li><strong>Interacts with</strong>: every component in §02–§07 (it runs their tests) and
+<li><strong>Interacts with</strong>: every component in §02–§08 (it runs their tests) and
 the design layer itself (it runs the design gate).</li>
 <li><strong>Invariants held</strong>: none new — CI is the mechanism that keeps the
 fail-closed gate (§00) and schema-driven validation (§00) provably true on
@@ -1549,7 +1635,7 @@ every change, not just locally.</li>
 considered mergeable; CI never soft-fails or skips a channel the local
 gate runs.</li>
 </ul>
-<h2 id="09-end-to-end-walkthrough"><span class="secno">09</span> · End-to-end walkthrough</h2>
+<h2 id="10-end-to-end-walkthrough"><span class="secno">10</span> · End-to-end walkthrough</h2>
 <p><strong>Scenario: an author renders a design document, then fixes a broken
 diagram.</strong></p>
 <ol>
@@ -1558,16 +1644,20 @@ callout, a cards grid, a mermaid flowchart, and a link to
 <code>CONTEXT.md#term-something</code>.</li>
 <li>They run <code>richmd render docs/design/design.md</code>.</li>
 <li>The CLI (§02) invokes Pandoc with richmd's Lua filter. The
-<a href="#03-filter-core">filter core</a> parses the document once and enters the
-<a href="CONTEXT.md#term-validate-phase">validate phase</a>: every block is looked
-up in the <a href="#04-block-kind-registry">registry</a>; the mermaid block is
-shelled out to the <a href="#05-grammar-validators">grammar validator</a>; the
-<code>CONTEXT.md</code> link target is checked against the filesystem.</li>
+<a href="#03-filter-core">filter core</a> resolves the document's
+<a href="CONTEXT.md#term-config-directory">config directory</a>, parses the document
+once, and enters the <a href="CONTEXT.md#term-validate-phase">validate phase</a>:
+every block is looked up in the <a href="#04-block-kind-registry">registry</a>; the
+mermaid block is shelled out to the
+<a href="#06-grammar-validators">grammar validator</a>; the <code>CONTEXT.md</code> link target
+is checked against the filesystem; finally any
+<a href="#05-cross-block-rules">cross-block rules</a> found in the config directory
+run once over the full block list.</li>
 <li>Zero errors collected. The gate (§01 diamond) admits the
 <a href="CONTEXT.md#term-render-phase">render phase</a>: the
-<a href="#06-link-resolver-and-slugifier">link resolver</a> rewrites the <code>.md</code> link
+<a href="#07-link-resolver-and-slugifier">link resolver</a> rewrites the <code>.md</code> link
 to <code>.html</code>, headings get their <a href="CONTEXT.md#term-slug">slugs</a>, the
-<a href="#07-theme-and-diagram-runtime">theme</a> stylesheet and CDN script tags are
+<a href="#08-theme-and-diagram-runtime">theme</a> stylesheet and CDN script tags are
 injected.</li>
 <li><code>design.html</code> is written; the CLI exits 0.</li>
 </ol>
@@ -1575,7 +1665,7 @@ injected.</li>
 an arrow syntax.</strong></p>
 <ol start="6">
 <li>The author reruns <code>richmd render docs/design/design.md</code>.</li>
-<li>The <a href="#05-grammar-validators">grammar validator</a> rejects the block;
+<li>The <a href="#06-grammar-validators">grammar validator</a> rejects the block;
 the <a href="#03-filter-core">filter core</a> still finishes walking the rest of the
 document, collecting any further errors alongside it.</li>
 <li>The validate phase's error list is non-empty. The gate blocks the render

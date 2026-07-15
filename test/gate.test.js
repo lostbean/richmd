@@ -108,9 +108,15 @@ describe("richmd render (callout, two independent invalid blocks) — all errors
 
   it("reports two separate error lines, not just one", async () => {
     const result = await runCli(["render", mdPath]);
+    // "richmd: [" (not just "richmd: ") specifically matches the
+    // "richmd: [<kind>] <location>: <reason>" error-line shape
+    // (USAGE_RULES.md "Failure behavior") — distinct from the unconditional
+    // "richmd: config directory resolved to '...'" line every invocation
+    // now also prints (ADR-0009), which is not an error and must not be
+    // counted here.
     const errorLines = result.stderr
       .split("\n")
-      .filter((line) => line.startsWith("richmd: "));
+      .filter((line) => line.startsWith("richmd: ["));
     assert.equal(
       errorLines.length,
       2,
@@ -153,9 +159,12 @@ describe("richmd render (callout, one valid + one invalid) — gate is document-
     assert.match(result.stderr, /tint/);
     assert.match(result.stderr, /not-a-real-tint/);
 
+    // "richmd: [" excludes the unconditional
+    // "richmd: config directory resolved to '...'" line (ADR-0009) every
+    // invocation now also prints — see the identical note above.
     const errorLines = result.stderr
       .split("\n")
-      .filter((line) => line.startsWith("richmd: "));
+      .filter((line) => line.startsWith("richmd: ["));
     assert.equal(
       errorLines.length,
       1,

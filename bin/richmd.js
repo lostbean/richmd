@@ -21,6 +21,24 @@
 // validate phase or the fail-closed gate (design.md §02/§07, ADR-0004,
 // issue #7).
 //
+// `richmd render <file> --check` (design.md §02 CLI entry) runs the exact
+// same full pipeline (validate + render phases) as a normal render — every
+// other flag on the same invocation (`--offline`, `--tree=<path>...`)
+// shapes the in-memory result exactly as it would shape a write — but the
+// generated HTML is captured via Pandoc's own stdout (`-o -`, the same
+// stdout-capture mechanism `validate` already relies on below) instead of
+// being written to the sibling `.html` path. That in-memory result is then
+// byte-compared against whatever already exists at the sibling path:
+// identical -> exit 0; the sibling is missing -> non-zero with a "missing"
+// message; different -> non-zero with a textual diff. In every outcome
+// `--check` never writes the sibling path — not on success, not on
+// failure, not partially. If the validate phase collects errors, `--check`
+// behaves exactly like a normal `render` without `--check`: non-zero exit,
+// errors printed, nothing written AND nothing compared (checking freshness
+// of a document that doesn't even validate is meaningless) — `runFilter`
+// already returns non-zero and writes nothing in that case, so `--check`
+// simply never reaches the comparison step.
+//
 // `richmd render <file> --tree=<path>` (design.md §02/§06, ADR-0005) is
 // repeatable — a caller can pass it any number of times to build up a set
 // of `.md` paths that should be classified as "in-tree" links wherever they
@@ -45,6 +63,7 @@
 // commas in the realistic case this flag is designed for.
 
 import { spawnSync } from "node:child_process";
+import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,12 +72,21 @@ const filterPath = path.join(__dirname, "..", "filter", "richmd-filter.lua");
 
 function usage() {
   process.stderr.write(
-    "usage: richmd render <file> [--offline] [--tree=<path>...]\n",
+    "usage: richmd render <file> [--offline] [--tree=<path>...] [--check]\n",
   );
   process.stderr.write("       richmd validate <file>\n");
 }
 
-function runFilter(inputPath, { validateOnly, outputPath, offline, tree }) {
+// captureOutput: true routes Pandoc's rendered HTML back to the caller in
+// memory (via the same `-o -` stdout mechanism `validate` already relies on
+// to avoid writing anything) instead of writing it to `outputPath` and/or
+// forwarding it to this process's own stdout. Used by `--check` (below) so
+// it can byte-compare the in-memory result against the sibling `.html` file
+// without ever touching that file.
+function runFilter(
+  inputPath,
+  { validateOnly, outputPath, offline, tree, captureOutput },
+) {
   // document-css=false suppresses Pandoc's own default template stylesheet
   // (which includes `body { max-width: 36em; ... }`) — richmd's theme owns
   // layout width entirely via .richmd-container/.richmd-container--wide, so
@@ -73,10 +101,10 @@ function runFilter(inputPath, { validateOnly, outputPath, offline, tree }) {
   if (outputPath) {
     args.push("-o", outputPath);
   } else {
-    // No output path: discard stdout, we only care about the exit code and
-    // stderr. Pandoc still needs a sink, so send it to /dev/null-equivalent
-    // via a null output target is not portable — instead just let it print
-    // to stdout and we simply never read/write it anywhere.
+    // No output path: either we're capturing stdout in memory (--check), or
+    // we only care about the exit code and stderr (validate). Pandoc still
+    // needs a sink, so send it to /dev/null-equivalent via a null output
+    // target is not portable — instead just let it print to stdout.
     args.push("-o", "-");
   }
   args.push(inputPath);
@@ -92,45 +120,128 @@ function runFilter(inputPath, { validateOnly, outputPath, offline, tree }) {
     env.RICHMD_TREE = tree.join(",");
   }
 
-  const result = spawnSync("pandoc", args, { encoding: "utf8", env });
+  const result = spawnSync("pandoc", args, {
+    encoding: "utf8",
+    env,
+    // Default (1MB) is too small once --check routes a full render
+    // (potentially including an --offline-embedded runtime bundle) through
+    // stdout via `-o -` instead of writing it straight to a file.
+    maxBuffer: 64 * 1024 * 1024,
+  });
 
   if (result.error) {
     process.stderr.write(
       `richmd: failed to invoke pandoc: ${result.error.message}\n`,
     );
-    return 1;
+    return { status: 1, stdout: "" };
   }
 
   if (result.stderr) {
     process.stderr.write(result.stderr);
   }
-  // In validate-only mode, Pandoc's stdout (if any) is discarded rather than
-  // forwarded — `richmd validate` must never produce output artifacts.
-  if (result.stdout && !validateOnly) {
+  // In validate-only mode and in --check's capture mode, Pandoc's stdout is
+  // never forwarded to this process's own stdout — `richmd validate` must
+  // never produce output artifacts, and `--check`'s captured HTML is only
+  // ever used in memory for the byte comparison, never printed wholesale.
+  if (result.stdout && !validateOnly && !captureOutput) {
     process.stdout.write(result.stdout);
   }
 
-  return result.status ?? 1;
+  return { status: result.status ?? 1, stdout: result.stdout ?? "" };
 }
 
 function render(inputPath, { offline, tree }) {
   const parsed = path.parse(inputPath);
   const outputPath = path.join(parsed.dir || ".", `${parsed.name}.html`);
-  return runFilter(inputPath, {
+  const { status } = runFilter(inputPath, {
     validateOnly: false,
     outputPath,
     offline,
     tree,
+    captureOutput: false,
   });
+  return status;
 }
 
 function validate(inputPath) {
-  return runFilter(inputPath, {
+  const { status } = runFilter(inputPath, {
     validateOnly: true,
     outputPath: null,
     offline: false,
     tree: [],
+    captureOutput: false,
   });
+  return status;
+}
+
+// Minimal line-based unified-style diff — enough for a CI log reader to see
+// what changed, not a sophisticated visual diff (interface contract). No
+// new dependency: richmd's Nix packaging pins npmDepsHash, so pulling in a
+// diff library is a needless build-graph change for a CI-log convenience.
+function lineDiff(expectedLabel, actualLabel, expected, actual) {
+  const a = expected.split("\n");
+  const b = actual.split("\n");
+  const max = Math.max(a.length, b.length);
+  const lines = [`--- ${expectedLabel}`, `+++ ${actualLabel}`];
+  for (let i = 0; i < max; i++) {
+    const lineA = a[i];
+    const lineB = b[i];
+    if (lineA === lineB) {
+      continue;
+    }
+    if (lineA !== undefined) {
+      lines.push(`-${lineA}`);
+    }
+    if (lineB !== undefined) {
+      lines.push(`+${lineB}`);
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
+// `richmd render <file> --check` (design.md §02 CLI entry, see file-header
+// comment above). Runs the full pipeline, captures what would have been
+// written, and byte-compares it against the existing sibling `.html`
+// instead of writing it.
+function check(inputPath, { offline, tree }) {
+  const parsed = path.parse(inputPath);
+  const outputPath = path.join(parsed.dir || ".", `${parsed.name}.html`);
+
+  const { status, stdout } = runFilter(inputPath, {
+    validateOnly: false,
+    outputPath: null,
+    offline,
+    tree,
+    captureOutput: true,
+  });
+
+  // Validate phase collected errors: identical behavior to a normal render
+  // without --check — errors are already printed via stderr forwarding
+  // above. Nothing written, nothing compared; checking freshness of a
+  // document that doesn't even validate is meaningless.
+  if (status !== 0) {
+    return status;
+  }
+
+  if (!existsSync(outputPath)) {
+    process.stderr.write(
+      `richmd: --check failed: '${outputPath}' does not exist (nothing committed yet)\n`,
+    );
+    return 1;
+  }
+
+  const committed = readFileSync(outputPath, "utf8");
+  if (committed === stdout) {
+    return 0;
+  }
+
+  process.stderr.write(
+    `richmd: --check failed: '${outputPath}' is stale (does not match a fresh render)\n`,
+  );
+  process.stderr.write(
+    lineDiff(outputPath, "<fresh render>", committed, stdout),
+  );
+  return 1;
 }
 
 function main(argv) {
@@ -145,7 +256,7 @@ function main(argv) {
     // `--offline` and `--tree` are both render-only flags (interface
     // contract, issue #7 and design.md §02) — `validate`'s argument shape is
     // completely unchanged by either, so neither is even parsed out of
-    // `rest` here.
+    // `rest` here. `--check` is render-only too, for the same reason.
     return validate(file);
   }
 
@@ -154,6 +265,11 @@ function main(argv) {
   const tree = rest
     .filter((arg) => arg.startsWith("--tree="))
     .map((arg) => arg.slice("--tree=".length));
+  const checkOnly = rest.includes("--check");
+
+  if (checkOnly) {
+    return check(file, { offline, tree });
+  }
 
   return render(file, { offline, tree });
 }

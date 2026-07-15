@@ -18,6 +18,7 @@ package.path = script_dir .. "?.lua;" .. package.path
 local Registry = require("registry")
 local Slugify = require("slugify")
 local ExtensionLoader = require("extension-loader")
+local RulesLoader = require("rules-loader")
 local HeadingScope = require("heading-scope")
 
 -- One registry instance, shared across validate and render phases and
@@ -36,20 +37,176 @@ require("blocks.labeled-block").register(registry)
 require("blocks.embedded-svg").register(registry)
 require("blocks.chart").register(registry)
 
--- The current document's own directory, used to resolve relative `.md`
--- link targets against the filesystem (§06 link resolver). Pandoc exposes
--- the input file path via PANDOC_STATE.input_files; richmd is always
--- invoked with exactly one input file (bin/richmd.js).
+-- process_cwd() -> path
+--
+-- The actual working directory the OS process (and therefore Pandoc, which
+-- never chdirs) was launched from. Lua's stdlib has no portable getcwd(),
+-- so this shells out to `pwd` — the same io.popen convention
+-- extension-loader.lua's list_schema_files already uses for a filesystem
+-- operation Lua's stdlib cannot do natively. Confirmed against a real
+-- `pandoc --lua-filter` invocation: when richmd is invoked the ordinary way
+-- (`richmd render doc.md` run from doc.md's own directory — every example
+-- in USAGE_RULES.md, every existing test before this fix),
+-- PANDOC_STATE.input_files[1] comes back as the bare relative filename
+-- "doc.md" with no "/" in it at all, and bin/richmd.js's runFilter spawns
+-- `pandoc` via spawnSync with no `cwd` override and passes the `<file>`
+-- argument straight through untouched (see that file's own header comment:
+-- "richmd does no cwd-relative path normalization anywhere else in this
+-- codebase") — so `pwd` at the moment this filter runs is exactly the
+-- directory a bare relative input path must be resolved against.
+local function process_cwd()
+  local handle = io.popen("pwd")
+  if not handle then
+    return "."
+  end
+  local cwd = handle:read("*l")
+  handle:close()
+  return cwd or "."
+end
+
+-- The current document's own directory, used both to resolve relative
+-- `.md` link targets against the filesystem (§06 link resolver) AND as the
+-- starting point for the config-directory upward walk (ADR-0009,
+-- CONTEXT.md#term-config-directory, resolve_config_dir below). Pandoc
+-- exposes the input file path via PANDOC_STATE.input_files; richmd is
+-- always invoked with exactly one input file (bin/richmd.js).
+--
+-- input_path is resolved to an ABSOLUTE path before a directory is derived
+-- from it. A bare relative filename like "doc.md" has no "/" to split on,
+-- so the naive `"(.*)/[^/]*$" or "."` pattern used to fall through to the
+-- literal string "." — a symbolic placeholder, not a real, climbable
+-- filesystem path. resolve_config_dir's upward walk calls parent_dir on
+-- whatever start_dir it's given; parent_dir(".") also has no "/" to split
+-- on, so it returns nil immediately, and the walk terminated after checking
+-- only "." itself, never actually reaching the real ancestor directories
+-- above the process's real working directory (the bug this function fixes).
+-- Resolving against process_cwd() first means doc_dir is always a genuine
+-- absolute path parent_dir can keep climbing.
 local function current_doc_dir()
   local input_files = PANDOC_STATE and PANDOC_STATE.input_files
   local input_path = input_files and input_files[1]
   if not input_path then
-    return "."
+    return process_cwd()
   end
-  return input_path:match("(.*)/[^/]*$") or "."
+
+  local absolute_input_path = input_path
+  if input_path:sub(1, 1) ~= "/" then
+    absolute_input_path = process_cwd() .. "/" .. input_path
+  end
+
+  return absolute_input_path:match("(.*)/[^/]*$") or process_cwd()
 end
 
 local doc_dir = current_doc_dir()
+
+-- dir_exists(path) -> boolean | nil
+--
+-- nil specifically means "exists, but could not be read" (a genuine
+-- permission/stat error) as distinct from `false` ("no such directory") —
+-- the upward walk below (resolve_config_dir) treats the two differently: a
+-- `false` keeps climbing, a `nil` stops the walk exactly like reaching the
+-- `.git` boundary (CONTEXT.md#term-config-directory: "a permission error
+-- during the walk stops the walk exactly like reaching the boundary, never
+-- silently skips past the unreadable directory to keep climbing"). Lua has
+-- no portable stat() in its stdlib, so this shells out to `test -d`/`test
+-- -r`, mirroring extension-loader.lua's own `io.popen("ls ...")` precedent
+-- for filesystem checks this codebase has no other dependency for.
+--
+-- Order matters: `test -d` is checked FIRST. A path that doesn't exist at
+-- all makes every `test` predicate (including `-r`/`-x`) fail identically
+-- to a real permission error (confirmed against a real `pandoc lua`
+-- invocation) — checking existence before readability is the only way to
+-- tell "not there" apart from "there, but unreadable".
+local function dir_exists(path)
+  local quoted = "'" .. path:gsub("'", "'\\''") .. "'"
+  local is_dir = os.execute("test -d " .. quoted .. " 2>/dev/null")
+  if not is_dir then
+    return false
+  end
+  -- It exists as a directory; now check it can actually be read/searched
+  -- (listable) — a directory that exists but is not readable/searchable by
+  -- this process must stop the walk like a boundary, not be silently
+  -- skipped.
+  local readable = os.execute("test -r " .. quoted .. " -a -x " .. quoted .. " 2>/dev/null")
+  if not readable then
+    return nil
+  end
+  return true
+end
+
+-- parent_dir(path) -> path | nil
+--
+-- Returns the parent of `path`, or nil when `path` is already a filesystem
+-- root (no further "/" to split on) — the walk's own termination check for
+-- "ran off the top of the filesystem" without ever finding a `.git`
+-- boundary (an edge case ADR-0009 does not name explicitly, but the walk
+-- must still terminate rather than loop forever).
+local function parent_dir(path)
+  local trimmed = path:match("(.-)/*$") -- strip trailing slashes
+  if trimmed == "" then
+    return nil
+  end
+  local parent = trimmed:match("(.*)/[^/]+$")
+  if not parent then
+    return nil
+  end
+  if parent == "" then
+    return "/"
+  end
+  return parent
+end
+
+-- resolve_config_dir(start_dir) -> path
+--
+-- Walks upward from `start_dir` (inclusive) looking for a `.richmd/`
+-- subdirectory (ADR-0009, CONTEXT.md#term-config-directory). "Nearest
+-- wins, no merge": the first ancestor (including start_dir itself)
+-- containing `.richmd/` is returned immediately. The walk stops at the
+-- first of: a `.richmd/` is found; the directory being checked itself
+-- contains `.git` (checked for its OWN `.richmd/` first, then the walk
+-- stops regardless of whether it found one there — the repo root's
+-- `.richmd/`, if present, still counts); or a directory cannot be read
+-- (stops exactly like reaching the boundary, never skips past it). Falls
+-- back to `start_dir` itself when none of the above ever finds a
+-- `.richmd/` — byte-identical to richmd's pre-ADR-0009 behavior when no
+-- `.git` exists anywhere above the document either.
+local function resolve_config_dir(start_dir)
+  local current = start_dir
+  while current do
+    local has_richmd = dir_exists(current .. "/.richmd")
+    if has_richmd == nil then
+      -- Permission/stat error reading this directory: stop exactly like a
+      -- boundary, fall back to the document's own directory.
+      return start_dir
+    end
+    if has_richmd then
+      return current
+    end
+
+    local has_git = dir_exists(current .. "/.git")
+    if has_git == nil then
+      return start_dir
+    end
+    if has_git then
+      -- Repo root reached; its own .richmd/ was already checked above (and
+      -- was absent, or we would have returned already). Stop regardless.
+      return start_dir
+    end
+
+    current = parent_dir(current)
+  end
+  return start_dir
+end
+
+-- The resolved config directory (ADR-0009, CONTEXT.md#term-config-directory):
+-- module-level, computed once at startup — same timing/scope convention as
+-- doc_dir above — so later code in this file (and, per the design's stated
+-- intent, a future sibling `.richmd/rules/` loader) can read it without
+-- re-deriving it. Printed to stderr on EVERY invocation (render and
+-- validate alike) so which `.richmd/` a given call actually used is never a
+-- silent fact (design.md §03).
+local config_dir = resolve_config_dir(doc_dir)
+io.stderr:write("richmd: config directory resolved to '" .. config_dir .. "'\n")
 
 -- tree_paths: the `--tree=<path>` flag's path set (design.md §02/§06,
 -- ADR-0005), read ONCE at filter startup — same timing convention as
@@ -96,12 +253,24 @@ end
 -- Consumer-defined kinds (design.md §04, ADR-0003, §00 principle P4 "extend
 -- by composition, never by fork") register into the SAME shared registry
 -- instance as built-ins, from the consumer's own extension directory
--- (default `.richmd/blocks/`, resolved relative to the input document's own
--- directory — the consumer repo's root, not richmd's). A malformed schema
--- or Lua file here is a load-time error (filter/extension-loader.lua calls
--- `error(...)`), which aborts the whole filter run before any AST walk
--- begins — distinct from a per-block validation error collected below.
-ExtensionLoader.load(registry, doc_dir .. "/" .. ExtensionLoader.DEFAULT_DIR)
+-- (default `.richmd/blocks/`, resolved against the WALKED config_dir above —
+-- ADR-0009 — not raw doc_dir; the consumer repo's root, not richmd's). A
+-- malformed schema or Lua file here is a load-time error
+-- (filter/extension-loader.lua calls `error(...)`), which aborts the whole
+-- filter run before any AST walk begins — distinct from a per-block
+-- validation error collected below.
+ExtensionLoader.load(registry, config_dir .. "/" .. ExtensionLoader.DEFAULT_DIR)
+
+-- Cross-block rules (design.md §05, ADR-0008, CONTEXT.md#term-cross-block-
+-- rule) — consumer-authored `.lua` files under the rules directory (default
+-- `.richmd/rules/`, resolved against the walked config_dir above, same
+-- convention as ExtensionLoader.load just above). Loaded ONCE at filter
+-- startup, same timing as ExtensionLoader.load. A malformed rule file
+-- (filter/rules-loader.lua calls `error(...)`) aborts the whole filter run
+-- before any AST walk begins — distinct from a per-block validation error
+-- collected below. Each rule's `check` is actually invoked later, once per
+-- document, as a step of the validate phase (see Pandoc(doc) below).
+local rules = RulesLoader.load(config_dir .. "/" .. RulesLoader.DEFAULT_DIR)
 
 -- All validation errors collected across the whole document (§00 invariant:
 -- never fail-fast on the first error).
@@ -406,6 +575,105 @@ local function validate_only_codeblock(code_block)
   end
 
   return nil
+end
+
+-- build_block_projections(doc) -> { { kind, attrs, location, body_text }, ... }
+--
+-- Builds the document's ordered block projection list
+-- (CONTEXT.md#term-block-projection): a frozen snapshot of every recognized
+-- richmd Block (Div with a known kind, or CodeBlock with a known kind),
+-- taken once. Reuses the EXACT SAME kind-identification logic the validate
+-- walk already uses (richmd_kind_of / richmd_kind_of_codeblock) and the
+-- EXACT SAME location-string convention validate_block/
+-- validate_only_codeblock already report errors with ("div." .. kind_name /
+-- "codeblock." .. kind_name) — so a rule's reported <location> reads
+-- identically to a per-block error's.
+--
+-- Called ONLY after the per-block/link/grammar validate walk above has
+-- already completed (see Pandoc(doc) below) — every projection here
+-- reflects a block that already passed its own schema (design.md §05
+-- stated invariant, ADR-0008). Never a live reference into the Pandoc AST:
+-- `attrs` is copied into a plain table, `body_text` is extracted via
+-- pandoc.utils.stringify (the standard Pandoc idiom for AST-to-plain-text)
+-- for a Div, or the CodeBlock's own `.text` field directly.
+local function build_block_projections(doc)
+  local projections = {}
+
+  doc:walk({
+    Div = function(div)
+      local kind_name = richmd_kind_of(div)
+      if not kind_name then
+        return nil
+      end
+      local attrs = {}
+      for key, value in pairs(div.attributes) do
+        attrs[key] = value
+      end
+      table.insert(projections, {
+        kind = kind_name,
+        attrs = attrs,
+        location = "div." .. kind_name,
+        body_text = pandoc.utils.stringify(div.content),
+      })
+      return nil
+    end,
+    CodeBlock = function(code_block)
+      local kind_name = richmd_kind_of_codeblock(code_block)
+      if not kind_name then
+        return nil
+      end
+      local attrs = {}
+      for key, value in pairs(code_block.attributes) do
+        attrs[key] = value
+      end
+      table.insert(projections, {
+        kind = kind_name,
+        attrs = attrs,
+        location = "codeblock." .. kind_name,
+        body_text = code_block.text or "",
+      })
+      return nil
+    end,
+  })
+
+  return projections
+end
+
+-- run_rules(doc)
+--
+-- Runs each loaded cross-block rule ONCE against the document's block
+-- projection list (design.md §05 Responsibility). Contributes to the SAME
+-- `errors` table the per-block/link/grammar checks already populate, via
+-- the SAME add_error closure — a rule's own error source is its filename,
+-- `rule:`-prefixed (CONTEXT.md#term-error-source) so it can never collide
+-- with a same-named block kind's bare error source.
+--
+-- A rule's `check` raising a Lua runtime error (not a load-time error — this
+-- is DURING the check call) is a hard filter failure (design.md §05 Failure
+-- behavior): caught here via pcall so every error already collected up to
+-- that point (per-block, link, grammar, or an earlier rule in this same
+-- pass) is still printed by the caller's existing fail-closed gate below,
+-- rather than being discarded by an uncaught error unwinding past it. The
+-- crash itself is reported as an error naming the rule (its `rule:<name>`
+-- identifier) as BOTH the error source and the location, since the failure
+-- is document-wide, not tied to one block. Any rules after the crashing one
+-- in load order are simply never run — this function returns immediately
+-- after recording the crash, rather than continuing to the next rule.
+local function run_rules(doc)
+  if #rules == 0 then
+    return
+  end
+
+  local block_projections = build_block_projections(doc)
+
+  for _, rule in ipairs(rules) do
+    local source = "rule:" .. rule.name
+    local ok, err = pcall(rule.check, block_projections, add_error)
+    if not ok then
+      add_error(source, source, "rule crashed: " .. tostring(err))
+      return
+    end
+  end
 end
 
 -- theme_style_html() -> string
@@ -893,6 +1161,13 @@ function Pandoc(doc)
     Link = validate_only_link,
     CodeBlock = validate_only_codeblock,
   })
+
+  -- Cross-block rules (design.md §05, ADR-0008): a document-wide check that
+  -- runs AFTER every per-block, link, and grammar check above has already
+  -- collected its errors (CONTEXT.md#term-document-wide-check), regardless
+  -- of whether that walk found any — contributing to the SAME `errors`
+  -- table, before the fail-closed gate below decides whether to proceed.
+  run_rules(doc)
 
   if #errors > 0 then
     -- Fail-closed gate: render phase is unreachable from here. Print every

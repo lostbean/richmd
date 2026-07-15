@@ -65,6 +65,9 @@ richmd render <file.md> --offline    # same, but embeds diagram/chart
 richmd render <file.md> --tree=<path>  # repeatable; classifies links to the
                                         # named sibling .md paths with
                                         # class="richmd-intree-link"
+richmd render <file.md> --check      # writes nothing; byte-compares a fresh
+                                      # render against the committed .html,
+                                      # non-zero exit if missing or stale
 richmd validate <file.md>            # runs the same gate, writes nothing
 ```
 
