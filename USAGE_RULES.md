@@ -322,15 +322,26 @@ See [the glossary](CONTEXT.md#term-block) for the full definition.
 ```
 
 - A `.md` target that doesn't exist on disk is a validation error.
-- A `#fragment` that doesn't match any heading in the target document is
-  **also** a validation error (checked against the target document's own
-  headings, computed via the same slug function used to assign ids).
+- A `#fragment` that doesn't match any anchor id in the target document is
+  **also** a validation error. An anchor id comes from either of two
+  sources, both checked:
+  - **A heading's id** — its own explicit `{#id}` when authored
+    (`### Heading {#term-x}`), else its slug (computed via the documented
+    slug function).
+  - **A raw HTML `id="..."` attribute**, on any element, anywhere in the
+    document — `<a id="adr-1"></a>`, `<span id="...">`, `<div id="...">`,
+    etc. richmd does not distinguish an explicit heading id from an HTML
+    id when validating a link; both are equally an author's explicit,
+    stable anchor.
 - Non-`.md` targets (external URLs, images) are never touched.
 
-Heading ids are assigned by one documented, pure function (GitHub-flavored
-rules: lowercase, punctuation stripped except hyphens, spaces to hyphens,
-duplicate headings suffixed `-1`, `-2`, ...). The same function resolves
-every `#fragment` link, so headings and links can never disagree.
+A heading's actual rendered `id` follows the same rule used to validate
+`#fragment` links against it: its own explicit `{#id}` when authored, else
+its slug, assigned by one documented, pure function (GitHub-flavored rules:
+lowercase, punctuation stripped except hyphens, spaces to hyphens,
+duplicate headings suffixed `-1`, `-2`, ...). The identical logic backs
+both the id a heading actually receives and the set of ids `#fragment`
+resolution checks against, so headings and links can never disagree.
 
 ### Marking links as "in-tree" with `--tree`
 

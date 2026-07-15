@@ -193,11 +193,23 @@ of requiring network access to view diagrams.
 
 ### Slug {#term-slug}
 
-The HTML `id` richmd assigns to a heading, derived from its text by a single
-documented, pure function (GitHub-flavored rules: lowercase, punctuation
-stripped except hyphens, spaces to hyphens, duplicate headings suffixed
-`-1`/`-2`...). The same function resolves every `#fragment` link, so headings
-and links always agree.
+The HTML `id` richmd derives from a heading's text by a single documented,
+pure function (GitHub-flavored rules: lowercase, punctuation stripped except
+hyphens, spaces to hyphens, duplicate headings suffixed `-1`/`-2`...). A
+heading's actual [anchor id](#term-anchor-id) is this slug only when the
+heading carries no explicit id of its own.
+
+### Anchor id {#term-anchor-id}
+
+The identifier a `#fragment` link resolves against. Every anchor id in a
+[document](#term-document) comes from exactly one of two sources: a
+heading's explicit Pandoc id (`### Heading {#explicit-id}`) when present,
+else its [slug](#term-slug); or a raw HTML element's own `id="..."`
+attribute (e.g. `<a id="explicit-id"></a>`), authored directly, never
+derived. Both sources feed the same id space a target document's fragment
+check resolves against — richmd does not distinguish an explicit heading id
+from an HTML id when validating a link, since both are equally an author's
+explicit, stable anchor.
 
 ### Cross-document link {#term-cross-document-link}
 

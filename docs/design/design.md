@@ -134,11 +134,23 @@ broken link in the output.
 :::
 
 :::invariant {enforcement=mechanism script=richmd-filter-core lens=state}
-**Slugs are a pure, documented function**
+**A heading's anchor id is deterministic: explicit id, else slug**
 
-A heading's [slug](CONTEXT.md#term-slug) is computed by one documented,
-tested function of its text (GitHub-flavored rules). The same function
-resolves every `#fragment` link, so headings and links can never disagree.
+A heading's [anchor id](CONTEXT.md#term-anchor-id) is its own explicit
+Pandoc id (`{#id}`) when authored, else its [slug](CONTEXT.md#term-slug),
+computed by one documented, tested function of its text (GitHub-flavored
+rules). `#fragment` link resolution checks the identical id a target
+heading actually receives, so headings and links can never disagree.
+:::
+
+:::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
+**Fragment resolution sees every authored anchor id**
+
+`#fragment` link validation resolves against every
+[anchor id](CONTEXT.md#term-anchor-id) in the target document — both
+heading ids (explicit or slugified) and raw HTML `id="..."` attributes —
+never against heading slugs alone. Widening the known-id set never narrows
+what a previously-valid link resolves to.
 :::
 
 :::principle {id=P1 lens=invariants}
@@ -486,22 +498,28 @@ filesystem/AST walk the validate phase already did.
 - **Responsibility**: rewrite every relative `.md` link target (with or
   without a `#fragment`) to its sibling `.html` target, automatically, with
   no special marker syntax required to make rewriting itself work; assign
-  every heading a [slug](CONTEXT.md#term-slug) via the documented pure
-  function; when `--tree` (§02) is present, classify each rewritten link as
-  [in-tree](CONTEXT.md#term-in-tree-link) by comparing its resolved `.md`
-  path (fragment stripped) against the flag's path set.
-- **Interface**: a link-rewrite pass and a slugify pass, both operating on
-  the Pandoc AST during the render phase; the slugify function is also
-  exported standalone so `#fragment` link resolution during validate can
-  call the identical logic. The link-rewrite pass additionally emits
-  `class="richmd-intree-link"` on a rewritten `<a>` when `--tree` is present
-  and the target matches — no class, and identical output to today, when
-  `--tree` is absent.
+  every heading its [anchor id](CONTEXT.md#term-anchor-id) — its own
+  explicit Pandoc id when authored, else its [slug](CONTEXT.md#term-slug)
+  via the documented pure function; when `--tree` (§02) is present, classify
+  each rewritten link as [in-tree](CONTEXT.md#term-in-tree-link) by
+  comparing its resolved `.md` path (fragment stripped) against the flag's
+  path set.
+- **Interface**: a link-rewrite pass and a heading-id pass, both operating
+  on the Pandoc AST during the render phase; the identical id logic (explicit
+  id else slugify) is also exported standalone so `#fragment` link
+  resolution during validate can call it. Fragment resolution additionally
+  indexes every raw HTML `id="..."` attribute found while walking the target
+  document's AST, so an `<a id="...">` (or any other HTML element's `id`)
+  resolves exactly like a heading anchor id. The link-rewrite pass
+  additionally emits `class="richmd-intree-link"` on a rewritten `<a>` when
+  `--tree` is present and the target matches — no class, and identical
+  output to today, when `--tree` is absent.
 - **Interacts with**: the [filter core](#03-filter-core)'s render phase;
   every [document](CONTEXT.md#term-document) a consumer's corpus links
   between.
-- **Invariants held**: cross-document links always resolve, slugs are a
-  pure documented function (both §00).
+- **Invariants held**: cross-document links always resolve, a heading's
+  anchor id is deterministic, fragment resolution sees every authored anchor
+  id (all §00).
 - **Failure behavior**: a link target that fails to resolve to an existing
   source file was already caught at validate time (§00 invariant) — by
   render time this pass only rewrites and classifies, never discovers new

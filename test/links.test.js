@@ -191,6 +191,98 @@ describe("richmd render (cross-document links, fragment does not match any headi
   });
 });
 
+// Anchor id widening (design.md §00 invariant "fragment resolution sees
+// every authored anchor id"): a heading's own explicit Pandoc id (`{#id}`)
+// must resolve a `#fragment` link exactly like a slug does — the SAME
+// explicit-id-else-slug logic used to assign the rendered heading's actual
+// `id` (design.md §07).
+describe("richmd render (cross-document links, fragment matches an explicit heading id)", () => {
+  let workDir;
+  let mainPath;
+  let siblingPath;
+  let mainHtmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-links-explicit-id-"));
+    mainPath = path.join(workDir, "links-main-explicit-id.md");
+    siblingPath = path.join(workDir, "links-sibling-explicit-id.md");
+    mainHtmlPath = path.join(workDir, "links-main-explicit-id.html");
+    await cp(path.join(fixturesDir, "links-main-explicit-id.md"), mainPath);
+    await cp(
+      path.join(fixturesDir, "links-sibling-explicit-id.md"),
+      siblingPath,
+    );
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 (validate does not error on a fragment matching an explicit {#id})", async () => {
+    const result = await runCli(["render", mainPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+  });
+
+  it("rewrites the link to sibling.html#term-x, unchanged", async () => {
+    await runCli(["render", mainPath]);
+    const html = await readFile(mainHtmlPath, "utf8");
+    assert.match(html, /<a href="links-sibling-explicit-id\.html#term-x"/);
+  });
+});
+
+// Anchor id widening (design.md §00 invariant "fragment resolution sees
+// every authored anchor id"): a raw HTML `id="..."` attribute must resolve
+// a `#fragment` link exactly like a heading anchor id — on ANY tag, not
+// just `<a>` (CONTEXT.md#term-anchor-id: "richmd does not distinguish an
+// explicit heading id from an HTML id").
+describe("richmd render (cross-document links, fragment matches a raw HTML id attribute)", () => {
+  let workDir;
+  let mainPath;
+  let siblingPath;
+  let mainHtmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-links-html-id-"));
+    mainPath = path.join(workDir, "links-main-html-anchor.md");
+    siblingPath = path.join(workDir, "links-sibling-html-anchor.md");
+    mainHtmlPath = path.join(workDir, "links-main-html-anchor.html");
+    await cp(path.join(fixturesDir, "links-main-html-anchor.md"), mainPath);
+    await cp(
+      path.join(fixturesDir, "links-sibling-html-anchor.md"),
+      siblingPath,
+    );
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it('exits 0 for a fragment matching an <a id="..."> anchor', async () => {
+    const result = await runCli(["render", mainPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+  });
+
+  it("rewrites the link to sibling.html#adr-1, unchanged", async () => {
+    await runCli(["render", mainPath]);
+    const html = await readFile(mainHtmlPath, "utf8");
+    assert.match(html, /<a href="links-sibling-html-anchor\.html#adr-1"/);
+  });
+
+  it('also resolves a fragment matching a <span id="..."> (non-anchor tag)', async () => {
+    const result = await runCli(["render", mainPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(mainHtmlPath, "utf8");
+    assert.match(html, /<a href="links-sibling-html-anchor\.html#span-anchor"/);
+  });
+
+  it('also resolves a fragment matching a <div id="..."> (non-anchor tag)', async () => {
+    const result = await runCli(["render", mainPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(mainHtmlPath, "utf8");
+    assert.match(html, /<a href="links-sibling-html-anchor\.html#div-anchor"/);
+  });
+});
+
 // Slugs are a pure, documented function (design.md §00 invariant): two
 // identical heading texts in the SAME document must produce distinct ids
 // via the GitHub-flavored -1/-2 duplicate suffix rule.

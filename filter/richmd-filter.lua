@@ -392,15 +392,54 @@ local function is_relative_md_link(path_part)
   return path_part:match("%.md$") ~= nil
 end
 
--- target_heading_slugs(resolved_path) -> { [slug] = true, ... }
+-- heading_anchor_id(header, seen_slugs) -> string
 --
--- Parses the target `.md` file and computes every heading's slug via the
--- SAME Slugify.slugify function used to assign `id`s in the render phase
--- (render_only_header, below) — one source of truth, so a `#fragment` link
--- and its target heading's id can never disagree (§00 invariant). Used only
--- to check that a `#fragment` names a heading that actually exists in the
--- target document.
-local function target_heading_slugs(resolved_path)
+-- THE single source of truth for "this header's anchor id"
+-- (CONTEXT.md#term-anchor-id, §00 invariant "a heading's anchor id is
+-- deterministic: explicit id, else slug"): a heading's own explicit Pandoc
+-- id — already parsed by Pandoc itself from `{#id}` syntax, so this never
+-- re-parses attr syntax by hand — wins when present and non-empty;
+-- otherwise its slug, computed by the identical Slugify.slugify function
+-- either way. Called from BOTH the render phase (render_only_header, which
+-- assigns the actual `id` a reader's browser sees) and the validate phase
+-- (target_heading_slugs, below, which builds the set of ids a `#fragment`
+-- link is allowed to resolve against) — one function, two callers, so the
+-- two can never disagree (the whole point of the invariant this helper
+-- exists to hold).
+local function heading_anchor_id(header, seen_slugs)
+  if header.identifier and header.identifier ~= "" then
+    return header.identifier
+  end
+  local heading_text = pandoc.utils.stringify(header.content)
+  return Slugify.slugify(heading_text, seen_slugs)
+end
+
+-- HTML_ID_ATTR_PATTERN: matches an `id="..."` (or `id='...'`) attribute
+-- anywhere in a raw HTML string. Deliberately permissive about which tag
+-- carries it (CONTEXT.md#term-anchor-id: "a raw HTML element's own
+-- id=\"...\" attribute... richmd does not distinguish" which tag) — `<a
+-- id="...">`, `<span id="...">`, `<div id="...">` are all equally valid
+-- anchor sources, so this pattern matches the attribute itself, never a
+-- specific tag name.
+local function collect_html_ids(html_text, ids)
+  for quote, id in html_text:gmatch("id=([\"'])(.-)%1") do
+    ids[id] = true
+  end
+end
+
+-- target_anchor_ids(resolved_path) -> { [id] = true, ... }
+--
+-- Parses the target `.md` file and computes every anchor id it will expose
+-- once rendered: each heading's id via the SAME heading_anchor_id function
+-- used to assign `id`s in the render phase (render_only_header, below) —
+-- one source of truth, so a `#fragment` link and its target heading's id
+-- can never disagree (§00 invariant) — plus every raw HTML `id="..."`
+-- attribute found anywhere while walking the document (any tag, not just
+-- `<a>` — §00 invariant "fragment resolution sees every authored anchor
+-- id"). Used only to check that a `#fragment` names an anchor that actually
+-- exists in the target document; widening the known-id set here never
+-- narrows what a previously-valid link resolves to.
+local function target_anchor_ids(resolved_path)
   local file = io.open(resolved_path, "r")
   if not file then
     return nil
@@ -408,33 +447,72 @@ local function target_heading_slugs(resolved_path)
   local content = file:read("*a")
   file:close()
 
-  local ok, target_doc = pcall(pandoc.read, content, "markdown")
+  -- "markdown-auto_identifiers", not plain "markdown": disables Pandoc's
+  -- own built-in heading-id auto-assignment (see bin/richmd.js's identical
+  -- comment on the CLI's own `-f` flag) so this independent re-parse
+  -- produces the SAME empty-unless-explicit `header.identifier` the main
+  -- document's own Pandoc invocation sees — otherwise heading_anchor_id
+  -- would see a non-empty auto-slugified identifier here even for a
+  -- heading with no authored `{#id}`, and wrongly treat it as explicit.
+  local ok, target_doc = pcall(pandoc.read, content, "markdown-auto_identifiers")
   if not ok then
     return nil
   end
 
   -- Mark internal-only headers (e.g. cards.lua's per-card `### heading`
-  -- titles) BEFORE collecting slugs, exactly like the render phase does
-  -- below (render_only_header) — a `#fragment` link must be checked
-  -- against the SAME set of real headings the target document will
-  -- actually assign ids to, never against a card title that never became
-  -- an addressable heading in the rendered target page (§00 invariant: a
-  -- `#fragment` link and its target heading's id can never disagree).
+  -- titles) BEFORE collecting ids, exactly like the render phase does below
+  -- (render_only_header) — a `#fragment` link must be checked against the
+  -- SAME set of real headings the target document will actually assign ids
+  -- to, never against a card title that never became an addressable
+  -- heading in the rendered target page (§00 invariant: a `#fragment` link
+  -- and its target heading's id can never disagree).
   target_doc = HeadingScope.mark(target_doc, registry)
 
-  local slugs = {}
+  local ids = {}
   local target_seen_slugs = Slugify.new_seen()
   target_doc:walk({
     Header = function(header)
       if HeadingScope.is_internal(header) then
-        return -- not a real heading; never contributes a slug
+        return -- not a real heading; never contributes an id
       end
-      local heading_text = pandoc.utils.stringify(header.content)
-      local slug = Slugify.slugify(heading_text, target_seen_slugs)
-      slugs[slug] = true
+      ids[heading_anchor_id(header, target_seen_slugs)] = true
+    end,
+    -- A raw `id="..."` attribute survives Pandoc's own parse in one of two
+    -- shapes, depending on the tag (confirmed by direct probe against a
+    -- real `pandoc -t native`, not assumed): `<span id="...">...</span>`
+    -- and `<div id="...">...</div>` (open/close tags wrapping content, even
+    -- empty content) are collapsed into native Span/Div AST nodes carrying
+    -- the id as `.identifier`, exactly like a Header's own explicit id —
+    -- Pandoc never leaves these as raw HTML text to begin with. `<a
+    -- id="...">` (and any tag Pandoc's HTML reader does NOT collapse to a
+    -- native node — e.g. an unclosed/self-closing tag, or `<a>` specifically,
+    -- which Pandoc keeps raw for link-parsing reasons) instead survives as a
+    -- RawInline/RawBlock with format "html", whose id has to be pulled out
+    -- of the literal tag text by hand. Both paths feed the SAME `ids` set —
+    -- richmd does not distinguish which shape Pandoc happened to choose for
+    -- a given tag, only that an author wrote an explicit id="..." somewhere.
+    Span = function(span)
+      if span.identifier and span.identifier ~= "" then
+        ids[span.identifier] = true
+      end
+    end,
+    Div = function(div)
+      if div.identifier and div.identifier ~= "" then
+        ids[div.identifier] = true
+      end
+    end,
+    RawInline = function(raw)
+      if raw.format == "html" then
+        collect_html_ids(raw.text, ids)
+      end
+    end,
+    RawBlock = function(raw)
+      if raw.format == "html" then
+        collect_html_ids(raw.text, ids)
+      end
     end,
   })
-  return slugs
+  return ids
 end
 
 -- Pass 1 (validate phase): every relative `.md` link target must resolve to
@@ -464,8 +542,8 @@ local function validate_only_link(link)
   file:close()
 
   if fragment_part then
-    local slugs = target_heading_slugs(resolved_path)
-    if slugs and not slugs[fragment_part] then
+    local ids = target_anchor_ids(resolved_path)
+    if ids and not ids[fragment_part] then
       add_error(
         "link",
         "link." .. link.target,
@@ -1070,9 +1148,14 @@ local seen_slugs = Slugify.new_seen()
 
 -- render_only_header(header) -> pandoc_ast_node
 --
--- Assigns the Header's `id` attribute via the single documented slugify
--- function — the SAME function used by render_only_link below to resolve
--- `#fragment` targets, so headings and links can never disagree.
+-- Assigns the Header's `id` attribute via the single shared
+-- heading_anchor_id function (above) — the SAME function
+-- target_anchor_ids uses during validate to resolve `#fragment` targets, so
+-- headings and links can never disagree. A pre-existing non-empty
+-- `header.identifier` (Pandoc's own parse of `### Heading {#explicit-id}`
+-- syntax) is preserved rather than discarded — heading_anchor_id itself
+-- makes that choice, once, so this call site never re-implements the
+-- explicit-id-else-slug branching.
 --
 -- A Header carrying HeadingScope's internal-heading marker (applied by the
 -- mark_internal_headers pre-pass below, BEFORE this walk runs, to any
@@ -1088,8 +1171,7 @@ local function render_only_header(header)
   if HeadingScope.is_internal(header) then
     return nil
   end
-  local heading_text = pandoc.utils.stringify(header.content)
-  header.identifier = Slugify.slugify(heading_text, seen_slugs)
+  header.identifier = heading_anchor_id(header, seen_slugs)
   return header
 end
 

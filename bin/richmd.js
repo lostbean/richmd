@@ -91,10 +91,27 @@ function runFilter(
   // (which includes `body { max-width: 36em; ... }`) — richmd's theme owns
   // layout width entirely via .richmd-container/.richmd-container--wide, so
   // Pandoc's default must never compete with it.
+  //
+  // -f markdown-auto_identifiers disables Pandoc's OWN built-in heading-id
+  // auto-assignment (the `auto_identifiers` markdown extension, on by
+  // default): left enabled, Pandoc's reader sets a non-empty `identifier`
+  // on EVERY heading during its own parse — including one with no authored
+  // `{#id}` at all — which made richmd-filter.lua's heading_anchor_id
+  // helper unable to tell "author wrote an explicit id" apart from "Pandoc
+  // auto-slugified it", since both looked identical (a non-empty
+  // `header.identifier`) by the time the Lua filter ever saw the AST.
+  // Disabling this extension means `header.identifier` is empty unless the
+  // author wrote `### Heading {#id}` themselves, restoring the exact
+  // distinction design.md §00's "explicit id, else slug" invariant depends
+  // on — richmd's OWN slugify function (filter/slugify.lua) still assigns
+  // every other heading's id, completely unaffected, since it never relied
+  // on this Pandoc extension being on in the first place.
   const args = [
     "--lua-filter",
     filterPath,
     "--standalone",
+    "-f",
+    "markdown-auto_identifiers",
     "-M",
     "document-css=false",
   ];

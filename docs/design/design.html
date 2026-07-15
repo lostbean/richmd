@@ -1163,11 +1163,23 @@ broken link in the output.</p>
 </div>
 </div>
 <div class="entry invariant">
-<div class="entry-head"><span class="label">Slugs are a pure, documented function</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill state">state</span></span></div>
+<div class="entry-head"><span class="label">A heading's anchor id is deterministic: explicit id, else slug</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill state">state</span></span></div>
 <div class="body">
-<p>A heading's <a href="CONTEXT.md#term-slug">slug</a> is computed by one documented,
-tested function of its text (GitHub-flavored rules). The same function
-resolves every <code>#fragment</code> link, so headings and links can never disagree.</p>
+<p>A heading's <a href="CONTEXT.md#term-anchor-id">anchor id</a> is its own explicit
+Pandoc id (<code>{#id}</code>) when authored, else its <a href="CONTEXT.md#term-slug">slug</a>,
+computed by one documented, tested function of its text (GitHub-flavored
+rules). <code>#fragment</code> link resolution checks the identical id a target
+heading actually receives, so headings and links can never disagree.</p>
+</div>
+</div>
+<div class="entry invariant">
+<div class="entry-head"><span class="label">Fragment resolution sees every authored anchor id</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill robustness">robustness</span></span></div>
+<div class="body">
+<p><code>#fragment</code> link validation resolves against every
+<a href="CONTEXT.md#term-anchor-id">anchor id</a> in the target document — both
+heading ids (explicit or slugified) and raw HTML <code>id=&quot;...&quot;</code> attributes —
+never against heading slugs alone. Widening the known-id set never narrows
+what a previously-valid link resolves to.</p>
 </div>
 </div>
 </div>
@@ -1531,22 +1543,28 @@ filesystem/AST walk the validate phase already did.</p>
 <li><strong>Responsibility</strong>: rewrite every relative <code>.md</code> link target (with or
 without a <code>#fragment</code>) to its sibling <code>.html</code> target, automatically, with
 no special marker syntax required to make rewriting itself work; assign
-every heading a <a href="CONTEXT.md#term-slug">slug</a> via the documented pure
-function; when <code>--tree</code> (§02) is present, classify each rewritten link as
-<a href="CONTEXT.md#term-in-tree-link">in-tree</a> by comparing its resolved <code>.md</code>
-path (fragment stripped) against the flag's path set.</li>
-<li><strong>Interface</strong>: a link-rewrite pass and a slugify pass, both operating on
-the Pandoc AST during the render phase; the slugify function is also
-exported standalone so <code>#fragment</code> link resolution during validate can
-call the identical logic. The link-rewrite pass additionally emits
-<code>class=&quot;richmd-intree-link&quot;</code> on a rewritten <code>&lt;a&gt;</code> when <code>--tree</code> is present
-and the target matches — no class, and identical output to today, when
-<code>--tree</code> is absent.</li>
+every heading its <a href="CONTEXT.md#term-anchor-id">anchor id</a> — its own
+explicit Pandoc id when authored, else its <a href="CONTEXT.md#term-slug">slug</a>
+via the documented pure function; when <code>--tree</code> (§02) is present, classify
+each rewritten link as <a href="CONTEXT.md#term-in-tree-link">in-tree</a> by
+comparing its resolved <code>.md</code> path (fragment stripped) against the flag's
+path set.</li>
+<li><strong>Interface</strong>: a link-rewrite pass and a heading-id pass, both operating
+on the Pandoc AST during the render phase; the identical id logic (explicit
+id else slugify) is also exported standalone so <code>#fragment</code> link
+resolution during validate can call it. Fragment resolution additionally
+indexes every raw HTML <code>id=&quot;...&quot;</code> attribute found while walking the target
+document's AST, so an <code>&lt;a id=&quot;...&quot;&gt;</code> (or any other HTML element's <code>id</code>)
+resolves exactly like a heading anchor id. The link-rewrite pass
+additionally emits <code>class=&quot;richmd-intree-link&quot;</code> on a rewritten <code>&lt;a&gt;</code> when
+<code>--tree</code> is present and the target matches — no class, and identical
+output to today, when <code>--tree</code> is absent.</li>
 <li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>'s render phase;
 every <a href="CONTEXT.md#term-document">document</a> a consumer's corpus links
 between.</li>
-<li><strong>Invariants held</strong>: cross-document links always resolve, slugs are a
-pure documented function (both §00).</li>
+<li><strong>Invariants held</strong>: cross-document links always resolve, a heading's
+anchor id is deterministic, fragment resolution sees every authored anchor
+id (all §00).</li>
 <li><strong>Failure behavior</strong>: a link target that fails to resolve to an existing
 source file was already caught at validate time (§00 invariant) — by
 render time this pass only rewrites and classifies, never discovers new
