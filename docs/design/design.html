@@ -1025,6 +1025,8 @@ footer.colophon {
 <dd><span class="enf mechanism">mechanism</span> <span>strong → weak</span></dd>
 <dt>Chips</dt>
 <dd><span class="script-chip">deciding-script</span> <span class="entry-id">P1</span> <span>script that decides · citable id</span></dd>
+<dt>Pending</dt>
+<dd><span class="badge build">build</span> <span class="since">since YYYY-MM-DD</span></dd>
 </dl>
 </details>
 
@@ -1083,7 +1085,7 @@ plus renderer — without touching richmd's core source. See
 <a href="CONTEXT.md#term-cross-document-link">cross-document link</a> rewriting gives
 for free. One document in, one page out — a single render call never
 orchestrates or walks a whole tree. The
-<a href="CONTEXT.md#term-in-tree-link">in-tree link marker</a> (§06) narrows this
+<a href="CONTEXT.md#term-in-tree-link">in-tree link marker</a> (§08) narrows this
 without crossing it: it only changes how links already being rewritten in
 that one render are classified, never adds a second document to the call.
 See <a href="../adr/0005-tree-flag-for-in-tree-link-classification.md#adr-0005">ADR-0005</a>.</p>
@@ -1175,6 +1177,19 @@ validation as prose.</p>
 </div>
 </div>
 <div class="entry invariant">
+<div class="entry-head"><span class="label">A token reference resolves to a declared member, never to prose</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill invariants">invariants</span></span></div>
+<div class="body">
+<p>Every <a href="CONTEXT.md#term-token-reference">token reference</a> richmd recognizes
+resolves by exact key lookup against its
+<a href="CONTEXT.md#term-token-vocabulary">vocabulary</a>'s closed member set; a member
+not in the set is a <a href="CONTEXT.md#term-validation-error">validation error</a> at
+the reference's own location. A reference is singular — richmd never splits
+one reference into parts, so the set of legal members is exactly the set of
+keys its vocabulary declares. See
+<a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>.</p>
+</div>
+</div>
+<div class="entry invariant">
 <div class="entry-head"><span class="label">A heading's anchor id is deterministic: explicit id, else slug</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill state">state</span></span></div>
 <div class="body">
 <p>A heading's <a href="CONTEXT.md#term-anchor-id">anchor id</a> is its own explicit
@@ -1232,6 +1247,21 @@ pair. Modifying richmd's own core source is never the extension path. See
 </div>
 </div>
 </div>
+<h2 id="pending-updates">Pending updates</h2>
+<div class="pending">
+<div class="entry"><div class="entry-head"><span class="badges"><span class="badge build">build</span> <span class="since">since 2026-07-16</span></span></div>
+<div class="body">
+<p><strong>Token vocabulary resolution (§06) is designed, not yet built.</strong> The
+<a href="CONTEXT.md#term-tokens-directory">tokens directory</a> loader, the
+<a href="CONTEXT.md#term-token-resolution-pass">token resolution pass</a>, the block
+schema's <code>tokens</code> attr key (§04), and the
+<a href="CONTEXT.md#term-block-projection">block projection</a>'s <code>tokens</code> field (§05)
+are specified here ahead of the system. See
+<a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>
+and <a href="https://github.com/lostbean/richmd/issues/19">issue #19</a>.</p>
+</div>
+</div>
+</div>
 <h2 id="01-system-at-a-glance"><span class="secno">01</span> · System at a glance</h2>
 <p>richmd is one pipeline: parse, validate, gate, render. The
 <a href="CONTEXT.md#term-validate-phase">validate phase</a> and
@@ -1241,7 +1271,7 @@ Lua filter — not two Pandoc invocations. See
 <div class="diagram"><pre class="mermaid">graph TD
     Doc[&quot;Document (.md)&quot;]
     Parse[&quot;Pandoc parse → AST&quot;]
-    Validate[&quot;Validate phase\nschema lookup per block\n+ grammar validators\n+ cross-block rules&quot;]
+    Validate[&quot;Validate phase\nschema lookup per block\n+ grammar validators\n+ token resolution\n+ cross-block rules&quot;]
     Gate{&quot;Errors empty?&quot;}
     Render[&quot;Render phase\nlink rewrite · slugify\ntheme + diagram runtime&quot;]
     Page[&quot;Rendered page (.html)&quot;]
@@ -1375,11 +1405,11 @@ the resolved path is printed to stderr on every invocation, so which
 fact two sibling documents could disagree on unnoticed.</li>
 <li><strong>Interacts with</strong>: the <a href="#04-block-kind-registry">block kind registry</a> for
 per-block schema lookup; the
-<a href="#06-grammar-validators">grammar validators</a> via shell-out for
+<a href="#07-grammar-validators">grammar validators</a> via shell-out for
 mermaid/vega-lite blocks; <a href="#05-cross-block-rules">cross-block rules</a> as a
 <a href="CONTEXT.md#term-document-wide-check">document-wide check</a>; the
-<a href="#07-link-resolver-and-slugifier">link resolver and slugifier</a> during the
-render pass; the <a href="#08-theme-and-diagram-runtime">theme and diagram runtime</a>
+<a href="#08-link-resolver-and-slugifier">link resolver and slugifier</a> during the
+render pass; the <a href="#09-theme-and-diagram-runtime">theme and diagram runtime</a>
 component for the final HTML injection.</li>
 <li><strong>Invariants held</strong>: fail-closed gate, all-errors-collected (both §00).</li>
 <li><strong>Failure behavior</strong>: any Lua runtime error during either phase is a hard
@@ -1409,7 +1439,14 @@ renderer for both filter phases.</li>
 fenced div), a missing kind is itself a
 <a href="CONTEXT.md#term-validation-error">validation error</a>, never a silent
 pass-through — a fenced code block's unrecognized class is ordinary code,
-not a validation error, per the Block term's own distinction.</li>
+not a validation error, per the Block term's own distinction. A schema's
+attr may carry <code>tokens=&lt;vocabulary&gt;</code>, opting that attr into a
+<a href="CONTEXT.md#term-token-vocabulary">token vocabulary</a> (§06): its value is
+then a <a href="CONTEXT.md#term-token-reference">token reference</a> carrying exactly
+one member, validated against the set instead of an inline <code>allowed</code>
+list. An attr is a reference only when its schema says so — richmd never
+infers one from an attr's name
+(<a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>).</li>
 <li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>, which calls
 <code>lookup</code> once per block during validate and again during render; consumer
 repos, which populate the extension directory.</li>
@@ -1479,8 +1516,8 @@ metadata, never a substitute for the title text itself</p>
 only built-in kind whose Lua render function emits a different block kind's
 source (a <code>```vega-lite</code> fenced block) rather than final HTML directly —
 composition, not a special case: the expanded spec re-enters the same
-<a href="#06-grammar-validators">grammar validator</a> and
-<a href="#08-theme-and-diagram-runtime">diagram runtime</a> every hand-authored
+<a href="#07-grammar-validators">grammar validator</a> and
+<a href="#09-theme-and-diagram-runtime">diagram runtime</a> every hand-authored
 vega-lite block already goes through.</p>
 <ul>
 <li><strong>Responsibility</strong>: read the block's markdown-table body and <code>type</code> attr;
@@ -1493,12 +1530,12 @@ mark type carries a color channel keyed to the category field — the
 actual colors at render time, so expansion itself stays color-agnostic.</li>
 <li><strong>Interface</strong>: <code>expand(attrs, table_rows) -&gt; vega_lite_json | validation_error</code>,
 called during the <a href="CONTEXT.md#term-validate-phase">validate phase</a> before
-the expanded spec is handed to <code>vega-lite-check.js</code> (§06) exactly like any
+the expanded spec is handed to <code>vega-lite-check.js</code> (§07) exactly like any
 other vega-lite block.</li>
 <li><strong>Interacts with</strong>: the <a href="#04-block-kind-registry">block kind registry</a>,
 which dispatches <code>chart</code> blocks here instead of straight to HTML; the
-<a href="#06-grammar-validators">grammar validators</a>, which validate the expanded
-output; the <a href="#08-theme-and-diagram-runtime">theme and diagram runtime</a>,
+<a href="#07-grammar-validators">grammar validators</a>, which validate the expanded
+output; the <a href="#09-theme-and-diagram-runtime">theme and diagram runtime</a>,
 which renders it identically to a hand-authored chart.</li>
 <li><strong>Invariants held</strong>: schema-driven validation (§00) — a <code>chart</code> block with
 more than two columns and no explicit <code>x=</code>/<code>y=</code> binding is a
@@ -1519,14 +1556,19 @@ document, not a new validation model.</p>
 <li><strong>Responsibility</strong>: load every <code>.lua</code> file found in the
 <a href="CONTEXT.md#term-rules-directory">rules directory</a>; build the document's
 ordered <a href="CONTEXT.md#term-block-projection">block projection</a> list once per
-document, after every per-block, link, and grammar check has already run;
-run each loaded <a href="CONTEXT.md#term-cross-block-rule">cross-block rule</a> once
-against that list.</li>
+document, after every per-block, link, grammar, and
+<a href="CONTEXT.md#term-token-resolution-pass">token resolution</a> check has already
+run; run each loaded <a href="CONTEXT.md#term-cross-block-rule">cross-block rule</a>
+once against that list.</li>
 <li><strong>Interface</strong>: a rule file returns <code>{ check = function(block_projections, add_error) ... end }</code>, or a bare <code>function</code> of the same signature — the
 same <code>add_error</code> closure per-block checks already call into, so a rule's
 violations land in the identical collected-errors list. A rule can assume
 every projection it receives already passed its own
-<a href="CONTEXT.md#term-block-kind-schema">block kind schema</a> (§00 invariant). A
+<a href="CONTEXT.md#term-block-kind-schema">block kind schema</a> (§00 invariant), and
+that every <a href="CONTEXT.md#term-resolved-token">resolved token</a> on its <code>tokens</code>
+field already names a declared member (§00 invariant) — so a rule reads a
+token's properties directly, never re-checking membership nor scanning
+<code>body_text</code> for a reference. A
 violation's reported <a href="CONTEXT.md#term-error-source">error source</a> is the
 rule's own filename, <code>rule:</code>-prefixed (e.g. <code>rule:foundation-ordering</code>) so
 it can never collide with a same-named block kind; its <code>&lt;location&gt;</code> names
@@ -1567,7 +1609,75 @@ still holds.</p>
 </div>
 </div>
 <p>See <a href="../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008">ADR-0008</a>.</p>
-<h2 id="06-grammar-validators-06-grammar-validators"><span class="secno">06</span> · Grammar validators {#06-grammar-validators}</h2>
+<h2 id="06-token-vocabulary-resolution-06-token-vocabulary-resolution"><span class="secno">06</span> · Token vocabulary resolution {#06-token-vocabulary-resolution}</h2>
+<p><strong>Owns recognizing and resolving
+<a href="CONTEXT.md#term-token-reference">token references</a> against declared
+<a href="CONTEXT.md#term-token-vocabulary">vocabularies</a>.</strong> The third
+consumer-declarable contract, alongside §04's block schemas and §05's rules —
+and the only one operating below block granularity, at the inline span. richmd
+owns the mechanism; the set is always the consumer's. See
+<a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>.</p>
+<ul>
+<li><strong>Responsibility</strong>: load every <code>.json</code> file in the
+<a href="CONTEXT.md#term-tokens-directory">tokens directory</a>, keying each
+vocabulary by its filename; walk the document once for references and
+resolve each against its vocabulary's member set; record a
+<a href="CONTEXT.md#term-validation-error">validation error</a> for any member not in
+the set; hand every <a href="CONTEXT.md#term-resolved-token">resolved token</a> to
+§05's projection builder. A vocabulary declares one field — <code>members</code>, a
+map of member key to that member's arbitrary properties. richmd validates
+membership and never reads a property's meaning.</li>
+<li><strong>Interface</strong>: <code>resolve(doc, vocabularies, add_error) -&gt; resolved_tokens</code>,
+run as a <a href="CONTEXT.md#term-document-wide-check">document-wide check</a> after
+every per-block schema check (so an opted-in attr's block already passed
+its own schema) and before §05's rules (which consume its output). Two
+recognition surfaces, recognized two ways: an <strong>inline code span</strong> whose
+text matches <code>&lt;vocabulary&gt;:&lt;member&gt;</code> for a declared vocabulary is a
+reference structurally, wherever it appears — headings included, since a
+heading's code span is an ordinary code span; a <strong>block attr</strong> is a
+reference only when its <a href="#04-block-kind-registry">block kind schema</a>
+carries <code>tokens=&lt;vocabulary&gt;</code>, and then holds exactly one member. Both
+resolve by exact key lookup; neither splits a reference into parts.</li>
+<li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>, which loads the
+tokens directory at startup exactly as it loads §04's
+<a href="CONTEXT.md#term-extension-directory">extension directory</a> and §05's
+<a href="CONTEXT.md#term-rules-directory">rules directory</a>, and runs this pass
+within the <a href="CONTEXT.md#term-validate-phase">validate phase</a>; the
+<a href="#04-block-kind-registry">block kind registry</a>, whose schemas opt attrs
+into a vocabulary; <a href="#05-cross-block-rules">cross-block rules</a>, which read
+resolved tokens off the <a href="CONTEXT.md#term-block-projection">block projection</a>'s
+<code>tokens</code> field.</li>
+<li><strong>Invariants held</strong>: a token reference resolves to a declared member (§00,
+the invariant this component introduces); all-errors-collected (§00) — an
+unknown member never short-circuits the walk; document-wide checks run
+after what they depend on (§00).</li>
+<li><strong>Failure behavior</strong>: a malformed vocabulary file (bad JSON, a missing or
+non-map <code>members</code> field) is a load-time error naming the offending file —
+fatal at filter startup, identical to §04's and §05's directory contracts,
+never a silently skipped vocabulary. A reference naming a declared
+vocabulary but an undeclared member is an ordinary validation error at the
+reference's location, naming both. A code span whose prefix matches no
+declared vocabulary is ordinary prose, not an error — richmd recognizes
+references only for vocabularies a consumer actually declared. A reference
+inside a fenced code block is never recognized: that text is another
+grammar's source, the same line the
+<a href="#02-1-directive-lift">directive lift</a> already holds.</li>
+</ul>
+<div class="callout info">
+<div class="entry-head"><span class="label">Where multiplicity lives</span></div>
+<div class="body">
+<p>A <a href="CONTEXT.md#term-token-reference">token reference</a> is singular by
+construction, so richmd has no combination logic at all — no delimiter, no
+split, no ordering rule. A heading citing two members writes two spans, and
+the set is formed by collecting what this pass resolved. What a combination
+<em>means</em> — whether two members render as one pill, whether their order is
+canonical, whether a pair is even legal — is the consumer's, read from
+properties richmd carried but never interpreted. That is the whole reason a
+six-member vocabulary expresses any arity without richmd owning a parser
+(<a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>).</p>
+</div>
+</div>
+<h2 id="07-grammar-validators-07-grammar-validators"><span class="secno">07</span> · Grammar validators {#07-grammar-validators}</h2>
 <p><strong>Owns real grammar checking for mermaid and vega-lite.</strong> Neither has a
 native Lua grammar library, so each gets a small, tightly-scoped Node.js
 helper script the filter shells out to — not the full mermaid-cli/Puppeteer
@@ -1599,7 +1709,7 @@ whose field references do not exist in its data, passes this gate — see the
 &quot;not a semantic validator&quot; no-goal (§00).</p>
 </div>
 </div>
-<h2 id="07-link-resolver-and-slugifier-07-link-resolver-and-slugifier"><span class="secno">07</span> · Link resolver and slugifier {#07-link-resolver-and-slugifier}</h2>
+<h2 id="08-link-resolver-and-slugifier-08-link-resolver-and-slugifier"><span class="secno">08</span> · Link resolver and slugifier {#08-link-resolver-and-slugifier}</h2>
 <p><strong>Owns cross-document link rewriting and heading-anchor stability.</strong> Two
 related passes during the render phase, both grounded in the same
 filesystem/AST walk the validate phase already did.</p>
@@ -1635,7 +1745,7 @@ render time this pass only rewrites and classifies, never discovers new
 failures. A <code>--tree</code> path that does not match any link in the document is
 not an error — silently unused, exactly like an unmatched glob would be.</li>
 </ul>
-<h2 id="08-theme-and-diagram-runtime-08-theme-and-diagram-runtime"><span class="secno">08</span> · Theme and diagram runtime {#08-theme-and-diagram-runtime}</h2>
+<h2 id="09-theme-and-diagram-runtime-09-theme-and-diagram-runtime"><span class="secno">09</span> · Theme and diagram runtime {#09-theme-and-diagram-runtime}</h2>
 <p><strong>Owns the visual identity and how diagrams/charts actually become
 pictures.</strong> Two closely related concerns: the CSS asset, and how mermaid/
 vega-lite source becomes a rendered visual in the reader's browser.</p>
@@ -1684,7 +1794,7 @@ silent one. See
 <a href="../adr/0004-cdn-default-offline-bundling-opt-in.md#adr-0004">ADR-0004</a>.</p>
 </div>
 </div>
-<h2 id="09-ci-09-ci"><span class="secno">09</span> · CI {#09-ci}</h2>
+<h2 id="10-ci-10-ci"><span class="secno">10</span> · CI {#10-ci}</h2>
 <p><strong>Owns proving the gate on every push, not just on the author's machine.</strong>
 CI runs a strict superset of what <a href="https://github.com/lostbean/richmd/blob/main/lefthook.yml">lefthook</a>
 runs locally: every check lefthook's pre-commit hook runs (format, the design
@@ -1696,8 +1806,8 @@ slower checks have run too.</p>
 <ul>
 <li><strong>Responsibility</strong>: run <code>nix flake check</code> (formatting plus any flake
 checks), the full test suite for every deep module (filter core, block
-kind registry, grammar validators, link resolver/slugifier, theme/diagram
-runtime), the design gate
+kind registry, token vocabulary resolution, grammar validators, link
+resolver/slugifier, theme/diagram runtime), the design gate
 (<code>scripts/design-render --check</code> on every <code>design.md</code>,
 <code>scripts/layer-integrity .</code>), and the example-doc regression check
 (<code>examples/</code> — render the golden example, diff its output hash against
@@ -1708,7 +1818,7 @@ pull request.</li>
 <a href="https://github.com/lostbean/richmd/blob/main/flake.nix">flake.nix</a>
 devShell so CI's toolchain versions can never drift from a contributor's
 local <code>nix develop</code> shell.</li>
-<li><strong>Interacts with</strong>: every component in §02–§08 (it runs their tests) and
+<li><strong>Interacts with</strong>: every component in §02–§09 (it runs their tests) and
 the design layer itself (it runs the design gate).</li>
 <li><strong>Invariants held</strong>: none new — CI is the mechanism that keeps the
 fail-closed gate (§00) and schema-driven validation (§00) provably true on
@@ -1717,7 +1827,7 @@ every change, not just locally.</li>
 considered mergeable; CI never soft-fails or skips a channel the local
 gate runs.</li>
 </ul>
-<h2 id="10-end-to-end-walkthrough"><span class="secno">10</span> · End-to-end walkthrough</h2>
+<h2 id="11-end-to-end-walkthrough"><span class="secno">11</span> · End-to-end walkthrough</h2>
 <p><strong>Scenario: an author renders a design document, then fixes a broken
 diagram.</strong></p>
 <ol>
@@ -1731,15 +1841,15 @@ callout, a cards grid, a mermaid flowchart, and a link to
 once, and enters the <a href="CONTEXT.md#term-validate-phase">validate phase</a>:
 every block is looked up in the <a href="#04-block-kind-registry">registry</a>; the
 mermaid block is shelled out to the
-<a href="#06-grammar-validators">grammar validator</a>; the <code>CONTEXT.md</code> link target
+<a href="#07-grammar-validators">grammar validator</a>; the <code>CONTEXT.md</code> link target
 is checked against the filesystem; finally any
 <a href="#05-cross-block-rules">cross-block rules</a> found in the config directory
 run once over the full block list.</li>
 <li>Zero errors collected. The gate (§01 diamond) admits the
 <a href="CONTEXT.md#term-render-phase">render phase</a>: the
-<a href="#07-link-resolver-and-slugifier">link resolver</a> rewrites the <code>.md</code> link
+<a href="#08-link-resolver-and-slugifier">link resolver</a> rewrites the <code>.md</code> link
 to <code>.html</code>, headings get their <a href="CONTEXT.md#term-slug">slugs</a>, the
-<a href="#08-theme-and-diagram-runtime">theme</a> stylesheet and CDN script tags are
+<a href="#09-theme-and-diagram-runtime">theme</a> stylesheet and CDN script tags are
 injected.</li>
 <li><code>design.html</code> is written; the CLI exits 0.</li>
 </ol>
@@ -1747,7 +1857,7 @@ injected.</li>
 an arrow syntax.</strong></p>
 <ol start="6">
 <li>The author reruns <code>richmd render docs/design/design.md</code>.</li>
-<li>The <a href="#06-grammar-validators">grammar validator</a> rejects the block;
+<li>The <a href="#07-grammar-validators">grammar validator</a> rejects the block;
 the <a href="#03-filter-core">filter core</a> still finishes walking the rest of the
 document, collecting any further errors alongside it.</li>
 <li>The validate phase's error list is non-empty. The gate blocks the render

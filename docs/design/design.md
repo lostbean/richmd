@@ -57,7 +57,7 @@ No navigation, search, or multi-page site scaffolding beyond what
 [cross-document link](CONTEXT.md#term-cross-document-link) rewriting gives
 for free. One document in, one page out — a single render call never
 orchestrates or walks a whole tree. The
-[in-tree link marker](CONTEXT.md#term-in-tree-link) (§06) narrows this
+[in-tree link marker](CONTEXT.md#term-in-tree-link) (§08) narrows this
 without crossing it: it only changes how links already being rewritten in
 that one render are classified, never adds a second document to the call.
 See [ADR-0005](../adr/0005-tree-flag-for-in-tree-link-classification.md#adr-0005).
@@ -145,6 +145,19 @@ have read as verbatim code, and no attr-bearing bareword block escapes
 validation as prose.
 :::
 
+:::invariant {enforcement=mechanism script=richmd-filter-core lens=invariants}
+**A token reference resolves to a declared member, never to prose**
+
+Every [token reference](CONTEXT.md#term-token-reference) richmd recognizes
+resolves by exact key lookup against its
+[vocabulary](CONTEXT.md#term-token-vocabulary)'s closed member set; a member
+not in the set is a [validation error](CONTEXT.md#term-validation-error) at
+the reference's own location. A reference is singular — richmd never splits
+one reference into parts, so the set of legal members is exactly the set of
+keys its vocabulary declares. See
+[ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011).
+:::
+
 :::invariant {enforcement=mechanism script=richmd-filter-core lens=state}
 **A heading's anchor id is deterministic: explicit id, else slug**
 
@@ -198,6 +211,19 @@ pair. Modifying richmd's own core source is never the extension path. See
 [ADR-0003](../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003).
 :::
 
+## Pending updates
+
+:::pending {kind=build since=2026-07-16}
+**Token vocabulary resolution (§06) is designed, not yet built.** The
+[tokens directory](CONTEXT.md#term-tokens-directory) loader, the
+[token resolution pass](CONTEXT.md#term-token-resolution-pass), the block
+schema's `tokens` attr key (§04), and the
+[block projection](CONTEXT.md#term-block-projection)'s `tokens` field (§05)
+are specified here ahead of the system. See
+[ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011)
+and [issue #19](https://github.com/lostbean/richmd/issues/19).
+:::
+
 ## 01 System at a glance
 
 richmd is one pipeline: parse, validate, gate, render. The
@@ -210,7 +236,7 @@ Lua filter — not two Pandoc invocations. See
 graph TD
     Doc["Document (.md)"]
     Parse["Pandoc parse → AST"]
-    Validate["Validate phase\nschema lookup per block\n+ grammar validators\n+ cross-block rules"]
+    Validate["Validate phase\nschema lookup per block\n+ grammar validators\n+ token resolution\n+ cross-block rules"]
     Gate{"Errors empty?"}
     Render["Render phase\nlink rewrite · slugify\ntheme + diagram runtime"]
     Page["Rendered page (.html)"]
@@ -343,11 +369,11 @@ pass's error list is empty.
   fact two sibling documents could disagree on unnoticed.
 - **Interacts with**: the [block kind registry](#04-block-kind-registry) for
   per-block schema lookup; the
-  [grammar validators](#06-grammar-validators) via shell-out for
+  [grammar validators](#07-grammar-validators) via shell-out for
   mermaid/vega-lite blocks; [cross-block rules](#05-cross-block-rules) as a
   [document-wide check](CONTEXT.md#term-document-wide-check); the
-  [link resolver and slugifier](#07-link-resolver-and-slugifier) during the
-  render pass; the [theme and diagram runtime](#08-theme-and-diagram-runtime)
+  [link resolver and slugifier](#08-link-resolver-and-slugifier) during the
+  render pass; the [theme and diagram runtime](#09-theme-and-diagram-runtime)
   component for the final HTML injection.
 - **Invariants held**: fail-closed gate, all-errors-collected (both §00).
 - **Failure behavior**: any Lua runtime error during either phase is a hard
@@ -378,7 +404,14 @@ attrs, allowed values, body shape) plus its Lua render function.
   fenced div), a missing kind is itself a
   [validation error](CONTEXT.md#term-validation-error), never a silent
   pass-through — a fenced code block's unrecognized class is ordinary code,
-  not a validation error, per the Block term's own distinction.
+  not a validation error, per the Block term's own distinction. A schema's
+  attr may carry `tokens=<vocabulary>`, opting that attr into a
+  [token vocabulary](CONTEXT.md#term-token-vocabulary) (§06): its value is
+  then a [token reference](CONTEXT.md#term-token-reference) carrying exactly
+  one member, validated against the set instead of an inline `allowed`
+  list. An attr is a reference only when its schema says so — richmd never
+  infers one from an attr's name
+  ([ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011)).
 - **Interacts with**: the [filter core](#03-filter-core), which calls
   `lookup` once per block during validate and again during render; consumer
   repos, which populate the extension directory.
@@ -434,8 +467,8 @@ inline a sibling `.svg` file, with an optional caption rendered as a real
 only built-in kind whose Lua render function emits a different block kind's
 source (a ` ```vega-lite ` fenced block) rather than final HTML directly —
 composition, not a special case: the expanded spec re-enters the same
-[grammar validator](#06-grammar-validators) and
-[diagram runtime](#08-theme-and-diagram-runtime) every hand-authored
+[grammar validator](#07-grammar-validators) and
+[diagram runtime](#09-theme-and-diagram-runtime) every hand-authored
 vega-lite block already goes through.
 
 - **Responsibility**: read the block's markdown-table body and `type` attr;
@@ -448,12 +481,12 @@ vega-lite block already goes through.
   actual colors at render time, so expansion itself stays color-agnostic.
 - **Interface**: `expand(attrs, table_rows) -> vega_lite_json | validation_error`,
   called during the [validate phase](CONTEXT.md#term-validate-phase) before
-  the expanded spec is handed to `vega-lite-check.js` (§06) exactly like any
+  the expanded spec is handed to `vega-lite-check.js` (§07) exactly like any
   other vega-lite block.
 - **Interacts with**: the [block kind registry](#04-block-kind-registry),
   which dispatches `chart` blocks here instead of straight to HTML; the
-  [grammar validators](#06-grammar-validators), which validate the expanded
-  output; the [theme and diagram runtime](#08-theme-and-diagram-runtime),
+  [grammar validators](#07-grammar-validators), which validate the expanded
+  output; the [theme and diagram runtime](#09-theme-and-diagram-runtime),
   which renders it identically to a hand-authored chart.
 - **Invariants held**: schema-driven validation (§00) — a `chart` block with
   more than two columns and no explicit `x=`/`y=` binding is a
@@ -475,15 +508,20 @@ document, not a new validation model.
 - **Responsibility**: load every `.lua` file found in the
   [rules directory](CONTEXT.md#term-rules-directory); build the document's
   ordered [block projection](CONTEXT.md#term-block-projection) list once per
-  document, after every per-block, link, and grammar check has already run;
-  run each loaded [cross-block rule](CONTEXT.md#term-cross-block-rule) once
-  against that list.
+  document, after every per-block, link, grammar, and
+  [token resolution](CONTEXT.md#term-token-resolution-pass) check has already
+  run; run each loaded [cross-block rule](CONTEXT.md#term-cross-block-rule)
+  once against that list.
 - **Interface**: a rule file returns `{ check = function(block_projections,
 add_error) ... end }`, or a bare `function` of the same signature — the
   same `add_error` closure per-block checks already call into, so a rule's
   violations land in the identical collected-errors list. A rule can assume
   every projection it receives already passed its own
-  [block kind schema](CONTEXT.md#term-block-kind-schema) (§00 invariant). A
+  [block kind schema](CONTEXT.md#term-block-kind-schema) (§00 invariant), and
+  that every [resolved token](CONTEXT.md#term-resolved-token) on its `tokens`
+  field already names a declared member (§00 invariant) — so a rule reads a
+  token's properties directly, never re-checking membership nor scanning
+  `body_text` for a reference. A
   violation's reported [error source](CONTEXT.md#term-error-source) is the
   rule's own filename, `rule:`-prefixed (e.g. `rule:foundation-ordering`) so
   it can never collide with a same-named block kind; its `<location>` names
@@ -523,7 +561,74 @@ still holds.
 
 See [ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008).
 
-## 06 Grammar validators {#06-grammar-validators}
+## 06 Token vocabulary resolution {#06-token-vocabulary-resolution}
+
+**Owns recognizing and resolving
+[token references](CONTEXT.md#term-token-reference) against declared
+[vocabularies](CONTEXT.md#term-token-vocabulary).** The third
+consumer-declarable contract, alongside §04's block schemas and §05's rules —
+and the only one operating below block granularity, at the inline span. richmd
+owns the mechanism; the set is always the consumer's. See
+[ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011).
+
+- **Responsibility**: load every `.json` file in the
+  [tokens directory](CONTEXT.md#term-tokens-directory), keying each
+  vocabulary by its filename; walk the document once for references and
+  resolve each against its vocabulary's member set; record a
+  [validation error](CONTEXT.md#term-validation-error) for any member not in
+  the set; hand every [resolved token](CONTEXT.md#term-resolved-token) to
+  §05's projection builder. A vocabulary declares one field — `members`, a
+  map of member key to that member's arbitrary properties. richmd validates
+  membership and never reads a property's meaning.
+- **Interface**: `resolve(doc, vocabularies, add_error) -> resolved_tokens`,
+  run as a [document-wide check](CONTEXT.md#term-document-wide-check) after
+  every per-block schema check (so an opted-in attr's block already passed
+  its own schema) and before §05's rules (which consume its output). Two
+  recognition surfaces, recognized two ways: an **inline code span** whose
+  text matches `<vocabulary>:<member>` for a declared vocabulary is a
+  reference structurally, wherever it appears — headings included, since a
+  heading's code span is an ordinary code span; a **block attr** is a
+  reference only when its [block kind schema](#04-block-kind-registry)
+  carries `tokens=<vocabulary>`, and then holds exactly one member. Both
+  resolve by exact key lookup; neither splits a reference into parts.
+- **Interacts with**: the [filter core](#03-filter-core), which loads the
+  tokens directory at startup exactly as it loads §04's
+  [extension directory](CONTEXT.md#term-extension-directory) and §05's
+  [rules directory](CONTEXT.md#term-rules-directory), and runs this pass
+  within the [validate phase](CONTEXT.md#term-validate-phase); the
+  [block kind registry](#04-block-kind-registry), whose schemas opt attrs
+  into a vocabulary; [cross-block rules](#05-cross-block-rules), which read
+  resolved tokens off the [block projection](CONTEXT.md#term-block-projection)'s
+  `tokens` field.
+- **Invariants held**: a token reference resolves to a declared member (§00,
+  the invariant this component introduces); all-errors-collected (§00) — an
+  unknown member never short-circuits the walk; document-wide checks run
+  after what they depend on (§00).
+- **Failure behavior**: a malformed vocabulary file (bad JSON, a missing or
+  non-map `members` field) is a load-time error naming the offending file —
+  fatal at filter startup, identical to §04's and §05's directory contracts,
+  never a silently skipped vocabulary. A reference naming a declared
+  vocabulary but an undeclared member is an ordinary validation error at the
+  reference's location, naming both. A code span whose prefix matches no
+  declared vocabulary is ordinary prose, not an error — richmd recognizes
+  references only for vocabularies a consumer actually declared. A reference
+  inside a fenced code block is never recognized: that text is another
+  grammar's source, the same line the
+  [directive lift](#02-1-directive-lift) already holds.
+
+:::info {title="Where multiplicity lives"}
+A [token reference](CONTEXT.md#term-token-reference) is singular by
+construction, so richmd has no combination logic at all — no delimiter, no
+split, no ordering rule. A heading citing two members writes two spans, and
+the set is formed by collecting what this pass resolved. What a combination
+_means_ — whether two members render as one pill, whether their order is
+canonical, whether a pair is even legal — is the consumer's, read from
+properties richmd carried but never interpreted. That is the whole reason a
+six-member vocabulary expresses any arity without richmd owning a parser
+([ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011)).
+:::
+
+## 07 Grammar validators {#07-grammar-validators}
 
 **Owns real grammar checking for mermaid and vega-lite.** Neither has a
 native Lua grammar library, so each gets a small, tightly-scoped Node.js
@@ -554,7 +659,7 @@ whose field references do not exist in its data, passes this gate — see the
 "not a semantic validator" no-goal (§00).
 :::
 
-## 07 Link resolver and slugifier {#07-link-resolver-and-slugifier}
+## 08 Link resolver and slugifier {#08-link-resolver-and-slugifier}
 
 **Owns cross-document link rewriting and heading-anchor stability.** Two
 related passes during the render phase, both grounded in the same
@@ -591,7 +696,7 @@ filesystem/AST walk the validate phase already did.
   failures. A `--tree` path that does not match any link in the document is
   not an error — silently unused, exactly like an unmatched glob would be.
 
-## 08 Theme and diagram runtime {#08-theme-and-diagram-runtime}
+## 09 Theme and diagram runtime {#09-theme-and-diagram-runtime}
 
 **Owns the visual identity and how diagrams/charts actually become
 pictures.** Two closely related concerns: the CSS asset, and how mermaid/
@@ -639,7 +744,7 @@ silent one. See
 [ADR-0004](../adr/0004-cdn-default-offline-bundling-opt-in.md#adr-0004).
 :::
 
-## 09 CI {#09-ci}
+## 10 CI {#10-ci}
 
 **Owns proving the gate on every push, not just on the author's machine.**
 CI runs a strict superset of what [lefthook](https://github.com/lostbean/richmd/blob/main/lefthook.yml)
@@ -652,8 +757,8 @@ slower checks have run too.
 
 - **Responsibility**: run `nix flake check` (formatting plus any flake
   checks), the full test suite for every deep module (filter core, block
-  kind registry, grammar validators, link resolver/slugifier, theme/diagram
-  runtime), the design gate
+  kind registry, token vocabulary resolution, grammar validators, link
+  resolver/slugifier, theme/diagram runtime), the design gate
   (`scripts/design-render --check` on every `design.md`,
   `scripts/layer-integrity .`), and the example-doc regression check
   (`examples/` — render the golden example, diff its output hash against
@@ -664,7 +769,7 @@ slower checks have run too.
   [flake.nix](https://github.com/lostbean/richmd/blob/main/flake.nix)
   devShell so CI's toolchain versions can never drift from a contributor's
   local `nix develop` shell.
-- **Interacts with**: every component in §02–§08 (it runs their tests) and
+- **Interacts with**: every component in §02–§09 (it runs their tests) and
   the design layer itself (it runs the design gate).
 - **Invariants held**: none new — CI is the mechanism that keeps the
   fail-closed gate (§00) and schema-driven validation (§00) provably true on
@@ -673,7 +778,7 @@ slower checks have run too.
   considered mergeable; CI never soft-fails or skips a channel the local
   gate runs.
 
-## 10 End-to-end walkthrough
+## 11 End-to-end walkthrough
 
 **Scenario: an author renders a design document, then fixes a broken
 diagram.**
@@ -688,15 +793,15 @@ diagram.**
    once, and enters the [validate phase](CONTEXT.md#term-validate-phase):
    every block is looked up in the [registry](#04-block-kind-registry); the
    mermaid block is shelled out to the
-   [grammar validator](#06-grammar-validators); the `CONTEXT.md` link target
+   [grammar validator](#07-grammar-validators); the `CONTEXT.md` link target
    is checked against the filesystem; finally any
    [cross-block rules](#05-cross-block-rules) found in the config directory
    run once over the full block list.
 4. Zero errors collected. The gate (§01 diamond) admits the
    [render phase](CONTEXT.md#term-render-phase): the
-   [link resolver](#07-link-resolver-and-slugifier) rewrites the `.md` link
+   [link resolver](#08-link-resolver-and-slugifier) rewrites the `.md` link
    to `.html`, headings get their [slugs](CONTEXT.md#term-slug), the
-   [theme](#08-theme-and-diagram-runtime) stylesheet and CDN script tags are
+   [theme](#09-theme-and-diagram-runtime) stylesheet and CDN script tags are
    injected.
 5. `design.html` is written; the CLI exits 0.
 
@@ -704,7 +809,7 @@ diagram.**
 an arrow syntax.**
 
 6. The author reruns `richmd render docs/design/design.md`.
-7. The [grammar validator](#06-grammar-validators) rejects the block;
+7. The [grammar validator](#07-grammar-validators) rejects the block;
    the [filter core](#03-filter-core) still finishes walking the rest of the
    document, collecting any further errors alongside it.
 8. The validate phase's error list is non-empty. The gate blocks the render

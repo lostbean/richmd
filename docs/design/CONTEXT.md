@@ -95,10 +95,12 @@ the walk stops the walk exactly like reaching the boundary, never silently
 skips past the unreadable directory to keep climbing). "Nearest wins" — a
 document uses exactly one config directory, never a merge of several found
 along the walk. Its children are named, purpose-specific subdirectories, one
-per consumer-facing extension point richmd defines — today the
-[extension directory](#term-extension-directory) and the
-[rules directory](#term-rules-directory); a future extension point earns a
-third child under the same convention, never a parallel discovery mechanism.
+per consumer-facing extension point richmd defines — the
+[extension directory](#term-extension-directory), the
+[rules directory](#term-rules-directory), and the
+[tokens directory](#term-tokens-directory); a further extension point earns
+another child under the same convention, never a parallel discovery
+mechanism.
 See [ADR-0009](../adr/0009-config-dir-upward-walk-bounded-at-repo-root.md#adr-0009).
 
 ### Extension directory {#term-extension-directory}
@@ -115,11 +117,63 @@ The [config directory](#term-config-directory)'s `rules/` child
 files. Optional, like the [extension directory](#term-extension-directory) —
 most documents have none.
 
+### Tokens directory {#term-tokens-directory}
+
+The [config directory](#term-config-directory)'s `tokens/` child
+(`.richmd/tokens/`), holding one
+[token vocabulary](#term-token-vocabulary) JSON file per vocabulary.
+Optional, like the [rules directory](#term-rules-directory).
+
+### Token vocabulary {#term-token-vocabulary}
+
+A named closed set of member keys, each carrying arbitrary consumer-owned
+properties. Its name is its filename (`.richmd/tokens/lens.schema.json`
+declares the vocabulary `lens`), so the name is never a second fact the file
+could disagree with. richmd ships no vocabulary of its own: the set and its
+properties are the consumer's, and richmd owns only the mechanism that
+declares, recognizes, and validates them. See
+[ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011).
+
+_Avoid_: "enum" (a vocabulary's members carry properties, an enum's do not);
+"taxonomy" (implies a hierarchy the set does not have).
+
+### Token reference {#term-token-reference}
+
+One citation of a [token vocabulary](#term-token-vocabulary) member from a
+[document](#term-document): an inline code span of the form
+`` `<vocabulary>:<member>` ``, or a [block](#term-block) attr whose
+[block kind schema](#term-block-kind-schema) opted it into a vocabulary. A
+reference is singular and resolves by exact key lookup — it never carries a
+combination of members. Multiplicity is repetition: a heading citing two
+members writes two references, so a set of members is formed by collection
+at the reference site, never by a grammar richmd parses.
+
+### Resolved token {#term-resolved-token}
+
+What a [token reference](#term-token-reference) becomes once the
+[token resolution pass](#term-token-resolution-pass) matches it against its
+[vocabulary](#term-token-vocabulary): the vocabulary name, the member key,
+the member's properties, and the reference's location. A flat value, never a
+live reference into the Pandoc AST — the same consumer-facing contract a
+[block projection](#term-block-projection) already holds to
+([ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008)).
+
+### Token resolution pass {#term-token-resolution-pass}
+
+The [validate-phase](#term-validate-phase) pass that walks a
+[document](#term-document) for [token references](#term-token-reference),
+resolves each against its [vocabulary](#term-token-vocabulary), and records
+a [validation error](#term-validation-error) for any member not in the set.
+A [document-wide check](#term-document-wide-check): it runs after every
+per-block schema check and before [cross-block rules](#term-cross-block-rule),
+which consume its [resolved tokens](#term-resolved-token).
+
 ### Block projection {#term-block-projection}
 
 A frozen snapshot of a [block](#term-block) taken once, when the
 [block projection](#term-block-projection) list is built (§05) — its kind,
-attrs, location, and body text copied out at that moment, never a live
+attrs, location, body text, and the [resolved tokens](#term-resolved-token)
+found within it, copied out at that moment, never a live
 reference into the Pandoc AST. A later phase mutating the AST (the
 [render phase](#term-render-phase) rewrites link targets and assigns slugs)
 never changes a projection already handed to a
