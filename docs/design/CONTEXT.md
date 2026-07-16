@@ -127,9 +127,9 @@ Optional, like the [rules directory](#term-rules-directory).
 ### Token vocabulary {#term-token-vocabulary}
 
 A named closed set of member keys, each carrying arbitrary consumer-owned
-properties. Its name is its filename (`.richmd/tokens/lens.schema.json`
-declares the vocabulary `lens`), so the name is never a second fact the file
-could disagree with. richmd ships no vocabulary of its own: the set and its
+properties. Its name is its filename (`.richmd/tokens/lens.json` declares the
+vocabulary `lens`), so the name is never a second fact the file could
+disagree with. richmd ships no vocabulary of its own: the set and its
 properties are the consumer's, and richmd owns only the mechanism that
 declares, recognizes, and validates them. See
 [ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011).
