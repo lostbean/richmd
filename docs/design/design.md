@@ -215,18 +215,6 @@ pair. Modifying richmd's own core source is never the extension path. See
 [ADR-0003](../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003).
 :::
 
-## Pending updates
-
-:::pending {kind=build since=2026-07-16}
-**Token references as addressing (§06, §08) are designed, not yet built.** A
-recognized [token reference](CONTEXT.md#term-token-reference) must contribute
-nothing to a heading's [slug](CONTEXT.md#term-slug), and must render as its
-[token hook](CONTEXT.md#term-token-hook) rather than as inert prose. Today it
-does neither: tagging a heading renames its anchor and breaks links to it. See
-[ADR-0012](../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012)
-and [issue #19](https://github.com/lostbean/richmd/issues/19).
-:::
-
 ## 01 System at a glance
 
 richmd is one pipeline: parse, validate, gate, render. The

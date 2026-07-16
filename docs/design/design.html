@@ -1025,8 +1025,6 @@ footer.colophon {
 <dd><span class="enf mechanism">mechanism</span> <span>strong → weak</span></dd>
 <dt>Chips</dt>
 <dd><span class="script-chip">deciding-script</span> <span class="entry-id">P1</span> <span>script that decides · citable id</span></dd>
-<dt>Pending</dt>
-<dd><span class="badge build">build</span> <span class="since">since YYYY-MM-DD</span></dd>
 </dl>
 </details>
 
@@ -1248,20 +1246,6 @@ never in generator logic.</p>
 pair. Modifying richmd's own core source is never the extension path. See
 <a href="../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003">ADR-0003</a>.</p>
 </div>
-</div>
-</div>
-</div>
-<h2 id="pending-updates">Pending updates</h2>
-<div class="pending">
-<div class="entry"><div class="entry-head"><span class="badges"><span class="badge build">build</span> <span class="since">since 2026-07-16</span></span></div>
-<div class="body">
-<p><strong>Token references as addressing (§06, §08) are designed, not yet built.</strong> A
-recognized <a href="CONTEXT.md#term-token-reference">token reference</a> must contribute
-nothing to a heading's <a href="CONTEXT.md#term-slug">slug</a>, and must render as its
-<a href="CONTEXT.md#term-token-hook">token hook</a> rather than as inert prose. Today it
-does neither: tagging a heading renames its anchor and breaks links to it. See
-<a href="../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012">ADR-0012</a>
-and <a href="https://github.com/lostbean/richmd/issues/19">issue #19</a>.</p>
 </div>
 </div>
 </div>
