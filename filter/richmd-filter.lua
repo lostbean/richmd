@@ -296,14 +296,107 @@ local function add_error(kind_name, location, reason)
   })
 end
 
--- validate_attrs(schema, attrs, kind_name, location) -> resolved_attrs
+-- validate_attr_token(attr_schema, attr_name, value, kind_name, location)
+--   -> resolved_token | nil
+--
+-- The SECOND token recognition surface (design.md §06 Interface, ADR-0011).
+-- The first — an inline `<vocabulary>:<member>` code span — is recognized
+-- STRUCTURALLY, wherever it appears, by resolve_tokens below. A block attr
+-- is recognized BY DECLARATION instead: it is a reference only when its
+-- block kind schema opts it in with `tokens=<vocabulary>`. richmd NEVER
+-- infers a reference from an attr's NAME — an attr literally named `lens` on
+-- a schema that does not opt it in is an ordinary string attr, untouched
+-- (ADR-0011 "What richmd recognizes": inferring from the name "would make an
+-- unrelated `lens=` attr silently token-validated, and would bind vocabulary
+-- names to attr names across every consumer schema forever").
+--
+-- The attr's whole value is ONE member key, looked up EXACTLY — an opted-in
+-- attr holds exactly one member (design.md §04 Interface). There is no
+-- split, on any delimiter: `lens="state composition"` is one lookup of the
+-- member `state composition`, failing closed unless that exact key is
+-- declared, even when `state` and `composition` are both declared members.
+-- Multiplicity is not this attr's to express (ADR-0011: there is no
+-- combinator, by decision) — which is also why the attr carries the bare
+-- member key and never the code span's `<vocabulary>:<member>` shape: the
+-- vocabulary is already named by the schema, so repeating it in the value
+-- would be a second fact the two could disagree about.
+--
+-- Errors here are sourced to the BLOCK'S OWN KIND via the same add_error
+-- shape the enum branch below already uses, NOT to `token:<vocabulary>` as a
+-- code span's error is. The distinction is what the error is ABOUT: a span's
+-- error is about a reference standing on its own in prose, whose only
+-- context is its vocabulary; an attr's error is about THIS block's attr
+-- being wrong, exactly like a bad enum value or a missing required attr, and
+-- it reads that way — `[lens-card] div.lens-card: attr 'lens' ...`.
+local function validate_attr_token(attr_schema, attr_name, value, kind_name, location)
+  local vocabulary_name = attr_schema.tokens
+  local vocabulary = token_vocabularies[vocabulary_name]
+
+  -- A schema opting an attr into a vocabulary that was never declared is a
+  -- broken schema, and must fail LOUDLY rather than silently pass the attr
+  -- through as an ordinary string (§00: a token reference resolves to a
+  -- declared member, never to prose). Note this is the exact OPPOSITE of a
+  -- code span naming an undeclared vocabulary, which IS ordinary prose: a
+  -- span's prefix is a coincidence of text, whereas a schema's `tokens`
+  -- field is a deliberate declaration that can only be a mistake if the
+  -- vocabulary is missing.
+  if not vocabulary then
+    add_error(
+      kind_name,
+      location,
+      "attr '"
+        .. attr_name
+        .. "' is opted into token vocabulary '"
+        .. tostring(vocabulary_name)
+        .. "', which is not declared"
+    )
+    return nil
+  end
+
+  local properties = vocabulary.members[value]
+  if properties == nil then
+    -- Fails closed, naming BOTH the vocabulary and the unknown member
+    -- (design.md §06 Failure behavior).
+    add_error(
+      kind_name,
+      location,
+      "attr '"
+        .. attr_name
+        .. "' has unknown member '"
+        .. value
+        .. "' in token vocabulary '"
+        .. vocabulary_name
+        .. "'"
+    )
+    return nil
+  end
+
+  -- The SAME resolved-token shape a code span resolves to (see
+  -- resolve_tokens, CONTEXT.md#term-resolved-token) — a flat value, never a
+  -- live reference into the Pandoc AST. Returned rather than dropped so §06
+  -- can hand it to the block projection builder in a later change; nothing
+  -- consumes it yet.
+  return {
+    vocabulary = vocabulary_name,
+    member = value,
+    properties = properties,
+    location = location,
+  }
+end
+
+-- validate_attrs(schema, attrs, kind_name, location)
+--   -> resolved_attrs, resolved_tokens
 --
 -- Checks the block's attrs against its schema's `attrs` table (required/
--- optional, enum values) and returns the resolved attr values regardless
--- of whether errors were found — the render phase is never reached when
--- errors exist, so a partially-resolved table here is harmless.
+-- optional, enum values, token vocabulary membership) and returns the
+-- resolved attr values regardless of whether errors were found — the render
+-- phase is never reached when errors exist, so a partially-resolved table
+-- here is harmless. `resolved_tokens` collects a resolved token per opted-in
+-- attr that resolved cleanly (empty for the overwhelming majority of blocks,
+-- whose schemas opt no attr in).
 local function validate_attrs(schema, attrs, kind_name, location)
   local resolved = {}
+  local resolved_tokens = {}
   for attr_name, attr_schema in pairs(schema.attrs or {}) do
     local value = attrs[attr_name]
     if value == nil or value == "" then
@@ -315,7 +408,13 @@ local function validate_attrs(schema, attrs, kind_name, location)
         )
       end
     else
-      if attr_schema.type == "enum" then
+      if attr_schema.tokens then
+        local resolved_token =
+          validate_attr_token(attr_schema, attr_name, value, kind_name, location)
+        if resolved_token then
+          table.insert(resolved_tokens, resolved_token)
+        end
+      elseif attr_schema.type == "enum" then
         local allowed = false
         for _, candidate in ipairs(attr_schema.enum_values or {}) do
           if value == candidate then
@@ -340,7 +439,7 @@ local function validate_attrs(schema, attrs, kind_name, location)
       resolved[attr_name] = value
     end
   end
-  return resolved
+  return resolved, resolved_tokens
 end
 
 -- validate_body(schema, block, kind_name, location)
