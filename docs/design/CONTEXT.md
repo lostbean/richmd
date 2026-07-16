@@ -18,7 +18,7 @@ A typed content unit inside a [Document](#term-document) — a fenced div
 identity beyond that — a value object.
 
 A fenced div's class is always a kind attempt: `::: {.kind}` is richmd's
-primary authoring syntax, so a class with no
+canonical authoring syntax, so a class with no
 [registry](#term-block-kind-registry) match is a validation error, never a
 silent pass-through. A fenced code block's class is not: by universal
 Pandoc/CommonMark convention it names a syntax-highlighting language
@@ -27,6 +27,40 @@ when its class is one it explicitly recognizes (`mermaid`, `vega-lite`,
 ...) — an unrecognized code block class is always ordinary code, never a
 validation error. The two node types read their class differently on
 purpose; this is not an inconsistency.
+
+A fenced div's kind may be written in either of two interchangeable forms:
+the canonical native `::: {.kind attr=val}`, or the
+[bareword directive](#term-bareword-directive) `:::kind {attr=val}` (the
+markdown-it/remark convention), which the
+[directive lift](#term-directive-lift) normalizes to the native form before
+Pandoc parses. Both reach the identical [registry](#term-block-kind-registry)
+lookup, validation, and [block projection](#term-block-projection); the choice
+of form is never itself observable to a check.
+
+### Bareword directive {#term-bareword-directive}
+
+The fenced-div form `:::kind {attrs}` — the kind written as a bareword
+immediately after the colons, with attrs in a following brace group — as used
+by markdown-it-container and remark-directive. Distinct from the canonical
+native form `::: {.kind attrs}`, where the kind is a Pandoc class inside the
+brace group. Pandoc's reader accepts the attrless bareword `:::kind` as a
+[Block](#term-block) directly, but reads the attr-bearing bareword as prose;
+the [directive lift](#term-directive-lift) closes that gap so both forms behave
+identically. _Avoid_: "container syntax" — names the borrowed ecosystem, not the
+shape.
+
+### Directive lift {#term-directive-lift}
+
+The text-level normalization that rewrites a
+[bareword directive](#term-bareword-directive) fence-opener into the canonical
+native form (`:::kind {attrs}` → `::: {.kind attrs}`) before Pandoc parses.
+Runs on the [document](#term-document) source ahead of the single parse — never
+in the Lua filter, which sees the AST only after the parse has already decided
+what is a [Block](#term-block). Matches a fence-opener line at any nesting
+depth and preserves its colon count; never fires inside a code block Pandoc
+reads as verbatim (fenced or indented), so the lift and Pandoc's own parse
+agree on every line. See
+[ADR-0010](../adr/0010-accept-bareword-directive-syntax-via-pre-parse-lift.md#adr-0010).
 
 ### Block kind {#term-block-kind}
 

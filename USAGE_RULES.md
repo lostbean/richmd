@@ -15,13 +15,34 @@ error collected — never fails on just the first), **render** only if zero
 errors were found. A `render` that fails writes **no output file at all**,
 not a partial or stale one.
 
+A fenced div's kind may be authored in **either** form, interchangeably:
+
+- **Native (canonical) form** — `::: {.kind attr=val}`, the Pandoc-native
+  fenced-div opener. This is richmd's documented canonical syntax.
+- **Bareword form** — `:::kind {attr=val}`, the kind written directly after
+  the colons, attrs in a following brace group (the markdown-it-container /
+  remark-directive convention many consumers migrating to richmd already
+  author).
+
+richmd **normalizes the bareword form to native before validating**, so both
+forms reach the identical validator, the identical schema, and produce the
+identical errors — pick whichever you prefer per block. The colon count is
+preserved (a `::::kind {…}` nested opener stays four colons), and the
+normalization never touches directive syntax quoted inside a code fence as a
+literal example (a `:::kind {…}` line inside a ` ``` ` block is left
+verbatim, exactly as Pandoc reads it).
+
 ## Fenced div vs. fenced code block — read this before authoring a new kind
 
 This distinction is load-bearing and easy to get wrong:
 
 - **A fenced div's class is always a kind attempt.** `::: {.kind}` is
   richmd's primary authoring syntax — if `kind` isn't registered, this is a
-  validation error (`unknown block kind`), not a silent pass-through.
+  validation error (`unknown block kind`), not a silent pass-through. The
+  bareword form is held to the identical rule: an unknown _bareword_ kind
+  (`:::notakind {…}`) is likewise a loud `unknown block kind` validation
+  error, never silent prose — richmd normalizes it to native form before
+  validating precisely so it can never slip past as ordinary text.
 - **A fenced code block's class is a syntax-highlighting language by
   convention, not a kind attempt.** ` ```js `, ` ```python `, ` ```bash ` —
   ordinary code samples are never touched or validated as richmd blocks.

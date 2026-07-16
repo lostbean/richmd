@@ -133,6 +133,18 @@ resolve to an existing source file is a
 broken link in the output.
 :::
 
+:::invariant {enforcement=mechanism script=richmd-directive-lift lens=robustness}
+**Directive lift agrees with the parse, never fires inside code**
+
+The [directive lift](CONTEXT.md#term-directive-lift) rewrites a
+[bareword directive](CONTEXT.md#term-bareword-directive) fence-opener only
+outside any code block Pandoc reads as verbatim — fenced or indented —
+preserving its colon count, so the lifted text and Pandoc's parse of it
+classify every line identically — no line richmd rewrites is one Pandoc would
+have read as verbatim code, and no attr-bearing bareword block escapes
+validation as prose.
+:::
+
 :::invariant {enforcement=mechanism script=richmd-filter-core lens=state}
 **A heading's anchor id is deterministic: explicit id, else slug**
 
@@ -215,7 +227,10 @@ graph TD
 ```
 
 :::info {title="Reading the pipeline"}
-One invocation, one parse. The diamond is the fail-closed gate
+One invocation, one parse. The
+[directive lift](CONTEXT.md#term-directive-lift) is a text normalization on
+the source _before_ that parse (§02.1), not a second parse — Pandoc still
+parses exactly once. The diamond is the fail-closed gate
 ([invariant](#00-foundation)): only an empty error list reaches the render
 phase. Both branches terminate the same filter run — there is no retry loop
 inside richmd itself.
@@ -255,6 +270,56 @@ check against an `--offline`-committed file reports stale for that reason,
 not silent content drift). Built for CI proving a committed `.html` matches
 one specific, named invocation, never hand-edited or left stale.
 :::
+
+### 02.1 Directive lift {#02-1-directive-lift}
+
+**Owns normalizing the [bareword directive](CONTEXT.md#term-bareword-directive)
+form into canonical native form before Pandoc parses.** A pure text-to-text
+pass over the [document](CONTEXT.md#term-document) source, run by the CLI (§02)
+on the way to the Pandoc invocation — the only richmd step that touches source
+text rather than the parsed AST, because the shape it fixes is one Pandoc has
+already discarded by the time any Lua filter runs.
+
+- **Responsibility**: rewrite every fence-opener line of the form
+  `:::kind {attrs}` (a run of three or more colons, a bareword kind token, then
+  a brace-attr group) into `::: {.kind attrs}` at the identical colon count, so
+  an attr-bearing bareword directive becomes a real Pandoc `Div` exactly as its
+  native equivalent already does. Leave every other line byte-for-byte: a
+  closing fence (`:::`), an already-native `::: {.kind …}`, an attrless
+  `:::kind` (Pandoc already reads it as a Div), and any prose that merely
+  contains a `:::`-like sequence mid-line.
+- **Interface**: `lift(source_text) -> source_text`, called by the CLI before
+  the document path/text reaches Pandoc; deterministic and idempotent (a second
+  lift over lifted text is a no-op, since native openers never match the
+  bareword shape).
+- **Interacts with**: the [CLI entry](#02-cli-entry), which applies it ahead of
+  the single Pandoc parse; the [block kind registry](#04-block-kind-registry),
+  which then sees a lifted block as an ordinary Div with a class — a bareword
+  kind naming no registered kind becomes the registry's ordinary unknown-class
+  [validation error](CONTEXT.md#term-validation-error), never the former
+  silent-prose escape. When the lift changes the source, the CLI hands Pandoc
+  the transformed text from a temporary file that is a **sibling** of the
+  original — same directory — so the document's directory (which drives
+  [config directory](CONTEXT.md#term-config-directory) discovery and relative
+  [cross-document link](CONTEXT.md#term-cross-document-link) resolution) is
+  identical to a native render. A [rendered page](CONTEXT.md#term-rendered-page)
+  derives its title from the document's own title when it declares one, else
+  from the input filename; since the sibling temp file's name would otherwise
+  leak into that fallback, the CLI pins the title to the original file's name
+  for a title-less document, leaving a document's own declared title untouched —
+  so a lifted render is byte-identical to the native one either way.
+- **Invariants held**: fail-loud (§00 P2) — the lift is what makes an
+  attr-bearing bareword block _reach_ validation at all, closing the false-green
+  where it was silently parsed as prose; lift agrees with the parse (§00).
+- **Failure behavior**: the lift never rewrites a line Pandoc reads as
+  verbatim code — neither inside a ` ``` `/`~~~` fenced code block (tracking
+  fence state, honoring line endings) nor a line Pandoc treats as an
+  indented code block (four-space or tab indent). It matches Pandoc's own
+  verbatim treatment on both, so the lift and the parse can never disagree on
+  the same line, and directive syntax a document quotes as a literal example
+  is preserved whichever code form it uses. It raises no errors of its own: a
+  line it does not recognize as a bareword directive is simply left unchanged,
+  deferring every judgment to the validate phase that runs on the parsed result.
 
 ## 03 Filter core {#03-filter-core}
 

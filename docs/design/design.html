@@ -1163,6 +1163,18 @@ broken link in the output.</p>
 </div>
 </div>
 <div class="entry invariant">
+<div class="entry-head"><span class="label">Directive lift agrees with the parse, never fires inside code</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-directive-lift</span> <span class="pill robustness">robustness</span></span></div>
+<div class="body">
+<p>The <a href="CONTEXT.md#term-directive-lift">directive lift</a> rewrites a
+<a href="CONTEXT.md#term-bareword-directive">bareword directive</a> fence-opener only
+outside any code block Pandoc reads as verbatim — fenced or indented —
+preserving its colon count, so the lifted text and Pandoc's parse of it
+classify every line identically — no line richmd rewrites is one Pandoc would
+have read as verbatim code, and no attr-bearing bareword block escapes
+validation as prose.</p>
+</div>
+</div>
+<div class="entry invariant">
 <div class="entry-head"><span class="label">A heading's anchor id is deterministic: explicit id, else slug</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill state">state</span></span></div>
 <div class="body">
 <p>A heading's <a href="CONTEXT.md#term-anchor-id">anchor id</a> is its own explicit
@@ -1247,7 +1259,10 @@ Lua filter — not two Pandoc invocations. See
 <div class="callout info">
 <div class="entry-head"><span class="label">Reading the pipeline</span></div>
 <div class="body">
-<p>One invocation, one parse. The diamond is the fail-closed gate
+<p>One invocation, one parse. The
+<a href="CONTEXT.md#term-directive-lift">directive lift</a> is a text normalization on
+the source <em>before</em> that parse (§02.1), not a second parse — Pandoc still
+parses exactly once. The diamond is the fail-closed gate
 (<a href="#00-foundation">invariant</a>): only an empty error list reaches the render
 phase. Both branches terminate the same filter run — there is no retry loop
 inside richmd itself.</p>
@@ -1290,6 +1305,55 @@ one specific, named invocation, never hand-edited or left stale.</p>
 </div>
 </article>
 </div>
+<h3 id="02-1-directive-lift-02-1-directive-lift">02.1 Directive lift {#02-1-directive-lift}</h3>
+<p><strong>Owns normalizing the <a href="CONTEXT.md#term-bareword-directive">bareword directive</a>
+form into canonical native form before Pandoc parses.</strong> A pure text-to-text
+pass over the <a href="CONTEXT.md#term-document">document</a> source, run by the CLI (§02)
+on the way to the Pandoc invocation — the only richmd step that touches source
+text rather than the parsed AST, because the shape it fixes is one Pandoc has
+already discarded by the time any Lua filter runs.</p>
+<ul>
+<li><strong>Responsibility</strong>: rewrite every fence-opener line of the form
+<code>:::kind {attrs}</code> (a run of three or more colons, a bareword kind token, then
+a brace-attr group) into <code>::: {.kind attrs}</code> at the identical colon count, so
+an attr-bearing bareword directive becomes a real Pandoc <code>Div</code> exactly as its
+native equivalent already does. Leave every other line byte-for-byte: a
+closing fence (<code>:::</code>), an already-native <code>::: {.kind …}</code>, an attrless
+<code>:::kind</code> (Pandoc already reads it as a Div), and any prose that merely
+contains a <code>:::</code>-like sequence mid-line.</li>
+<li><strong>Interface</strong>: <code>lift(source_text) -&gt; source_text</code>, called by the CLI before
+the document path/text reaches Pandoc; deterministic and idempotent (a second
+lift over lifted text is a no-op, since native openers never match the
+bareword shape).</li>
+<li><strong>Interacts with</strong>: the <a href="#02-cli-entry">CLI entry</a>, which applies it ahead of
+the single Pandoc parse; the <a href="#04-block-kind-registry">block kind registry</a>,
+which then sees a lifted block as an ordinary Div with a class — a bareword
+kind naming no registered kind becomes the registry's ordinary unknown-class
+<a href="CONTEXT.md#term-validation-error">validation error</a>, never the former
+silent-prose escape. When the lift changes the source, the CLI hands Pandoc
+the transformed text from a temporary file that is a <strong>sibling</strong> of the
+original — same directory — so the document's directory (which drives
+<a href="CONTEXT.md#term-config-directory">config directory</a> discovery and relative
+<a href="CONTEXT.md#term-cross-document-link">cross-document link</a> resolution) is
+identical to a native render. A <a href="CONTEXT.md#term-rendered-page">rendered page</a>
+derives its title from the document's own title when it declares one, else
+from the input filename; since the sibling temp file's name would otherwise
+leak into that fallback, the CLI pins the title to the original file's name
+for a title-less document, leaving a document's own declared title untouched —
+so a lifted render is byte-identical to the native one either way.</li>
+<li><strong>Invariants held</strong>: fail-loud (§00 P2) — the lift is what makes an
+attr-bearing bareword block <em>reach</em> validation at all, closing the false-green
+where it was silently parsed as prose; lift agrees with the parse (§00).</li>
+<li><strong>Failure behavior</strong>: the lift never rewrites a line Pandoc reads as
+verbatim code — neither inside a <code>```</code>/<code>~~~</code> fenced code block (tracking
+fence state, honoring line endings) nor a line Pandoc treats as an
+indented code block (four-space or tab indent). It matches Pandoc's own
+verbatim treatment on both, so the lift and the parse can never disagree on
+the same line, and directive syntax a document quotes as a literal example
+is preserved whichever code form it uses. It raises no errors of its own: a
+line it does not recognize as a bareword directive is simply left unchanged,
+deferring every judgment to the validate phase that runs on the parsed result.</li>
+</ul>
 <h2 id="03-filter-core-03-filter-core"><span class="secno">03</span> · Filter core {#03-filter-core}</h2>
 <p><strong>Owns the two-phase orchestration.</strong> One Lua filter module, loaded by
 Pandoc, walks the document's AST once. Its own control flow is the
