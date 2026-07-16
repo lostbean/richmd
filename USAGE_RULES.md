@@ -370,10 +370,10 @@ A heading's prose is its text minus any **recognized token reference** (see
 tagging a heading never renames its anchor:
 
 ```markdown
-## Invariants `lens:invariants` `lens:robustness`
+## Checkout outage `severity:critical` `severity:minor`
 ```
 
-gets the anchor `#invariants` — the same anchor it had before it was tagged,
+gets the anchor `#checkout-outage` — the same anchor it had before it was tagged,
 so existing links to it keep working. The exclusion is exactly what richmd
 **recognizes**, and nothing more: an ordinary code span still slugs normally
 (``## Uses `code` in prose`` stays `#uses-code-in-prose`), and so does a
@@ -570,12 +570,16 @@ still printed, and the crash itself is reported naming the crashing rule
 ## Token vocabularies: your own closed set of terms
 
 A **token vocabulary** is a closed set of terms you declare once and then
-cite from your documents — an architecture's lenses, a status ladder, a team
-roster. richmd checks that every citation names a term you actually
-declared, and carries that term's properties through to your cross-block
-rules. richmd owns the mechanism; **the set is always yours — richmd ships
-no vocabulary of its own**, and every example below is a hypothetical one a
-consumer might declare.
+cite from your documents — a severity ladder, a status set, a citation key,
+an owner roster, an architecture's lenses. richmd checks that every citation
+names a term you actually declared, and carries that term's properties
+through to your cross-block rules.
+
+richmd owns the mechanism and nothing else: **it ships no vocabulary of its
+own.** `severity` below is not a richmd concept — it is one hypothetical
+consumer's set, invented for these examples. Every vocabulary name, every
+member, and every property on this page is yours to choose; richmd only ever
+checks that a citation names a member you declared.
 
 ### Declaring a vocabulary
 
@@ -583,11 +587,11 @@ Drop a `.json` file into `.richmd/tokens/`, inside your document's config
 directory (same discovery as `.richmd/blocks/` above):
 
 ```
-.richmd/tokens/lens.json
+.richmd/tokens/severity.json
 ```
 
-**The filename is the vocabulary name.** `lens.json` declares the
-vocabulary `lens`; there is no `"name"` field to keep in sync with it.
+**The filename is the vocabulary name.** `severity.json` declares the
+vocabulary `severity`; there is no `"name"` field to keep in sync with it.
 
 A vocabulary declares exactly one field, `members` — a map of member key to
 that member's properties:
@@ -595,15 +599,15 @@ that member's properties:
 ```json
 {
   "members": {
-    "modeling": { "order": 0, "label": "Modeling", "primary": true },
-    "state": { "order": 1, "label": "State", "primary": true },
-    "composition": { "order": 2, "label": "Composition" }
+    "critical": { "rank": 1, "pages-oncall": true },
+    "major": { "rank": 2, "pages-oncall": true },
+    "minor": { "rank": 3 }
   }
 }
 ```
 
-The properties object is **arbitrary and entirely yours**. `order`, `label`
-and `primary` above are not richmd concepts — they are one hypothetical
+The properties object is **arbitrary and entirely yours**. `rank` and
+`pages-oncall` are not richmd concepts — they are this hypothetical
 consumer's. Put whatever you want in there; richmd carries it through
 without ever reading it.
 
@@ -616,9 +620,9 @@ reference wherever it appears — including in a heading, since a heading's
 code span is an ordinary code span:
 
 ```markdown
-## Data flow `lens:modeling`
+## Checkout outage `severity:critical`
 
-This section is mostly `lens:state` work.
+Recovery is mostly `severity:minor` cleanup from here.
 ```
 
 **A block attr** is a reference only when its block kind's schema opts it in
@@ -626,17 +630,17 @@ with a `tokens` field naming the vocabulary:
 
 ```json
 {
-  "kind": "lens-card",
+  "kind": "incident",
   "attrs": {
-    "lens": { "required": true, "tokens": "lens" }
+    "severity": { "required": true, "tokens": "severity" }
   },
   "body": "required"
 }
 ```
 
 ```markdown
-::: {.lens-card lens="modeling"}
-Card body.
+::: {.incident severity="critical"}
+Checkout returned 500s for 12 minutes.
 :::
 ```
 
@@ -651,9 +655,9 @@ A recognized span renders as a **token hook** — its member's text carrying a
 `richmd-token` class plus the vocabulary and member as data attributes:
 
 ```html
-<!-- `lens:state` -->
-<code class="richmd-token" data-vocabulary="lens" data-member="state"
-  >state</code
+<!-- `severity:critical` -->
+<code class="richmd-token" data-vocabulary="severity" data-member="critical"
+  >critical</code
 >
 ```
 
@@ -664,12 +668,12 @@ stays, because that is what the reference says.
 `.richmd-token` — the look is yours, keyed off the data attributes:
 
 ```css
-.richmd-token[data-vocabulary="lens"] {
+.richmd-token[data-vocabulary="severity"] {
   border-radius: 999px;
   padding: 0 0.5em;
 }
-.richmd-token[data-vocabulary="lens"][data-member="state"] {
-  background: var(--richmd-color-info-tint);
+.richmd-token[data-vocabulary="severity"][data-member="critical"] {
+  background: var(--richmd-color-danger-tint);
 }
 ```
 
@@ -683,14 +687,15 @@ a cross-block rule for what it means.
 ### The rules that will surprise you
 
 - **A reference is singular. There is no combinator.** richmd never splits a
-  reference on any delimiter. `` `lens:a+b` `` is **one** lookup of a member
-  literally keyed `a+b` — it fails closed unless you declared that exact
-  key, even if `a` and `b` are both members. **Multiplicity is repetition**:
-  to cite two members, write two spans (`` `lens:modeling` `lens:state` ``).
-  What a combination _means_ — whether a pair renders as one pill, whether
-  its order is canonical, whether it's even legal — is yours to decide in a
-  rule, from properties richmd carried but never read.
-- **Fenced code blocks are never scanned.** A `lens:modeling` inside a
+  reference on any delimiter. `` `severity:a+b` `` is **one** lookup of a
+  member literally keyed `a+b` — it fails closed unless you declared that
+  exact key, even if `a` and `b` are both members. **Multiplicity is
+  repetition**: to cite two members, write two spans
+  (`` `severity:major` `severity:minor` ``). What a combination _means_ —
+  whether a pair renders as one badge, whether its order is canonical,
+  whether it's even legal — is yours to decide in a rule, from properties
+  richmd carried but never read.
+- **Fenced code blocks are never scanned.** A `severity:critical` inside a
   ` ```js ` block is that grammar's source text, not a reference.
 - **A span naming an undeclared vocabulary is ordinary prose, not an
   error.** `` `foo:bar` `` with no `foo.json` renders as a plain `<code>` —
@@ -699,7 +704,7 @@ a cross-block rule for what it means.
   otherwise every colon in every code span in every document would become
   richmd's business.
 - **An attr is a reference only when its schema opts it in — never inferred
-  from its name.** An attr literally named `lens` on a schema without a
+  from its name.** An attr literally named `severity` on a schema without a
   `tokens` field is an ordinary string attr, untouched.
 - **A schema opting into a _missing_ vocabulary IS an error** — the exact
   opposite of the span case above. The asymmetry is deliberate: a span's
@@ -721,25 +726,25 @@ first, then the spans in its body, in document order. Each entry is a flat
 `{ vocabulary, member, properties, location }`:
 
 ```lua
--- .richmd/rules/lens-cards-are-labeled.lua
--- Every lens-card must cite a lens whose properties mark it as a primary
--- lens. Reads `properties` DIRECTLY — no membership re-check, no scanning
--- body_text for a reference.
+-- .richmd/rules/paging-incidents-need-an-owner.lua
+-- An incident whose severity pages oncall must name an owner. Reads
+-- `properties` DIRECTLY — no membership re-check, no scanning body_text for
+-- a reference.
 return {
   check = function(block_projections, add_error)
     for _, bp in ipairs(block_projections) do
-      if bp.kind == "lens-card" then
-        local has_primary = false
+      if bp.kind == "incident" then
+        local pages = false
         for _, tok in ipairs(bp.tokens) do
-          if tok.vocabulary == "lens" and tok.properties.primary then
-            has_primary = true
+          if tok.vocabulary == "severity" and tok.properties["pages-oncall"] then
+            pages = true
           end
         end
-        if not has_primary then
+        if pages and not bp.attrs.owner then
           add_error(
-            "rule:lens-cards-are-labeled",
+            "rule:paging-incidents-need-an-owner",
             bp.location,
-            "a lens-card must cite at least one primary lens"
+            "an incident at a paging severity must name an owner"
           )
         end
       end
@@ -768,14 +773,14 @@ Two things worth knowing about what lands in `tokens`:
   an ordinary validation error at the reference's location, naming both:
 
   ```
-  richmd: [token:lens] code.lens: unknown member 'bogus' in token vocabulary 'lens'
+  richmd: [token:severity] code.severity: unknown member 'bogus' in token vocabulary 'severity'
   ```
 
   From an opted-in attr, the same failure is reported against the block's
   own kind, exactly like a bad enum value:
 
   ```
-  richmd: [lens-card] div.lens-card: attr 'lens' has unknown member 'bogus' in token vocabulary 'lens'
+  richmd: [incident] div.incident: attr 'severity' has unknown member 'bogus' in token vocabulary 'severity'
   ```
 
   Either way it fails closed, and an unknown member never stops richmd from
