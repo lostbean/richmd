@@ -19,6 +19,7 @@ local Registry = require("registry")
 local Slugify = require("slugify")
 local ExtensionLoader = require("extension-loader")
 local RulesLoader = require("rules-loader")
+local TokensLoader = require("tokens-loader")
 local HeadingScope = require("heading-scope")
 
 -- One registry instance, shared across validate and render phases and
@@ -271,6 +272,17 @@ ExtensionLoader.load(registry, config_dir .. "/" .. ExtensionLoader.DEFAULT_DIR)
 -- collected below. Each rule's `check` is actually invoked later, once per
 -- document, as a step of the validate phase (see Pandoc(doc) below).
 local rules = RulesLoader.load(config_dir .. "/" .. RulesLoader.DEFAULT_DIR)
+
+-- Token vocabularies (design.md §06, ADR-0011, CONTEXT.md#term-token-
+-- vocabulary) — consumer-authored `.json` files under the tokens directory
+-- (default `.richmd/tokens/`, resolved against the walked config_dir above,
+-- same convention as the two loaders just above). Loaded ONCE at filter
+-- startup, same timing as ExtensionLoader.load / RulesLoader.load. A
+-- malformed vocabulary file (filter/tokens-loader.lua calls `error(...)`)
+-- aborts the whole filter run before any AST walk begins — distinct from a
+-- validation error collected below. References are actually resolved later,
+-- once per document, as a step of the validate phase (see Pandoc(doc)).
+local token_vocabularies = TokensLoader.load(config_dir .. "/" .. TokensLoader.DEFAULT_DIR)
 
 -- All validation errors collected across the whole document (§00 invariant:
 -- never fail-fast on the first error).
@@ -715,6 +727,99 @@ local function build_block_projections(doc)
   })
 
   return projections
+end
+
+-- resolve_tokens(doc) -> { { vocabulary, member, properties, location }, ... }
+--
+-- The token resolution pass (design.md §06, ADR-0011,
+-- CONTEXT.md#term-token-resolution-pass): walks the document ONCE for token
+-- references and resolves each against its vocabulary's closed member set,
+-- recording a validation error for any member not in the set.
+--
+-- A document-wide check (CONTEXT.md#term-document-wide-check): called only
+-- after the per-block/link/grammar validate walk has already completed (so
+-- an opted-in attr's block already passed its own schema) and before
+-- run_rules, which will consume its output (design.md §06 Interface).
+--
+-- Recognition is STRUCTURAL and singular. A `Code` INLINE span whose text
+-- matches `<vocabulary>:<member>` for a DECLARED vocabulary is a reference
+-- wherever it appears — headings included, since a heading's code span is an
+-- ordinary code span (ADR-0011: "What richmd recognizes"). Three deliberate
+-- non-recognitions, each ordinary prose rather than an error:
+--   * a span whose prefix names no DECLARED vocabulary (`foo:bar`) — richmd
+--     recognizes references only for vocabularies a consumer actually
+--     declared;
+--   * a span with no colon at all;
+--   * anything inside a fenced CodeBlock — a `Code` inline and a `CodeBlock`
+--     are different Pandoc node types, and this walk only ever registers the
+--     former, so a CodeBlock's text is never scanned. That text is another
+--     grammar's source, holding the same line the directive lift already
+--     holds (design.md §06, ADR-0011).
+--
+-- The `<vocabulary>:<member>` shape is richmd's OWN fixed syntax, identical
+-- for every consumer and deliberately not a knob. It splits on the FIRST
+-- colon only, so a member key may itself contain colons (`lens:a:b` is the
+-- member `a:b`). A reference is SINGULAR: richmd never splits it on any
+-- further delimiter, so `lens:state+composition` is ONE key lookup of the
+-- member `state+composition`, failing closed unless that exact key is
+-- declared. Multiplicity is repetition — two members cited means two spans
+-- (ADR-0011; there is no combinator, by decision).
+--
+-- Returns the resolved tokens (never a live reference into the Pandoc AST —
+-- a flat value, CONTEXT.md#term-resolved-token). Nothing consumes the return
+-- value yet; §06 hands it to the block projection builder in a later change.
+local function resolve_tokens(doc)
+  local resolved_tokens = {}
+
+  if next(token_vocabularies) == nil then
+    return resolved_tokens
+  end
+
+  doc:walk({
+    Code = function(code)
+      -- Split on the FIRST colon only: everything before it is the candidate
+      -- vocabulary name, everything after is the member key verbatim.
+      local vocabulary_name, member_key = code.text:match("^([^:]*):(.*)$")
+      if not vocabulary_name then
+        return nil
+      end
+
+      local vocabulary = token_vocabularies[vocabulary_name]
+      if not vocabulary then
+        return nil
+      end
+
+      -- The reference's location, following the same "<node-type>.<name>"
+      -- convention every other validate-phase location string already uses
+      -- (validate_block's "div." .. kind_name, validate_only_codeblock's
+      -- "codeblock." .. kind_name).
+      local location = "code." .. vocabulary_name
+
+      local properties = vocabulary.members[member_key]
+      if properties == nil then
+        -- Fails closed, naming BOTH the vocabulary and the unknown member
+        -- (design.md §06 Failure behavior). Never short-circuits the walk:
+        -- every later reference is still resolved, so two unknown members
+        -- produce two collected errors (§00 all-errors-collected).
+        add_error(
+          "token:" .. vocabulary_name,
+          location,
+          "unknown member '" .. member_key .. "' in token vocabulary '" .. vocabulary_name .. "'"
+        )
+        return nil
+      end
+
+      table.insert(resolved_tokens, {
+        vocabulary = vocabulary_name,
+        member = member_key,
+        properties = properties,
+        location = location,
+      })
+      return nil
+    end,
+  })
+
+  return resolved_tokens
 end
 
 -- run_rules(doc)
@@ -1243,6 +1348,16 @@ function Pandoc(doc)
     Link = validate_only_link,
     CodeBlock = validate_only_codeblock,
   })
+
+  -- Token resolution (design.md §06, ADR-0011): a document-wide check that
+  -- runs AFTER every per-block schema check above (so an opted-in attr's
+  -- block already passed its own schema) and BEFORE the cross-block rules
+  -- below, which consume its resolved tokens
+  -- (CONTEXT.md#term-token-resolution-pass). Contributes to the SAME
+  -- `errors` table via the SAME add_error closure. Its resolved tokens are
+  -- not consumed yet — §06 hands them to the block projection builder in a
+  -- later change.
+  resolve_tokens(doc)
 
   -- Cross-block rules (design.md §05, ADR-0008): a document-wide check that
   -- runs AFTER every per-block, link, and grammar check above has already
