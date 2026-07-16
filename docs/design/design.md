@@ -211,19 +211,6 @@ pair. Modifying richmd's own core source is never the extension path. See
 [ADR-0003](../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003).
 :::
 
-## Pending updates
-
-:::pending {kind=build since=2026-07-16}
-**Token vocabulary resolution (§06) is designed, not yet built.** The
-[tokens directory](CONTEXT.md#term-tokens-directory) loader, the
-[token resolution pass](CONTEXT.md#term-token-resolution-pass), the block
-schema's `tokens` attr key (§04), and the
-[block projection](CONTEXT.md#term-block-projection)'s `tokens` field (§05)
-are specified here ahead of the system. See
-[ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011)
-and [issue #19](https://github.com/lostbean/richmd/issues/19).
-:::
-
 ## 01 System at a glance
 
 richmd is one pipeline: parse, validate, gate, render. The
@@ -580,17 +567,28 @@ owns the mechanism; the set is always the consumer's. See
   §05's projection builder. A vocabulary declares one field — `members`, a
   map of member key to that member's arbitrary properties. richmd validates
   membership and never reads a property's meaning.
-- **Interface**: `resolve(doc, vocabularies, add_error) -> resolved_tokens`,
-  run as a [document-wide check](CONTEXT.md#term-document-wide-check) after
-  every per-block schema check (so an opted-in attr's block already passed
-  its own schema) and before §05's rules (which consume its output). Two
-  recognition surfaces, recognized two ways: an **inline code span** whose
-  text matches `<vocabulary>:<member>` for a declared vocabulary is a
-  reference structurally, wherever it appears — headings included, since a
-  heading's code span is an ordinary code span; a **block attr** is a
-  reference only when its [block kind schema](#04-block-kind-registry)
-  carries `tokens=<vocabulary>`, and then holds exactly one member. Both
-  resolve by exact key lookup; neither splits a reference into parts.
+- **Interface**: one shared recognition function taking a reference's text and
+  returning a [resolved token](CONTEXT.md#term-resolved-token) or nil, used by
+  every caller so recognition can never
+  drift between surfaces; and one document-wide reporting pass over it, run
+  as a [document-wide check](CONTEXT.md#term-document-wide-check) after every
+  per-block schema check (so an opted-in attr's block already passed its own
+  schema) and before §05's rules. The pass owns **reporting**: a reference
+  outside any recognized block is validated there and nowhere else. It does
+  not hand its tokens onward — §05's projection builder re-derives each
+  block's own tokens by walking that block's content, so containment is read
+  off the document's structure rather than matched up by position between two
+  independent walks. Two recognition surfaces, recognized two ways: an
+  **inline code span** whose text matches `<vocabulary>:<member>` for a
+  declared vocabulary is a reference structurally, wherever it appears —
+  headings included, since a heading's code span is an ordinary code span; a
+  **block attr** is a reference only when its
+  [block kind schema](#04-block-kind-registry) carries `tokens=<vocabulary>`,
+  and then holds exactly one member. Both resolve by exact key lookup;
+  neither splits a reference into parts. A
+  [resolved token](CONTEXT.md#term-resolved-token)'s location is its
+  reference's own — `code.<vocabulary>` for a span; the owning block's
+  location for an attr, since the attr IS that block's.
 - **Interacts with**: the [filter core](#03-filter-core), which loads the
   tokens directory at startup exactly as it loads §04's
   [extension directory](CONTEXT.md#term-extension-directory) and §05's

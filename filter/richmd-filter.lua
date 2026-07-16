@@ -1586,9 +1586,11 @@ function Pandoc(doc)
   -- block already passed its own schema) and BEFORE the cross-block rules
   -- below, which consume its resolved tokens
   -- (CONTEXT.md#term-token-resolution-pass). Contributes to the SAME
-  -- `errors` table via the SAME add_error closure. Its resolved tokens are
-  -- not consumed yet — §06 hands them to the block projection builder in a
-  -- later change.
+  -- `errors` table via the SAME add_error closure. This pass owns REPORTING;
+  -- its return value is unused here because a projection's `tokens` field is
+  -- re-derived per block by build_block_projections, which reads containment
+  -- off each block's own content rather than matching this document-wide
+  -- walk's results up by position.
   resolve_tokens(doc)
 
   -- Cross-block rules (design.md §05, ADR-0008): a document-wide check that

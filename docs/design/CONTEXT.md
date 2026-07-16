@@ -153,8 +153,10 @@ at the reference site, never by a grammar richmd parses.
 What a [token reference](#term-token-reference) becomes once the
 [token resolution pass](#term-token-resolution-pass) matches it against its
 [vocabulary](#term-token-vocabulary): the vocabulary name, the member key,
-the member's properties, and the reference's location. A flat value, never a
-live reference into the Pandoc AST — the same consumer-facing contract a
+the member's properties, and the reference's location — `code.<vocabulary>`
+for an inline span, and the owning [block](#term-block)'s own location for an
+attr, since an attr's reference is that block's. A flat value, never a live
+reference into the Pandoc AST — the same consumer-facing contract a
 [block projection](#term-block-projection) already holds to
 ([ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008)).
 

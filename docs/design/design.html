@@ -1025,8 +1025,6 @@ footer.colophon {
 <dd><span class="enf mechanism">mechanism</span> <span>strong → weak</span></dd>
 <dt>Chips</dt>
 <dd><span class="script-chip">deciding-script</span> <span class="entry-id">P1</span> <span>script that decides · citable id</span></dd>
-<dt>Pending</dt>
-<dd><span class="badge build">build</span> <span class="since">since YYYY-MM-DD</span></dd>
 </dl>
 </details>
 
@@ -1244,21 +1242,6 @@ never in generator logic.</p>
 pair. Modifying richmd's own core source is never the extension path. See
 <a href="../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003">ADR-0003</a>.</p>
 </div>
-</div>
-</div>
-</div>
-<h2 id="pending-updates">Pending updates</h2>
-<div class="pending">
-<div class="entry"><div class="entry-head"><span class="badges"><span class="badge build">build</span> <span class="since">since 2026-07-16</span></span></div>
-<div class="body">
-<p><strong>Token vocabulary resolution (§06) is designed, not yet built.</strong> The
-<a href="CONTEXT.md#term-tokens-directory">tokens directory</a> loader, the
-<a href="CONTEXT.md#term-token-resolution-pass">token resolution pass</a>, the block
-schema's <code>tokens</code> attr key (§04), and the
-<a href="CONTEXT.md#term-block-projection">block projection</a>'s <code>tokens</code> field (§05)
-are specified here ahead of the system. See
-<a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>
-and <a href="https://github.com/lostbean/richmd/issues/19">issue #19</a>.</p>
 </div>
 </div>
 </div>
@@ -1627,17 +1610,28 @@ the set; hand every <a href="CONTEXT.md#term-resolved-token">resolved token</a> 
 §05's projection builder. A vocabulary declares one field — <code>members</code>, a
 map of member key to that member's arbitrary properties. richmd validates
 membership and never reads a property's meaning.</li>
-<li><strong>Interface</strong>: <code>resolve(doc, vocabularies, add_error) -&gt; resolved_tokens</code>,
-run as a <a href="CONTEXT.md#term-document-wide-check">document-wide check</a> after
-every per-block schema check (so an opted-in attr's block already passed
-its own schema) and before §05's rules (which consume its output). Two
-recognition surfaces, recognized two ways: an <strong>inline code span</strong> whose
-text matches <code>&lt;vocabulary&gt;:&lt;member&gt;</code> for a declared vocabulary is a
-reference structurally, wherever it appears — headings included, since a
-heading's code span is an ordinary code span; a <strong>block attr</strong> is a
-reference only when its <a href="#04-block-kind-registry">block kind schema</a>
-carries <code>tokens=&lt;vocabulary&gt;</code>, and then holds exactly one member. Both
-resolve by exact key lookup; neither splits a reference into parts.</li>
+<li><strong>Interface</strong>: one shared recognition function taking a reference's text and
+returning a <a href="CONTEXT.md#term-resolved-token">resolved token</a> or nil, used by
+every caller so recognition can never
+drift between surfaces; and one document-wide reporting pass over it, run
+as a <a href="CONTEXT.md#term-document-wide-check">document-wide check</a> after every
+per-block schema check (so an opted-in attr's block already passed its own
+schema) and before §05's rules. The pass owns <strong>reporting</strong>: a reference
+outside any recognized block is validated there and nowhere else. It does
+not hand its tokens onward — §05's projection builder re-derives each
+block's own tokens by walking that block's content, so containment is read
+off the document's structure rather than matched up by position between two
+independent walks. Two recognition surfaces, recognized two ways: an
+<strong>inline code span</strong> whose text matches <code>&lt;vocabulary&gt;:&lt;member&gt;</code> for a
+declared vocabulary is a reference structurally, wherever it appears —
+headings included, since a heading's code span is an ordinary code span; a
+<strong>block attr</strong> is a reference only when its
+<a href="#04-block-kind-registry">block kind schema</a> carries <code>tokens=&lt;vocabulary&gt;</code>,
+and then holds exactly one member. Both resolve by exact key lookup;
+neither splits a reference into parts. A
+<a href="CONTEXT.md#term-resolved-token">resolved token</a>'s location is its
+reference's own — <code>code.&lt;vocabulary&gt;</code> for a span; the owning block's
+location for an attr, since the attr IS that block's.</li>
 <li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>, which loads the
 tokens directory at startup exactly as it loads §04's
 <a href="CONTEXT.md#term-extension-directory">extension directory</a> and §05's
