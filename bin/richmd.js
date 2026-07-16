@@ -63,12 +63,44 @@
 // commas in the realistic case this flag is designed for.
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { lift } from "../filter/directive-lift.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const filterPath = path.join(__dirname, "..", "filter", "richmd-filter.lua");
+
+// Does this document declare its own title (so Pandoc's `<title>` comes from
+// the document, not the input filename)? Covers Pandoc's two markdown title
+// sources: a leading percent-line (`% Title`) and a YAML metadata block with a
+// top-level `title:` key. Used only to decide whether the directive-lift temp
+// file needs a `pagetitle` override so a native-form render stays byte-identical
+// (see runFilter). A conservative check on these two documented forms — if a
+// title is present we must NOT override it, so any borderline case biases toward
+// "declares a title" only when clearly one of these forms.
+function declaresOwnTitle(source) {
+  // Percent-style title: a `% ...` line at the very top of the document
+  // (optionally after a UTF-8 BOM), with actual text after the `%`.
+  if (/^﻿?%\s*\S/.test(source)) {
+    return true;
+  }
+  // YAML metadata block: `---` on its own line at the very top, then any lines
+  // up to a closing `---` or `...`, scanned for a top-level `title:` key.
+  const yamlMatch =
+    /^﻿?---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(
+      source,
+    );
+  if (yamlMatch) {
+    const block = yamlMatch[1];
+    // A top-level `title:` key (no leading indentation — nested keys don't set
+    // the document title) with a non-empty value on the same line.
+    if (/^title:[ \t]*\S/m.test(block)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function usage() {
   process.stderr.write(
@@ -124,7 +156,6 @@ function runFilter(
     // target is not portable — instead just let it print to stdout.
     args.push("-o", "-");
   }
-  args.push(inputPath);
 
   const env = { ...process.env };
   if (validateOnly) {
@@ -137,34 +168,82 @@ function runFilter(
     env.RICHMD_TREE = tree.join(",");
   }
 
-  const result = spawnSync("pandoc", args, {
-    encoding: "utf8",
-    env,
-    // Default (1MB) is too small once --check routes a full render
-    // (potentially including an --offline-embedded runtime bundle) through
-    // stdout via `-o -` instead of writing it straight to a file.
-    maxBuffer: 64 * 1024 * 1024,
-  });
-
-  if (result.error) {
-    process.stderr.write(
-      `richmd: failed to invoke pandoc: ${result.error.message}\n`,
+  // Directive lift (design.md §02.1, ADR-0010): normalize any bareword
+  // directive (`:::kind {attrs}`) into native form (`::: {.kind attrs}`)
+  // BEFORE Pandoc parses, so an attr-bearing bareword block becomes a real Div
+  // that reaches validation instead of being silently read as prose.
+  //
+  // SEAM CONTRACT: the lift must NOT change the document's directory as Pandoc
+  // sees it. The Lua filter derives doc_dir from PANDOC_STATE.input_files[1]
+  // and uses it for both config-directory discovery (ADR-0009) and relative
+  // `.md` cross-document link resolution. Feeding transformed text via stdin
+  // would make input_files[1] become "-" and silently break both. So when the
+  // lift changes anything, we write the lifted text to a temp file that is a
+  // SIBLING of the original input (same directory), hand Pandoc that sibling,
+  // and delete it afterward (try/finally, so it is removed even on throw). If
+  // the lift is a no-op we pass the original path straight through.
+  const original = readFileSync(inputPath, "utf8");
+  const lifted = lift(original);
+  let effectiveInput = inputPath;
+  let tempInput = null;
+  const pandocArgs = [...args];
+  if (lifted !== original) {
+    const parsed = path.parse(inputPath);
+    tempInput = path.join(
+      parsed.dir || ".",
+      `.richmd-lift-${process.pid}-${Math.random().toString(36).slice(2)}.md`,
     );
-    return { status: 1, stdout: "" };
+    writeFileSync(tempInput, lifted);
+    effectiveInput = tempInput;
+    // Pandoc's standalone HTML template fills `<title>` from `pagetitle`, which
+    // Pandoc sets to the document's own title if it declares one, else to the
+    // input file's basename. Handing Pandoc a uniquely-named temp file would
+    // leak that random name into the title in the no-title case. So when (and
+    // only when) the document declares NO title of its own, pin `pagetitle` to
+    // the ORIGINAL file's stem — exactly the fallback Pandoc would have used for
+    // the original path. When the document DOES declare a title, we leave
+    // `pagetitle` alone so the document's own title still wins, identical to a
+    // native render. Either way the output stays byte-identical to rendering
+    // the original path directly (the example hash checks depend on this).
+    if (!declaresOwnTitle(lifted)) {
+      pandocArgs.push("-M", `pagetitle=${parsed.name}`);
+    }
   }
 
-  if (result.stderr) {
-    process.stderr.write(result.stderr);
-  }
-  // In validate-only mode and in --check's capture mode, Pandoc's stdout is
-  // never forwarded to this process's own stdout — `richmd validate` must
-  // never produce output artifacts, and `--check`'s captured HTML is only
-  // ever used in memory for the byte comparison, never printed wholesale.
-  if (result.stdout && !validateOnly && !captureOutput) {
-    process.stdout.write(result.stdout);
-  }
+  try {
+    const result = spawnSync("pandoc", [...pandocArgs, effectiveInput], {
+      encoding: "utf8",
+      env,
+      // Default (1MB) is too small once --check routes a full render
+      // (potentially including an --offline-embedded runtime bundle) through
+      // stdout via `-o -` instead of writing it straight to a file.
+      maxBuffer: 64 * 1024 * 1024,
+    });
 
-  return { status: result.status ?? 1, stdout: result.stdout ?? "" };
+    if (result.error) {
+      process.stderr.write(
+        `richmd: failed to invoke pandoc: ${result.error.message}\n`,
+      );
+      return { status: 1, stdout: "" };
+    }
+
+    if (result.stderr) {
+      process.stderr.write(result.stderr);
+    }
+    // In validate-only mode and in --check's capture mode, Pandoc's stdout is
+    // never forwarded to this process's own stdout — `richmd validate` must
+    // never produce output artifacts, and `--check`'s captured HTML is only
+    // ever used in memory for the byte comparison, never printed wholesale.
+    if (result.stdout && !validateOnly && !captureOutput) {
+      process.stdout.write(result.stdout);
+    }
+
+    return { status: result.status ?? 1, stdout: result.stdout ?? "" };
+  } finally {
+    if (tempInput) {
+      rmSync(tempInput, { force: true });
+    }
+  }
 }
 
 function render(inputPath, { offline, tree }) {
