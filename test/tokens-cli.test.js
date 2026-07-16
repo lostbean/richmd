@@ -2,7 +2,14 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdtemp, rm, mkdir, writeFile, access } from "node:fs/promises";
+import {
+  mkdtemp,
+  rm,
+  mkdir,
+  writeFile,
+  access,
+  readFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -544,6 +551,237 @@ describe("token vocabulary (an absent tokens directory is not an error)", () => 
       const result = await runCli(["render", mdPath]);
       assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
       await access(path.join(workDir, "doc.html"));
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Case 13: a recognized token reference is ADDRESSING, not prose (ADR-0012):
+// it contributes nothing to its heading's slug, so tagging a heading keeps
+// the anchor it had before it was tagged. The exclusion is exactly
+// coextensive with what richmd RECOGNIZES — an ordinary code span, and a span
+// naming an undeclared vocabulary, are both prose and slug normally.
+describe("token vocabulary (a recognized reference never enters a heading's slug)", () => {
+  it("`## Invariants `lens:invariants`` — heading id is `invariants`, not `invariants-lensinvariants`", async () => {
+    const { workDir, mdPath } = await setupRepo({
+      tokens: {
+        "lens.json": JSON.stringify({
+          members: { invariants: {}, robustness: {} },
+        }),
+      },
+      markdown: "# Doc\n\n## Invariants `lens:invariants`\n\nBody.\n",
+    });
+    try {
+      const result = await runCli(["render", mdPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+      const html = await readFile(path.join(workDir, "doc.html"), "utf8");
+      assert.match(html, /id="invariants"/);
+      assert.doesNotMatch(html, /id="invariants-lensinvariants"/);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("two references in one heading — both excluded from the slug, both rendered as hooks", async () => {
+    const { workDir, mdPath } = await setupRepo({
+      tokens: {
+        "lens.json": JSON.stringify({
+          members: { invariants: {}, robustness: {} },
+        }),
+      },
+      markdown:
+        "# Doc\n\n## Invariants `lens:invariants` `lens:robustness`\n\nBody.\n",
+    });
+    try {
+      const result = await runCli(["render", mdPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+      const html = await readFile(path.join(workDir, "doc.html"), "utf8");
+      assert.match(html, /id="invariants"/);
+      assert.doesNotMatch(html, /lensinvariants|lensrobustness/);
+      assert.match(html, /data-member="invariants"/);
+      assert.match(html, /data-member="robustness"/);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  // The regression guard ADR-0012 names explicitly: excluding EVERY Code
+  // inline would silently rewrite this anchor to `uses-in-prose`.
+  it("`## Uses `code` in prose` — an ordinary code span is prose, id stays `uses-code-in-prose`", async () => {
+    const { workDir, mdPath } = await setupRepo({
+      tokens: { "lens.json": LENS_VOCABULARY },
+      markdown: "# Doc\n\n## Uses `code` in prose\n\nBody.\n",
+    });
+    try {
+      const result = await runCli(["render", mdPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+      const html = await readFile(path.join(workDir, "doc.html"), "utf8");
+      assert.match(html, /id="uses-code-in-prose"/);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("`## Cites `foo:bar`` with no foo vocabulary — undeclared prefix is prose, slugs as before", async () => {
+    const { workDir, mdPath } = await setupRepo({
+      tokens: { "lens.json": LENS_VOCABULARY },
+      markdown: "# Doc\n\n## Cites `foo:bar`\n\nBody.\n",
+    });
+    try {
+      const result = await runCli(["render", mdPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+      const html = await readFile(path.join(workDir, "doc.html"), "utf8");
+      assert.match(html, /id="cites-foobar"/);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Case 14: the render-phase heading id and the validate-phase `#fragment`
+// resolution must agree EXACTLY (§00 invariant: fragment resolution "checks
+// the identical id a target heading actually receives"). The validate phase
+// re-parses target documents independently, so token-awareness has to reach
+// that caller too — this is the bug ADR-0012 fixes: a link to a tagged
+// heading's real anchor used to fail.
+describe("token vocabulary (validate and render agree on a tagged heading's anchor)", () => {
+  it("a cross-document #invariants link to a heading tagged `lens:invariants` validates clean", async () => {
+    const workDir = await mkdtemp(path.join(tmpdir(), "richmd-tokens-anchor-"));
+    try {
+      const tokensDir = path.join(workDir, ".richmd", "tokens");
+      await mkdir(tokensDir, { recursive: true });
+      await writeFile(
+        path.join(tokensDir, "lens.json"),
+        JSON.stringify({ members: { invariants: {} } }),
+      );
+      await writeFile(
+        path.join(workDir, "target.md"),
+        "# Target\n\n## Invariants `lens:invariants`\n\nBody.\n",
+      );
+      const mainPath = path.join(workDir, "main.md");
+      await writeFile(
+        mainPath,
+        "# Main\n\nSee [the invariants](target.md#invariants).\n",
+      );
+
+      const result = await runCli(["validate", mainPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("a #fragment naming the OLD polluted anchor no longer resolves", async () => {
+    const workDir = await mkdtemp(path.join(tmpdir(), "richmd-tokens-anchor-"));
+    try {
+      const tokensDir = path.join(workDir, ".richmd", "tokens");
+      await mkdir(tokensDir, { recursive: true });
+      await writeFile(
+        path.join(tokensDir, "lens.json"),
+        JSON.stringify({ members: { invariants: {} } }),
+      );
+      await writeFile(
+        path.join(workDir, "target.md"),
+        "# Target\n\n## Invariants `lens:invariants`\n\nBody.\n",
+      );
+      const mainPath = path.join(workDir, "main.md");
+      await writeFile(
+        mainPath,
+        "# Main\n\nSee [stale](target.md#invariants-lensinvariants).\n",
+      );
+
+      const result = await runCli(["validate", mainPath]);
+      assert.notEqual(result.code, 0);
+      assert.match(result.stderr, /invariants-lensinvariants/);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// Case 15: a recognized reference renders as a token HOOK
+// (CONTEXT.md#term-token-hook, ADR-0012): the vocabulary prefix leaves the
+// visible text because it is addressing; the member stays. The hook carries
+// the vocabulary and member ONLY — never a member's properties, which are the
+// consumer's and which richmd never interprets (ADR-0011/ADR-0012).
+describe("token vocabulary (a recognized reference renders as a token hook)", () => {
+  it('`lens:state` becomes <code class="richmd-token" data-vocabulary data-member>state</code>', async () => {
+    const { workDir, mdPath } = await setupRepo({
+      tokens: { "lens.json": LENS_VOCABULARY },
+      markdown: "# Doc\n\nThis is `lens:state` work.\n",
+    });
+    try {
+      const result = await runCli(["render", mdPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+      // Pandoc's HTML writer soft-wraps long lines, so the attributes of a
+      // single tag can land on separate lines. Collapse whitespace before
+      // asserting on the tag's exact shape — the markup is the contract, its
+      // line breaks are not.
+      const html = (
+        await readFile(path.join(workDir, "doc.html"), "utf8")
+      ).replace(/\s+/g, " ");
+      assert.match(
+        html,
+        /<code class="richmd-token" data-vocabulary="lens" data-member="state">state<\/code>/,
+      );
+      // The vocabulary prefix is addressing — it never reaches the reader.
+      assert.doesNotMatch(html, />lens:state</);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("never emits a member's properties into the page (ADR-0012: the hook carries no properties)", async () => {
+    const { workDir, mdPath } = await setupRepo({
+      tokens: {
+        "lens.json": JSON.stringify({
+          members: {
+            state: { label: "State Lens", color: "#ff0000", order: 7 },
+          },
+        }),
+      },
+      markdown: "# Doc\n\nThis is `lens:state` work.\n",
+    });
+    try {
+      const result = await runCli(["render", mdPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+      const html = await readFile(path.join(workDir, "doc.html"), "utf8");
+      assert.match(html, /data-member="state"/);
+      assert.doesNotMatch(html, /State Lens|#ff0000|data-label|data-color/);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("an ordinary code span renders as a plain <code> — no hook, no data attributes", async () => {
+    const { workDir, mdPath } = await setupRepo({
+      tokens: { "lens.json": LENS_VOCABULARY },
+      markdown: "# Doc\n\nRun `npm test` and also `foo:bar` sometime.\n",
+    });
+    try {
+      const result = await runCli(["render", mdPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+      const html = await readFile(path.join(workDir, "doc.html"), "utf8");
+      assert.match(html, /<code>npm test<\/code>/);
+      assert.match(html, /<code>foo:bar<\/code>/);
+      assert.doesNotMatch(html, /richmd-token/);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it("a reference inside a fenced code block is never recognized — no hook", async () => {
+    const { workDir, mdPath } = await setupRepo({
+      tokens: { "lens.json": LENS_VOCABULARY },
+      markdown: "# Doc\n\n```\nlens:state\nlens:bogus\n```\n",
+    });
+    try {
+      const result = await runCli(["render", mdPath]);
+      assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+      const html = await readFile(path.join(workDir, "doc.html"), "utf8");
+      assert.doesNotMatch(html, /richmd-token/);
+      assert.match(html, /lens:state/);
     } finally {
       await rm(workDir, { recursive: true, force: true });
     }

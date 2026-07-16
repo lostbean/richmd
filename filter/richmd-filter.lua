@@ -534,6 +534,46 @@ local function is_relative_md_link(path_part)
   return path_part:match("%.md$") ~= nil
 end
 
+-- Forward declaration: resolve_code_token is defined further below, next to
+-- resolve_tokens (the pass that owns the inline surface's reporting), but is
+-- called from every recognition site above it — heading_prose (the slug
+-- exclusion), block_content_tokens (a block's own projected tokens), and
+-- render_only_code (the token hook). One recognition path, shared by all of
+-- them, so what richmd excludes from a slug and what it renders as a hook can
+-- never drift from what it validates (ADR-0011, ADR-0012).
+local resolve_code_token
+
+-- heading_prose(content) -> pandoc_inlines
+--
+-- A heading's content minus every recognized token reference — the text a
+-- heading's slug is computed from (ADR-0012: "a token reference is
+-- addressing, not prose"; §00 invariant "a heading's anchor id is
+-- deterministic: explicit id, else slug", as amended). A tagged heading
+-- therefore keeps the anchor it had before it was tagged.
+--
+-- The exclusion is exactly coextensive with what richmd RECOGNIZES, and it
+-- is resolve_code_token — the single recognition path (design.md §06
+-- Interface) — that decides, never a local re-match of the `vocabulary:member`
+-- shape. So an ordinary code span (`` `code` ``, no colon) and a span naming
+-- an UNDECLARED vocabulary (`` `foo:bar` `` with no foo.json) both fall
+-- through as the prose they are and slug normally, and a document with no
+-- tokens directory has an empty exclusion set — no slug changes at all
+-- (ADR-0012's stated regression property). `report = false`: resolve_tokens
+-- owns document-wide error reporting, and this is called from the render
+-- phase (which only runs once validation already passed clean) and from an
+-- independent re-parse of OTHER documents during validate — reporting from
+-- either would double or misattribute an error.
+local function heading_prose(content)
+  return content:walk({
+    Code = function(code)
+      if resolve_code_token(code, false) then
+        return {} -- recognized: addressing, contributes nothing to the slug
+      end
+      return nil -- ordinary prose: slugs exactly as it always has
+    end,
+  })
+end
+
 -- heading_anchor_id(header, seen_slugs) -> string
 --
 -- THE single source of truth for "this header's anchor id"
@@ -541,18 +581,21 @@ end
 -- deterministic: explicit id, else slug"): a heading's own explicit Pandoc
 -- id — already parsed by Pandoc itself from `{#id}` syntax, so this never
 -- re-parses attr syntax by hand — wins when present and non-empty;
--- otherwise its slug, computed by the identical Slugify.slugify function
--- either way. Called from BOTH the render phase (render_only_header, which
--- assigns the actual `id` a reader's browser sees) and the validate phase
--- (target_heading_slugs, below, which builds the set of ids a `#fragment`
--- link is allowed to resolve against) — one function, two callers, so the
--- two can never disagree (the whole point of the invariant this helper
--- exists to hold).
+-- otherwise the slug of its PROSE (its content minus recognized token
+-- references, per heading_prose above — ADR-0012), computed by the identical
+-- Slugify.slugify function either way. Called from BOTH the render phase
+-- (render_only_header, which assigns the actual `id` a reader's browser
+-- sees) and the validate phase (target_anchor_ids, below, which builds the
+-- set of ids a `#fragment` link is allowed to resolve against) — one
+-- function, two callers, so the two can never disagree (the whole point of
+-- the invariant this helper exists to hold). Both callers run in this same
+-- filter process against the same `token_vocabularies`, so token-awareness
+-- reaches both by construction rather than by being threaded to each.
 local function heading_anchor_id(header, seen_slugs)
   if header.identifier and header.identifier ~= "" then
     return header.identifier
   end
-  local heading_text = pandoc.utils.stringify(header.content)
+  local heading_text = pandoc.utils.stringify(heading_prose(header.content))
   return Slugify.slugify(heading_text, seen_slugs)
 end
 
@@ -858,11 +901,6 @@ end
 -- dedupes by any property: it validates membership and never interprets a
 -- property's meaning (ADR-0011). A block with no references gets an empty
 -- list, never nil, so a rule never needs a nil check.
--- Forward declaration: resolve_code_token is defined below, next to
--- resolve_tokens (the pass that owns the inline surface's reporting), but is
--- called from here — the one recognition path both share.
-local resolve_code_token
-
 local function block_content_tokens(block_content, resolved_tokens)
   pandoc.Div(block_content):walk({
     Code = function(code)
@@ -1476,6 +1514,51 @@ local function render_only_codeblock(code_block)
   return render_fn(code_block, resolved_attrs)
 end
 
+-- render_only_code(code) -> pandoc_ast_node
+--
+-- Renders a recognized token reference as a token HOOK
+-- (CONTEXT.md#term-token-hook, ADR-0012) — the same generic
+-- "recognize, then hand it its rendering" shape as render_only_div and
+-- render_only_codeblock above, with resolve_code_token playing the
+-- registry:lookup role: an unrecognized span is prose and is left completely
+-- untouched (`return nil`), exactly as a non-richmd Div is.
+--
+--   `lens:state` -> <code class="richmd-token"
+--                         data-vocabulary="lens" data-member="state">state</code>
+--
+-- The vocabulary prefix leaves the visible text because it is ADDRESSING, not
+-- something the reader is reading; the member stays, because that is what the
+-- reference says. Pandoc's HTML writer emits the `data-` prefixes itself from
+-- the Attr's attributes list.
+--
+-- The hook carries the vocabulary and member ONLY — never the member's
+-- `properties`, which are the consumer's, carried and never interpreted
+-- (ADR-0011). Emitting a `color` or `label` here would put visual identity in
+-- a consumer's JSON where no `--richmd-*` variable could override it,
+-- contradicting principle P3 (ADR-0012, "The hook carries no properties").
+-- richmd emits the structure and says WHICH member this is; the consumer's own
+-- stylesheet keys on [data-vocabulary="lens"][data-member="state"] and decides
+-- what that looks like — which is why theme/default.css styles .richmd-token
+-- not at all.
+--
+-- Only reachable once #errors == 0, so every span this resolves already
+-- validated; `report = false` because resolve_tokens (validate phase) already
+-- owns and has already done the reporting.
+local function render_only_code(code)
+  local resolved_token = resolve_code_token(code, false)
+  if not resolved_token then
+    return nil -- not a token reference; ordinary prose, left untouched
+  end
+
+  return pandoc.Code(
+    resolved_token.member,
+    pandoc.Attr("", { "richmd-token" }, {
+      { "vocabulary", resolved_token.vocabulary },
+      { "member", resolved_token.member },
+    })
+  )
+end
+
 -- Table threaded through every Header node processed in this one filter
 -- run (§00 invariant: slugs are a pure, documented function) — tracks
 -- slugs already assigned so the 2nd/3rd/... occurrence of the same heading
@@ -1622,11 +1705,27 @@ function Pandoc(doc)
   end
 
   -- --- Render phase (only reachable because #errors == 0 above) ---
+  --
+  -- Heading ids are assigned in their OWN pass, before the main render walk
+  -- below, because that walk is bottom-up: its Code handler rewrites a
+  -- recognized `lens:invariants` span to the bare member text `invariants`
+  -- BEFORE the enclosing Header is visited, so a heading_anchor_id called
+  -- from inside that walk would slugify the rewritten span as prose (yielding
+  -- `invariants-invariants`) — it can no longer tell addressing from prose,
+  -- because the thing it recognizes by is exactly what the hook consumed.
+  -- Assigning ids first means heading_anchor_id always sees the ORIGINAL
+  -- markup — the identical AST the validate phase's independent re-parse of
+  -- this same document sees (target_anchor_ids) — which is what keeps the two
+  -- phases in exact agreement (§00 invariant: a `#fragment` link "checks the
+  -- identical id a target heading actually receives"). Order, not
+  -- coincidence, is what holds that invariant here.
+  doc = doc:walk({ Header = render_only_header })
+
   doc = doc:walk({
     Div = render_only_div,
-    Header = render_only_header,
     Link = render_only_link,
     CodeBlock = render_only_codeblock,
+    Code = render_only_code,
   })
 
   -- Inject the theme stylesheet into the document head.

@@ -1357,9 +1357,16 @@
         </p>
         <p>
           Sections below are tagged with the lens they serve —
-          <code>lens:state</code>, <code>lens:robustness</code>, and friends.
-          Those are token references: this document declares its own
-          <code>lens</code> vocabulary in
+          <code class="richmd-token" data-vocabulary="lens" data-member="state"
+            >state</code
+          >,
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="robustness"
+            >robustness</code
+          >, and friends. Those are token references: this document declares its
+          own <code>lens</code> vocabulary in
           <code>examples/.richmd/tokens/lens.json</code>, and richmd checks
           every citation against that closed set, so a misspelled lens fails the
           document instead of rendering as ordinary prose. richmd ships no
@@ -1461,8 +1468,20 @@
             </p>
           </div>
         </div>
-        <h2 id="invariants-lensinvariants-lensrobustness">
-          Invariants <code>lens:invariants</code> <code>lens:robustness</code>
+        <h2 id="invariants">
+          Invariants
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="invariants"
+            >invariants</code
+          >
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="robustness"
+            >robustness</code
+          >
         </h2>
         <p>
           Two lenses, two references — a reference is singular, so citing two
@@ -1471,23 +1490,41 @@
         </p>
         <div class="richmd-statement">
           <p class="richmd-statement-body">
-            <strong>No silent drops</strong> <code>lens:robustness</code> A
-            committed edit is never discarded without leaving a recoverable
+            <strong>No silent drops</strong>
+            <code
+              class="richmd-token"
+              data-vocabulary="lens"
+              data-member="robustness"
+              >robustness</code
+            >
+            A committed edit is never discarded without leaving a recoverable
             history entry — see conflict resolver.
           </p>
         </div>
         <div class="richmd-statement">
           <p class="richmd-statement-body">
-            <strong>Monotonic clocks</strong> <code>lens:state</code> A client’s
-            Lamport clock only moves forward; any regression is treated as
-            corruption, not a valid state.
+            <strong>Monotonic clocks</strong>
+            <code
+              class="richmd-token"
+              data-vocabulary="lens"
+              data-member="state"
+              >state</code
+            >
+            A client’s Lamport clock only moves forward; any regression is
+            treated as corruption, not a valid state.
           </p>
         </div>
         <div class="richmd-statement">
           <p class="richmd-statement-body">
             <strong>Idempotent replay</strong>
-            <code>lens:state</code> Re-applying the same op twice is a no-op —
-            required for at-least-once delivery over flaky connections.
+            <code
+              class="richmd-token"
+              data-vocabulary="lens"
+              data-member="state"
+              >state</code
+            >
+            Re-applying the same op twice is a no-op — required for
+            at-least-once delivery over flaky connections.
           </p>
         </div>
         <div class="richmd-callout richmd-callout--danger">
@@ -1500,8 +1537,14 @@
             </p>
           </div>
         </div>
-        <h2 id="principles-lenscomposition">
-          Principles <code>lens:composition</code>
+        <h2 id="principles">
+          Principles
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="composition"
+            >composition</code
+          >
         </h2>
         <div class="richmd-statement">
           <div class="richmd-statement-label">
@@ -1514,7 +1557,13 @@
         </div>
         <div class="richmd-statement">
           <p class="richmd-statement-body">
-            <strong>Field, not document</strong> <code>lens:composition</code>
+            <strong>Field, not document</strong>
+            <code
+              class="richmd-token"
+              data-vocabulary="lens"
+              data-member="composition"
+              >composition</code
+            >
             Resolve conflicts at the smallest unit that has independent meaning
             to a user — a field, not the whole note.
           </p>
@@ -1528,8 +1577,14 @@
             to something, never an error state a user has to unblock.
           </p>
         </div>
-        <h2 id="component-breakdown-lensmodeling">
-          Component breakdown <code>lens:modeling</code>
+        <h2 id="component-breakdown">
+          Component breakdown
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="modeling"
+            >modeling</code
+          >
         </h2>
         <p>Three cooperating pieces, each independently testable:</p>
         <div class="richmd-card-grid" data-cols="3">

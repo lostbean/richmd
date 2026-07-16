@@ -358,11 +358,27 @@ See [the glossary](CONTEXT.md#term-block) for the full definition.
 
 A heading's actual rendered `id` follows the same rule used to validate
 `#fragment` links against it: its own explicit `{#id}` when authored, else
-its slug, assigned by one documented, pure function (GitHub-flavored rules:
-lowercase, punctuation stripped except hyphens, spaces to hyphens,
-duplicate headings suffixed `-1`, `-2`, ...). The identical logic backs
-both the id a heading actually receives and the set of ids `#fragment`
-resolution checks against, so headings and links can never disagree.
+the slug of its **prose**, assigned by one documented, pure function
+(GitHub-flavored rules: lowercase, punctuation stripped except hyphens,
+spaces to hyphens, duplicate headings suffixed `-1`, `-2`, ...). The
+identical logic backs both the id a heading actually receives and the set of
+ids `#fragment` resolution checks against, so headings and links can never
+disagree.
+
+A heading's prose is its text minus any **recognized token reference** (see
+"Token vocabularies" below) — a reference is addressing, not prose, so
+tagging a heading never renames its anchor:
+
+```markdown
+## Invariants `lens:invariants` `lens:robustness`
+```
+
+gets the anchor `#invariants` — the same anchor it had before it was tagged,
+so existing links to it keep working. The exclusion is exactly what richmd
+**recognizes**, and nothing more: an ordinary code span still slugs normally
+(``## Uses `code` in prose`` stays `#uses-code-in-prose`), and so does a
+span naming a vocabulary you never declared. If you declare no vocabularies
+at all, no anchor anywhere changes.
 
 ### Marking links as "in-tree" with `--tree`
 
@@ -629,6 +645,41 @@ An opted-in attr holds **exactly one member**, and holds the bare member key
 names the vocabulary, so repeating it in the value would just be a second
 fact the two could disagree about.
 
+### What a reference renders as
+
+A recognized span renders as a **token hook** — its member's text carrying a
+`richmd-token` class plus the vocabulary and member as data attributes:
+
+```html
+<!-- `lens:state` -->
+<code class="richmd-token" data-vocabulary="lens" data-member="state"
+  >state</code
+>
+```
+
+The vocabulary prefix leaves the visible text (it is addressing); the member
+stays, because that is what the reference says.
+
+**The hook is structure, not style.** richmd ships no CSS for
+`.richmd-token` — the look is yours, keyed off the data attributes:
+
+```css
+.richmd-token[data-vocabulary="lens"] {
+  border-radius: 999px;
+  padding: 0 0.5em;
+}
+.richmd-token[data-vocabulary="lens"][data-member="state"] {
+  background: var(--richmd-color-info-tint);
+}
+```
+
+**The hook carries the vocabulary and member only — never a member's
+properties.** A `label` or `color` in your JSON is never emitted into the
+page. richmd carries properties and never reads their meaning, and a color
+painted from a JSON file would sit where no `--richmd-*` variable and no
+theme could override it. Use a stylesheet (above) for how a member looks, and
+a cross-block rule for what it means.
+
 ### The rules that will surprise you
 
 - **A reference is singular. There is no combinator.** richmd never splits a
@@ -642,7 +693,8 @@ fact the two could disagree about.
 - **Fenced code blocks are never scanned.** A `lens:modeling` inside a
   ` ```js ` block is that grammar's source text, not a reference.
 - **A span naming an undeclared vocabulary is ordinary prose, not an
-  error.** `` `foo:bar` `` with no `foo.json` renders as plain code. richmd
+  error.** `` `foo:bar` `` with no `foo.json` renders as a plain `<code>` —
+  no hook, no data attributes — and slugs normally inside a heading. richmd
   recognizes references only for vocabularies you actually declared —
   otherwise every colon in every code span in every document would become
   richmd's business.
