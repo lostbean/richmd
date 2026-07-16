@@ -513,17 +513,20 @@ Given a document with two `callout` blocks, this produces:
 richmd: [rule:at-most-one-callout] div.callout: at most one callout block is allowed per document
 ```
 
-A rule runs once per document, after every per-block, link, and grammar
-check has already run — regardless of whether those checks found errors —
-against the document's full **block projection** list: one
-`{ kind, attrs, location, body_text }` entry per recognized block, in
-document order, frozen at the moment the list is built (never a live
+A rule runs once per document, after every per-block, link, grammar, and
+token resolution check has already run — regardless of whether those checks
+found errors — against the document's full **block projection** list: one
+`{ kind, attrs, location, body_text, tokens }` entry per recognized block,
+in document order, frozen at the moment the list is built (never a live
 reference into the Pandoc AST). `kind` is the block's kind name (e.g.
 `"callout"`); `attrs` is a plain table of its resolved attributes;
 `location` is the same `"div.<kind>"` / `"codeblock.<kind>"` string a
 per-block error already uses; `body_text` is the block's content flattened
-to plain text. A rule can assume every projection it receives already
-passed its own block kind schema.
+to plain text; `tokens` is the list of resolved token vocabulary references
+found within the block (see "Token vocabularies" below — always a list,
+empty when the block has none, so it never needs a nil check). A rule can
+assume every projection it receives already passed its own block kind
+schema.
 
 The Lua file returns either `{ check = function(block_projections,
 add_error) ... end }` or a bare `check` function directly — same two
@@ -547,6 +550,190 @@ failure (non-zero exit, no HTML) — but every error already collected
 before the crash (from an earlier per-block check, or an earlier rule) is
 still printed, and the crash itself is reported naming the crashing rule
 (not a block location), since the failure is document-wide.
+
+## Token vocabularies: your own closed set of terms
+
+A **token vocabulary** is a closed set of terms you declare once and then
+cite from your documents — an architecture's lenses, a status ladder, a team
+roster. richmd checks that every citation names a term you actually
+declared, and carries that term's properties through to your cross-block
+rules. richmd owns the mechanism; **the set is always yours — richmd ships
+no vocabulary of its own**, and every example below is a hypothetical one a
+consumer might declare.
+
+### Declaring a vocabulary
+
+Drop a `.json` file into `.richmd/tokens/`, inside your document's config
+directory (same discovery as `.richmd/blocks/` above):
+
+```
+.richmd/tokens/lens.json
+```
+
+**The filename is the vocabulary name.** `lens.json` declares the
+vocabulary `lens`; there is no `"name"` field to keep in sync with it.
+
+A vocabulary declares exactly one field, `members` — a map of member key to
+that member's properties:
+
+```json
+{
+  "members": {
+    "modeling": { "order": 0, "label": "Modeling", "primary": true },
+    "state": { "order": 1, "label": "State", "primary": true },
+    "composition": { "order": 2, "label": "Composition" }
+  }
+}
+```
+
+The properties object is **arbitrary and entirely yours**. `order`, `label`
+and `primary` above are not richmd concepts — they are one hypothetical
+consumer's. Put whatever you want in there; richmd carries it through
+without ever reading it.
+
+### Referencing a member
+
+Two surfaces, recognized two different ways.
+
+**An inline code span** whose text reads `<vocabulary>:<member>` is a
+reference wherever it appears — including in a heading, since a heading's
+code span is an ordinary code span:
+
+```markdown
+## Data flow `lens:modeling`
+
+This section is mostly `lens:state` work.
+```
+
+**A block attr** is a reference only when its block kind's schema opts it in
+with a `tokens` field naming the vocabulary:
+
+```json
+{
+  "kind": "lens-card",
+  "attrs": {
+    "lens": { "required": true, "tokens": "lens" }
+  },
+  "body": "required"
+}
+```
+
+```markdown
+::: {.lens-card lens="modeling"}
+Card body.
+:::
+```
+
+An opted-in attr holds **exactly one member**, and holds the bare member key
+— not the `<vocabulary>:<member>` shape a code span uses. The schema already
+names the vocabulary, so repeating it in the value would just be a second
+fact the two could disagree about.
+
+### The rules that will surprise you
+
+- **A reference is singular. There is no combinator.** richmd never splits a
+  reference on any delimiter. `` `lens:a+b` `` is **one** lookup of a member
+  literally keyed `a+b` — it fails closed unless you declared that exact
+  key, even if `a` and `b` are both members. **Multiplicity is repetition**:
+  to cite two members, write two spans (`` `lens:modeling` `lens:state` ``).
+  What a combination _means_ — whether a pair renders as one pill, whether
+  its order is canonical, whether it's even legal — is yours to decide in a
+  rule, from properties richmd carried but never read.
+- **Fenced code blocks are never scanned.** A `lens:modeling` inside a
+  ` ```js ` block is that grammar's source text, not a reference.
+- **A span naming an undeclared vocabulary is ordinary prose, not an
+  error.** `` `foo:bar` `` with no `foo.json` renders as plain code. richmd
+  recognizes references only for vocabularies you actually declared —
+  otherwise every colon in every code span in every document would become
+  richmd's business.
+- **An attr is a reference only when its schema opts it in — never inferred
+  from its name.** An attr literally named `lens` on a schema without a
+  `tokens` field is an ordinary string attr, untouched.
+- **A schema opting into a _missing_ vocabulary IS an error** — the exact
+  opposite of the span case above. The asymmetry is deliberate: a span's
+  prefix is a **coincidence of text** (it may well be prose that happens to
+  contain a colon), whereas a schema's `tokens` field is a **deliberate
+  declaration** — the only way it can name a vocabulary that doesn't exist
+  is if something is broken.
+- **richmd validates membership and never interprets a property.**
+  Properties are opaque payload, carried through untouched. In particular
+  richmd never sorts, groups, or dedupes tokens by any property — an
+  `order` property is meaningless to richmd. Tokens arrive in **document
+  order**, and the same member cited twice arrives twice.
+
+### Reading tokens from a rule
+
+Every resolved token found within a block arrives on that block's projection
+as `tokens`, from **both** surfaces above — the block's own opted-in attrs
+first, then the spans in its body, in document order. Each entry is a flat
+`{ vocabulary, member, properties, location }`:
+
+```lua
+-- .richmd/rules/lens-cards-are-labeled.lua
+-- Every lens-card must cite a lens whose properties mark it as a primary
+-- lens. Reads `properties` DIRECTLY — no membership re-check, no scanning
+-- body_text for a reference.
+return {
+  check = function(block_projections, add_error)
+    for _, bp in ipairs(block_projections) do
+      if bp.kind == "lens-card" then
+        local has_primary = false
+        for _, tok in ipairs(bp.tokens) do
+          if tok.vocabulary == "lens" and tok.properties.primary then
+            has_primary = true
+          end
+        end
+        if not has_primary then
+          add_error(
+            "rule:lens-cards-are-labeled",
+            bp.location,
+            "a lens-card must cite at least one primary lens"
+          )
+        end
+      end
+    end
+  end,
+}
+```
+
+A rule can assume every token it receives **already names a declared
+member** — richmd resolved it before the rule ran, and an unknown member
+already failed the document. So a rule reads `properties` directly and never
+re-checks membership.
+
+Two things worth knowing about what lands in `tokens`:
+
+- A reference **outside any recognized block** — in a plain paragraph or a
+  top-level heading — is still validated, but belongs to no block, so it
+  appears in no projection's `tokens`.
+- A reference inside a **nested** block appears on both the inner and the
+  outer block's `tokens`, because it is genuinely within both — the same
+  containment `body_text` already reports.
+
+### Failure behavior
+
+- A reference naming a declared vocabulary but an **undeclared member** is
+  an ordinary validation error at the reference's location, naming both:
+
+  ```
+  richmd: [token:lens] code.lens: unknown member 'bogus' in token vocabulary 'lens'
+  ```
+
+  From an opted-in attr, the same failure is reported against the block's
+  own kind, exactly like a bad enum value:
+
+  ```
+  richmd: [lens-card] div.lens-card: attr 'lens' has unknown member 'bogus' in token vocabulary 'lens'
+  ```
+
+  Either way it fails closed, and an unknown member never stops richmd from
+  collecting the rest of the document's errors.
+
+- A **malformed vocabulary file** (bad JSON, or a missing or non-map
+  `members` field) is a **fatal, load-time** error naming the offending
+  file — richmd refuses to run at all, identical to a malformed
+  `.richmd/blocks/` or `.richmd/rules/` file. A broken vocabulary is never
+  silently skipped.
 
 ## Failure behavior
 

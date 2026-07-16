@@ -442,6 +442,37 @@ local function validate_attrs(schema, attrs, kind_name, location)
   return resolved, resolved_tokens
 end
 
+-- validate_attrs_silently(schema, attrs, kind_name, location)
+--   -> resolved_attrs, resolved_tokens
+--
+-- validate_attrs, run purely for its resolved_tokens, with any errors it
+-- would report DISCARDED. Used only by build_block_projections, to re-derive
+-- a block's OWN opted-in attr tokens (design.md §06's second recognition
+-- surface) for the projection's `tokens` field.
+--
+-- The re-run is deliberate: the validate walk that ALREADY checked this
+-- block ran over a separate doc:walk(), and Pandoc's AST-node identity is
+-- not guaranteed to survive across two walks (see validate_only_div's own
+-- comment), so a token resolved there cannot be handed forward by node
+-- identity. Re-resolving from the schema is the same generic, deterministic
+-- lookup and yields the identical result — but its ERRORS were already
+-- collected by that first walk, and letting a second run append them again
+-- would report every bad attr twice. So this discards whatever the re-run
+-- appends, restoring `errors` to exactly the length it had on entry. It can
+-- only ever discard duplicates: this runs after the validate walk covered
+-- every one of these same blocks with the same schema.
+local function validate_attrs_silently(schema, attrs, kind_name, location)
+  if not schema then
+    return {}, {}
+  end
+  local errors_before = #errors
+  local resolved, resolved_tokens = validate_attrs(schema, attrs, kind_name, location)
+  for index = #errors, errors_before + 1, -1 do
+    table.remove(errors, index)
+  end
+  return resolved, resolved_tokens
+end
+
 -- validate_body(schema, block, kind_name, location)
 local function validate_body(schema, block, kind_name, location)
   local has_body = block.content and #block.content > 0
@@ -766,7 +797,8 @@ local function validate_only_codeblock(code_block)
   return nil
 end
 
--- build_block_projections(doc) -> { { kind, attrs, location, body_text }, ... }
+-- build_block_projections(doc)
+--   -> { { kind, attrs, location, body_text, tokens }, ... }
 --
 -- Builds the document's ordered block projection list
 -- (CONTEXT.md#term-block-projection): a frozen snapshot of every recognized
@@ -784,7 +816,65 @@ end
 -- stated invariant, ADR-0008). Never a live reference into the Pandoc AST:
 -- `attrs` is copied into a plain table, `body_text` is extracted via
 -- pandoc.utils.stringify (the standard Pandoc idiom for AST-to-plain-text)
--- for a Div, or the CodeBlock's own `.text` field directly.
+-- for a Div, or the CodeBlock's own `.text` field directly, and `tokens`
+-- holds flat resolved-token values (CONTEXT.md#term-resolved-token).
+--
+-- --- How a token is associated with the block it was found WITHIN ---
+--
+-- `tokens` is "the resolved tokens found within it"
+-- (CONTEXT.md#term-block-projection), gathered from BOTH recognition
+-- surfaces (design.md §06 Interface) into ONE ordered list:
+--
+--   1. the block's OWN opted-in ATTRS — re-derived here via the same
+--      validate_attrs the validate walk already ran, whose second return is
+--      exactly this block's resolved attr tokens;
+--   2. every `<vocabulary>:<member>` inline CODE SPAN within the block's
+--      content — collected by a NESTED walk over that block's own content,
+--      which is what makes the association structural rather than
+--      positional.
+--
+-- The nested walk is the crux. resolve_tokens walks the WHOLE document for
+-- Code inlines and cannot say which block each span sat in; this builder
+-- walks blocks and knows nothing of spans. Rather than run both walks and
+-- match their results up by position — which would silently couple two
+-- traversal orders and break the moment either changed — each block simply
+-- resolves its own content, so containment is read off the AST's actual
+-- structure. Recognition cannot drift between the two: both go through the
+-- one resolve_code_token. This walk passes `report = false` because
+-- resolve_tokens already reported every span's errors document-wide;
+-- reporting here too would double them.
+--
+-- Consequences worth naming, both deliberate:
+--   * a reference OUTSIDE any recognized block (a plain paragraph, a
+--     top-level heading) is resolved and validated by resolve_tokens but
+--     lands in no projection's `tokens` — it is within no block;
+--   * a NESTED block's tokens appear on BOTH the inner and the outer
+--     block's projections, because they genuinely are within both — the
+--     same containment `body_text` already reports, since stringify of a
+--     Div's content likewise includes its nested blocks' text.
+--
+-- Order is DOCUMENT order — attr tokens first (the attr precedes the body
+-- it labels), then spans as they appear. richmd never sorts, groups, or
+-- dedupes by any property: it validates membership and never interprets a
+-- property's meaning (ADR-0011). A block with no references gets an empty
+-- list, never nil, so a rule never needs a nil check.
+-- Forward declaration: resolve_code_token is defined below, next to
+-- resolve_tokens (the pass that owns the inline surface's reporting), but is
+-- called from here — the one recognition path both share.
+local resolve_code_token
+
+local function block_content_tokens(block_content, resolved_tokens)
+  pandoc.Div(block_content):walk({
+    Code = function(code)
+      local resolved_token = resolve_code_token(code, false)
+      if resolved_token then
+        table.insert(resolved_tokens, resolved_token)
+      end
+      return nil
+    end,
+  })
+end
+
 local function build_block_projections(doc)
   local projections = {}
 
@@ -798,11 +888,18 @@ local function build_block_projections(doc)
       for key, value in pairs(div.attributes) do
         attrs[key] = value
       end
+      local schema = select(1, registry:lookup(kind_name))
+      local location = "div." .. kind_name
+      -- Surface 2 (the block's own opted-in attrs), then surface 1 (spans
+      -- within the body) — see this function's comment for the ordering.
+      local _, tokens = validate_attrs_silently(schema, div.attributes, kind_name, location)
+      block_content_tokens(div.content, tokens)
       table.insert(projections, {
         kind = kind_name,
         attrs = attrs,
-        location = "div." .. kind_name,
+        location = location,
         body_text = pandoc.utils.stringify(div.content),
+        tokens = tokens,
       })
       return nil
     end,
@@ -815,17 +912,83 @@ local function build_block_projections(doc)
       for key, value in pairs(code_block.attributes) do
         attrs[key] = value
       end
+      local schema = select(1, registry:lookup(kind_name))
+      local location = "codeblock." .. kind_name
+      -- A CodeBlock's body is another grammar's source text and is NEVER
+      -- scanned for references (design.md §06 Failure behavior), so its
+      -- opted-in attrs are its only surface.
+      local _, tokens = validate_attrs_silently(schema, code_block.attributes, kind_name, location)
       table.insert(projections, {
         kind = kind_name,
         attrs = attrs,
-        location = "codeblock." .. kind_name,
+        location = location,
         body_text = code_block.text or "",
+        tokens = tokens,
       })
       return nil
     end,
   })
 
   return projections
+end
+
+-- resolve_code_token(code, report) -> resolved_token | nil
+--
+-- Resolves ONE `Code` inline span against the declared vocabularies — the
+-- single place the first recognition surface's rules live (design.md §06
+-- Interface, ADR-0011). Factored out of resolve_tokens so the projection
+-- builder can re-derive a block's OWN tokens with byte-identical
+-- recognition, rather than duplicating the rules or matching the two walks'
+-- results up by position (see build_block_projections).
+--
+-- `report` selects whether an undeclared member records a validation error.
+-- resolve_tokens passes true — it is the pass that OWNS the document-wide
+-- error reporting (design.md §06 Responsibility). The projection builder
+-- passes false: every span it re-resolves was already resolved and already
+-- reported by that pass, and reporting again would double every error.
+-- Resolution itself is pure and deterministic, so the two agree by
+-- construction.
+function resolve_code_token(code, report)
+  -- Split on the FIRST colon only: everything before it is the candidate
+  -- vocabulary name, everything after is the member key verbatim.
+  local vocabulary_name, member_key = code.text:match("^([^:]*):(.*)$")
+  if not vocabulary_name then
+    return nil
+  end
+
+  local vocabulary = token_vocabularies[vocabulary_name]
+  if not vocabulary then
+    return nil
+  end
+
+  -- The reference's location, following the same "<node-type>.<name>"
+  -- convention every other validate-phase location string already uses
+  -- (validate_block's "div." .. kind_name, validate_only_codeblock's
+  -- "codeblock." .. kind_name).
+  local location = "code." .. vocabulary_name
+
+  local properties = vocabulary.members[member_key]
+  if properties == nil then
+    if report then
+      -- Fails closed, naming BOTH the vocabulary and the unknown member
+      -- (design.md §06 Failure behavior). Never short-circuits the walk:
+      -- every later reference is still resolved, so two unknown members
+      -- produce two collected errors (§00 all-errors-collected).
+      add_error(
+        "token:" .. vocabulary_name,
+        location,
+        "unknown member '" .. member_key .. "' in token vocabulary '" .. vocabulary_name .. "'"
+      )
+    end
+    return nil
+  end
+
+  return {
+    vocabulary = vocabulary_name,
+    member = member_key,
+    properties = properties,
+    location = location,
+  }
 end
 
 -- resolve_tokens(doc) -> { { vocabulary, member, properties, location }, ... }
@@ -865,8 +1028,12 @@ end
 -- (ADR-0011; there is no combinator, by decision).
 --
 -- Returns the resolved tokens (never a live reference into the Pandoc AST —
--- a flat value, CONTEXT.md#term-resolved-token). Nothing consumes the return
--- value yet; §06 hands it to the block projection builder in a later change.
+-- a flat value, CONTEXT.md#term-resolved-token). This pass owns REPORTING
+-- for the inline surface, document-wide: a reference outside any recognized
+-- block (a plain paragraph, a top-level heading) is validated here and
+-- nowhere else, since it belongs to no block projection. The projection
+-- builder re-derives each block's own tokens for §05's `tokens` field
+-- (see build_block_projections).
 local function resolve_tokens(doc)
   local resolved_tokens = {}
 
@@ -876,44 +1043,10 @@ local function resolve_tokens(doc)
 
   doc:walk({
     Code = function(code)
-      -- Split on the FIRST colon only: everything before it is the candidate
-      -- vocabulary name, everything after is the member key verbatim.
-      local vocabulary_name, member_key = code.text:match("^([^:]*):(.*)$")
-      if not vocabulary_name then
-        return nil
+      local resolved_token = resolve_code_token(code, true)
+      if resolved_token then
+        table.insert(resolved_tokens, resolved_token)
       end
-
-      local vocabulary = token_vocabularies[vocabulary_name]
-      if not vocabulary then
-        return nil
-      end
-
-      -- The reference's location, following the same "<node-type>.<name>"
-      -- convention every other validate-phase location string already uses
-      -- (validate_block's "div." .. kind_name, validate_only_codeblock's
-      -- "codeblock." .. kind_name).
-      local location = "code." .. vocabulary_name
-
-      local properties = vocabulary.members[member_key]
-      if properties == nil then
-        -- Fails closed, naming BOTH the vocabulary and the unknown member
-        -- (design.md §06 Failure behavior). Never short-circuits the walk:
-        -- every later reference is still resolved, so two unknown members
-        -- produce two collected errors (§00 all-errors-collected).
-        add_error(
-          "token:" .. vocabulary_name,
-          location,
-          "unknown member '" .. member_key .. "' in token vocabulary '" .. vocabulary_name .. "'"
-        )
-        return nil
-      end
-
-      table.insert(resolved_tokens, {
-        vocabulary = vocabulary_name,
-        member = member_key,
-        properties = properties,
-        location = location,
-      })
       return nil
     end,
   })
