@@ -16,6 +16,14 @@
 --                                 "enum_values": [...] }, ... },
 --     "body": "required" | "optional" | "forbidden" }
 --
+-- An attr may instead carry `"tokens": "<vocabulary>"`, opting it into a
+-- token vocabulary (design.md §06, ADR-0011): its value is then exactly one
+-- member of that vocabulary's closed set, validated against the set instead
+-- of an inline enum. A consumer's JSON schema uses `tokens` exactly as a
+-- built-in Lua schema does — the two shapes stay in step. `tokens` and the
+-- enum mechanism are mutually exclusive on one attr (see
+-- validate_attr_shape).
+--
 -- The Lua file is a module returning a table with a `render` function of
 -- the EXACT SAME shape as callout.lua's: `render(block, resolved_attrs) ->
 -- pandoc_ast_node`. It may be written as either
@@ -87,6 +95,54 @@ local function list_schema_files(dir_path)
   return files
 end
 
+-- validate_attr_shape(attr_schema, attr_name, schema_path)
+--
+-- Checks one attr's declaration. A consumer's JSON schema may opt an attr
+-- into a token vocabulary with `"tokens": "<vocabulary>"` exactly as a
+-- built-in Lua schema can (design.md §04 Interface, §06; ADR-0011) — the
+-- JSON shape and the Lua shape stay in step, so this loader's only job is to
+-- refuse a declaration that is self-contradictory.
+--
+-- `tokens` and the enum/`allowed`-values mechanism are MUTUALLY EXCLUSIVE:
+-- an attr's value is drawn from a closed vocabulary OR from an inline
+-- `allowed` list, never both (§04: validated against the set "instead of an
+-- inline `allowed` list"). Declaring both contradicts itself about where the
+-- value's truth lives, so it is fatal here rather than resolved by silently
+-- letting one mechanism win — which would make which one wins a fact a
+-- consumer could only learn by experiment.
+--
+-- Note richmd never checks that `tokens` names a vocabulary that EXISTS: a
+-- schema is loaded once at startup, and whether a vocabulary is declared is
+-- the tokens directory's business, checked per-attr during the validate
+-- phase where the error can name the offending block (see richmd-filter.lua's
+-- validate_attr_token).
+local function validate_attr_shape(attr_schema, attr_name, schema_path)
+  if type(attr_schema) ~= "table" then
+    return
+  end
+  if attr_schema.tokens == nil then
+    return
+  end
+  if type(attr_schema.tokens) ~= "string" or attr_schema.tokens == "" then
+    fatal(
+      "schema file '"
+        .. schema_path
+        .. "' has an invalid 'tokens' field on attr '"
+        .. attr_name
+        .. "' (must be the name of a token vocabulary)"
+    )
+  end
+  if attr_schema.type == "enum" or attr_schema.enum_values ~= nil then
+    fatal(
+      "schema file '"
+        .. schema_path
+        .. "' declares both 'tokens' and enum values on attr '"
+        .. attr_name
+        .. "' (an attr draws its value from a token vocabulary or from an inline enum, never both)"
+    )
+  end
+end
+
 -- validate_schema_shape(schema, schema_path)
 --
 -- A malformed schema FILE (invalid JSON, or valid JSON missing a required
@@ -104,6 +160,9 @@ local function validate_schema_shape(schema, schema_path)
   end
   if type(schema.attrs) ~= "table" then
     fatal("schema file '" .. schema_path .. "' has an invalid 'attrs' field (must be an object)")
+  end
+  for attr_name, attr_schema in pairs(schema.attrs) do
+    validate_attr_shape(attr_schema, attr_name, schema_path)
   end
   local body = schema.body
   if body ~= "required" and body ~= "optional" and body ~= "forbidden" then

@@ -19,6 +19,7 @@ local Registry = require("registry")
 local Slugify = require("slugify")
 local ExtensionLoader = require("extension-loader")
 local RulesLoader = require("rules-loader")
+local TokensLoader = require("tokens-loader")
 local HeadingScope = require("heading-scope")
 
 -- One registry instance, shared across validate and render phases and
@@ -272,6 +273,17 @@ ExtensionLoader.load(registry, config_dir .. "/" .. ExtensionLoader.DEFAULT_DIR)
 -- document, as a step of the validate phase (see Pandoc(doc) below).
 local rules = RulesLoader.load(config_dir .. "/" .. RulesLoader.DEFAULT_DIR)
 
+-- Token vocabularies (design.md §06, ADR-0011, CONTEXT.md#term-token-
+-- vocabulary) — consumer-authored `.json` files under the tokens directory
+-- (default `.richmd/tokens/`, resolved against the walked config_dir above,
+-- same convention as the two loaders just above). Loaded ONCE at filter
+-- startup, same timing as ExtensionLoader.load / RulesLoader.load. A
+-- malformed vocabulary file (filter/tokens-loader.lua calls `error(...)`)
+-- aborts the whole filter run before any AST walk begins — distinct from a
+-- validation error collected below. References are actually resolved later,
+-- once per document, as a step of the validate phase (see Pandoc(doc)).
+local token_vocabularies = TokensLoader.load(config_dir .. "/" .. TokensLoader.DEFAULT_DIR)
+
 -- All validation errors collected across the whole document (§00 invariant:
 -- never fail-fast on the first error).
 local errors = {}
@@ -284,14 +296,107 @@ local function add_error(kind_name, location, reason)
   })
 end
 
--- validate_attrs(schema, attrs, kind_name, location) -> resolved_attrs
+-- validate_attr_token(attr_schema, attr_name, value, kind_name, location)
+--   -> resolved_token | nil
+--
+-- The SECOND token recognition surface (design.md §06 Interface, ADR-0011).
+-- The first — an inline `<vocabulary>:<member>` code span — is recognized
+-- STRUCTURALLY, wherever it appears, by resolve_tokens below. A block attr
+-- is recognized BY DECLARATION instead: it is a reference only when its
+-- block kind schema opts it in with `tokens=<vocabulary>`. richmd NEVER
+-- infers a reference from an attr's NAME — an attr literally named `lens` on
+-- a schema that does not opt it in is an ordinary string attr, untouched
+-- (ADR-0011 "What richmd recognizes": inferring from the name "would make an
+-- unrelated `lens=` attr silently token-validated, and would bind vocabulary
+-- names to attr names across every consumer schema forever").
+--
+-- The attr's whole value is ONE member key, looked up EXACTLY — an opted-in
+-- attr holds exactly one member (design.md §04 Interface). There is no
+-- split, on any delimiter: `lens="state composition"` is one lookup of the
+-- member `state composition`, failing closed unless that exact key is
+-- declared, even when `state` and `composition` are both declared members.
+-- Multiplicity is not this attr's to express (ADR-0011: there is no
+-- combinator, by decision) — which is also why the attr carries the bare
+-- member key and never the code span's `<vocabulary>:<member>` shape: the
+-- vocabulary is already named by the schema, so repeating it in the value
+-- would be a second fact the two could disagree about.
+--
+-- Errors here are sourced to the BLOCK'S OWN KIND via the same add_error
+-- shape the enum branch below already uses, NOT to `token:<vocabulary>` as a
+-- code span's error is. The distinction is what the error is ABOUT: a span's
+-- error is about a reference standing on its own in prose, whose only
+-- context is its vocabulary; an attr's error is about THIS block's attr
+-- being wrong, exactly like a bad enum value or a missing required attr, and
+-- it reads that way — `[lens-card] div.lens-card: attr 'lens' ...`.
+local function validate_attr_token(attr_schema, attr_name, value, kind_name, location)
+  local vocabulary_name = attr_schema.tokens
+  local vocabulary = token_vocabularies[vocabulary_name]
+
+  -- A schema opting an attr into a vocabulary that was never declared is a
+  -- broken schema, and must fail LOUDLY rather than silently pass the attr
+  -- through as an ordinary string (§00: a token reference resolves to a
+  -- declared member, never to prose). Note this is the exact OPPOSITE of a
+  -- code span naming an undeclared vocabulary, which IS ordinary prose: a
+  -- span's prefix is a coincidence of text, whereas a schema's `tokens`
+  -- field is a deliberate declaration that can only be a mistake if the
+  -- vocabulary is missing.
+  if not vocabulary then
+    add_error(
+      kind_name,
+      location,
+      "attr '"
+        .. attr_name
+        .. "' is opted into token vocabulary '"
+        .. tostring(vocabulary_name)
+        .. "', which is not declared"
+    )
+    return nil
+  end
+
+  local properties = vocabulary.members[value]
+  if properties == nil then
+    -- Fails closed, naming BOTH the vocabulary and the unknown member
+    -- (design.md §06 Failure behavior).
+    add_error(
+      kind_name,
+      location,
+      "attr '"
+        .. attr_name
+        .. "' has unknown member '"
+        .. value
+        .. "' in token vocabulary '"
+        .. vocabulary_name
+        .. "'"
+    )
+    return nil
+  end
+
+  -- The SAME resolved-token shape a code span resolves to (see
+  -- resolve_tokens, CONTEXT.md#term-resolved-token) — a flat value, never a
+  -- live reference into the Pandoc AST. Returned rather than dropped so §06
+  -- can hand it to the block projection builder in a later change; nothing
+  -- consumes it yet.
+  return {
+    vocabulary = vocabulary_name,
+    member = value,
+    properties = properties,
+    location = location,
+  }
+end
+
+-- validate_attrs(schema, attrs, kind_name, location)
+--   -> resolved_attrs, resolved_tokens
 --
 -- Checks the block's attrs against its schema's `attrs` table (required/
--- optional, enum values) and returns the resolved attr values regardless
--- of whether errors were found — the render phase is never reached when
--- errors exist, so a partially-resolved table here is harmless.
+-- optional, enum values, token vocabulary membership) and returns the
+-- resolved attr values regardless of whether errors were found — the render
+-- phase is never reached when errors exist, so a partially-resolved table
+-- here is harmless. `resolved_tokens` collects a resolved token per opted-in
+-- attr that resolved cleanly (empty for the overwhelming majority of blocks,
+-- whose schemas opt no attr in).
 local function validate_attrs(schema, attrs, kind_name, location)
   local resolved = {}
+  local resolved_tokens = {}
   for attr_name, attr_schema in pairs(schema.attrs or {}) do
     local value = attrs[attr_name]
     if value == nil or value == "" then
@@ -303,7 +408,13 @@ local function validate_attrs(schema, attrs, kind_name, location)
         )
       end
     else
-      if attr_schema.type == "enum" then
+      if attr_schema.tokens then
+        local resolved_token =
+          validate_attr_token(attr_schema, attr_name, value, kind_name, location)
+        if resolved_token then
+          table.insert(resolved_tokens, resolved_token)
+        end
+      elseif attr_schema.type == "enum" then
         local allowed = false
         for _, candidate in ipairs(attr_schema.enum_values or {}) do
           if value == candidate then
@@ -328,7 +439,38 @@ local function validate_attrs(schema, attrs, kind_name, location)
       resolved[attr_name] = value
     end
   end
-  return resolved
+  return resolved, resolved_tokens
+end
+
+-- validate_attrs_silently(schema, attrs, kind_name, location)
+--   -> resolved_attrs, resolved_tokens
+--
+-- validate_attrs, run purely for its resolved_tokens, with any errors it
+-- would report DISCARDED. Used only by build_block_projections, to re-derive
+-- a block's OWN opted-in attr tokens (design.md §06's second recognition
+-- surface) for the projection's `tokens` field.
+--
+-- The re-run is deliberate: the validate walk that ALREADY checked this
+-- block ran over a separate doc:walk(), and Pandoc's AST-node identity is
+-- not guaranteed to survive across two walks (see validate_only_div's own
+-- comment), so a token resolved there cannot be handed forward by node
+-- identity. Re-resolving from the schema is the same generic, deterministic
+-- lookup and yields the identical result — but its ERRORS were already
+-- collected by that first walk, and letting a second run append them again
+-- would report every bad attr twice. So this discards whatever the re-run
+-- appends, restoring `errors` to exactly the length it had on entry. It can
+-- only ever discard duplicates: this runs after the validate walk covered
+-- every one of these same blocks with the same schema.
+local function validate_attrs_silently(schema, attrs, kind_name, location)
+  if not schema then
+    return {}, {}
+  end
+  local errors_before = #errors
+  local resolved, resolved_tokens = validate_attrs(schema, attrs, kind_name, location)
+  for index = #errors, errors_before + 1, -1 do
+    table.remove(errors, index)
+  end
+  return resolved, resolved_tokens
 end
 
 -- validate_body(schema, block, kind_name, location)
@@ -392,6 +534,46 @@ local function is_relative_md_link(path_part)
   return path_part:match("%.md$") ~= nil
 end
 
+-- Forward declaration: resolve_code_token is defined further below, next to
+-- resolve_tokens (the pass that owns the inline surface's reporting), but is
+-- called from every recognition site above it — heading_prose (the slug
+-- exclusion), block_content_tokens (a block's own projected tokens), and
+-- render_only_code (the token hook). One recognition path, shared by all of
+-- them, so what richmd excludes from a slug and what it renders as a hook can
+-- never drift from what it validates (ADR-0011, ADR-0012).
+local resolve_code_token
+
+-- heading_prose(content) -> pandoc_inlines
+--
+-- A heading's content minus every recognized token reference — the text a
+-- heading's slug is computed from (ADR-0012: "a token reference is
+-- addressing, not prose"; §00 invariant "a heading's anchor id is
+-- deterministic: explicit id, else slug", as amended). A tagged heading
+-- therefore keeps the anchor it had before it was tagged.
+--
+-- The exclusion is exactly coextensive with what richmd RECOGNIZES, and it
+-- is resolve_code_token — the single recognition path (design.md §06
+-- Interface) — that decides, never a local re-match of the `vocabulary:member`
+-- shape. So an ordinary code span (`` `code` ``, no colon) and a span naming
+-- an UNDECLARED vocabulary (`` `foo:bar` `` with no foo.json) both fall
+-- through as the prose they are and slug normally, and a document with no
+-- tokens directory has an empty exclusion set — no slug changes at all
+-- (ADR-0012's stated regression property). `report = false`: resolve_tokens
+-- owns document-wide error reporting, and this is called from the render
+-- phase (which only runs once validation already passed clean) and from an
+-- independent re-parse of OTHER documents during validate — reporting from
+-- either would double or misattribute an error.
+local function heading_prose(content)
+  return content:walk({
+    Code = function(code)
+      if resolve_code_token(code, false) then
+        return {} -- recognized: addressing, contributes nothing to the slug
+      end
+      return nil -- ordinary prose: slugs exactly as it always has
+    end,
+  })
+end
+
 -- heading_anchor_id(header, seen_slugs) -> string
 --
 -- THE single source of truth for "this header's anchor id"
@@ -399,18 +581,21 @@ end
 -- deterministic: explicit id, else slug"): a heading's own explicit Pandoc
 -- id — already parsed by Pandoc itself from `{#id}` syntax, so this never
 -- re-parses attr syntax by hand — wins when present and non-empty;
--- otherwise its slug, computed by the identical Slugify.slugify function
--- either way. Called from BOTH the render phase (render_only_header, which
--- assigns the actual `id` a reader's browser sees) and the validate phase
--- (target_heading_slugs, below, which builds the set of ids a `#fragment`
--- link is allowed to resolve against) — one function, two callers, so the
--- two can never disagree (the whole point of the invariant this helper
--- exists to hold).
+-- otherwise the slug of its PROSE (its content minus recognized token
+-- references, per heading_prose above — ADR-0012), computed by the identical
+-- Slugify.slugify function either way. Called from BOTH the render phase
+-- (render_only_header, which assigns the actual `id` a reader's browser
+-- sees) and the validate phase (target_anchor_ids, below, which builds the
+-- set of ids a `#fragment` link is allowed to resolve against) — one
+-- function, two callers, so the two can never disagree (the whole point of
+-- the invariant this helper exists to hold). Both callers run in this same
+-- filter process against the same `token_vocabularies`, so token-awareness
+-- reaches both by construction rather than by being threaded to each.
 local function heading_anchor_id(header, seen_slugs)
   if header.identifier and header.identifier ~= "" then
     return header.identifier
   end
-  local heading_text = pandoc.utils.stringify(header.content)
+  local heading_text = pandoc.utils.stringify(heading_prose(header.content))
   return Slugify.slugify(heading_text, seen_slugs)
 end
 
@@ -655,7 +840,8 @@ local function validate_only_codeblock(code_block)
   return nil
 end
 
--- build_block_projections(doc) -> { { kind, attrs, location, body_text }, ... }
+-- build_block_projections(doc)
+--   -> { { kind, attrs, location, body_text, tokens }, ... }
 --
 -- Builds the document's ordered block projection list
 -- (CONTEXT.md#term-block-projection): a frozen snapshot of every recognized
@@ -673,7 +859,60 @@ end
 -- stated invariant, ADR-0008). Never a live reference into the Pandoc AST:
 -- `attrs` is copied into a plain table, `body_text` is extracted via
 -- pandoc.utils.stringify (the standard Pandoc idiom for AST-to-plain-text)
--- for a Div, or the CodeBlock's own `.text` field directly.
+-- for a Div, or the CodeBlock's own `.text` field directly, and `tokens`
+-- holds flat resolved-token values (CONTEXT.md#term-resolved-token).
+--
+-- --- How a token is associated with the block it was found WITHIN ---
+--
+-- `tokens` is "the resolved tokens found within it"
+-- (CONTEXT.md#term-block-projection), gathered from BOTH recognition
+-- surfaces (design.md §06 Interface) into ONE ordered list:
+--
+--   1. the block's OWN opted-in ATTRS — re-derived here via the same
+--      validate_attrs the validate walk already ran, whose second return is
+--      exactly this block's resolved attr tokens;
+--   2. every `<vocabulary>:<member>` inline CODE SPAN within the block's
+--      content — collected by a NESTED walk over that block's own content,
+--      which is what makes the association structural rather than
+--      positional.
+--
+-- The nested walk is the crux. resolve_tokens walks the WHOLE document for
+-- Code inlines and cannot say which block each span sat in; this builder
+-- walks blocks and knows nothing of spans. Rather than run both walks and
+-- match their results up by position — which would silently couple two
+-- traversal orders and break the moment either changed — each block simply
+-- resolves its own content, so containment is read off the AST's actual
+-- structure. Recognition cannot drift between the two: both go through the
+-- one resolve_code_token. This walk passes `report = false` because
+-- resolve_tokens already reported every span's errors document-wide;
+-- reporting here too would double them.
+--
+-- Consequences worth naming, both deliberate:
+--   * a reference OUTSIDE any recognized block (a plain paragraph, a
+--     top-level heading) is resolved and validated by resolve_tokens but
+--     lands in no projection's `tokens` — it is within no block;
+--   * a NESTED block's tokens appear on BOTH the inner and the outer
+--     block's projections, because they genuinely are within both — the
+--     same containment `body_text` already reports, since stringify of a
+--     Div's content likewise includes its nested blocks' text.
+--
+-- Order is DOCUMENT order — attr tokens first (the attr precedes the body
+-- it labels), then spans as they appear. richmd never sorts, groups, or
+-- dedupes by any property: it validates membership and never interprets a
+-- property's meaning (ADR-0011). A block with no references gets an empty
+-- list, never nil, so a rule never needs a nil check.
+local function block_content_tokens(block_content, resolved_tokens)
+  pandoc.Div(block_content):walk({
+    Code = function(code)
+      local resolved_token = resolve_code_token(code, false)
+      if resolved_token then
+        table.insert(resolved_tokens, resolved_token)
+      end
+      return nil
+    end,
+  })
+end
+
 local function build_block_projections(doc)
   local projections = {}
 
@@ -687,11 +926,18 @@ local function build_block_projections(doc)
       for key, value in pairs(div.attributes) do
         attrs[key] = value
       end
+      local schema = select(1, registry:lookup(kind_name))
+      local location = "div." .. kind_name
+      -- Surface 2 (the block's own opted-in attrs), then surface 1 (spans
+      -- within the body) — see this function's comment for the ordering.
+      local _, tokens = validate_attrs_silently(schema, div.attributes, kind_name, location)
+      block_content_tokens(div.content, tokens)
       table.insert(projections, {
         kind = kind_name,
         attrs = attrs,
-        location = "div." .. kind_name,
+        location = location,
         body_text = pandoc.utils.stringify(div.content),
+        tokens = tokens,
       })
       return nil
     end,
@@ -704,17 +950,146 @@ local function build_block_projections(doc)
       for key, value in pairs(code_block.attributes) do
         attrs[key] = value
       end
+      local schema = select(1, registry:lookup(kind_name))
+      local location = "codeblock." .. kind_name
+      -- A CodeBlock's body is another grammar's source text and is NEVER
+      -- scanned for references (design.md §06 Failure behavior), so its
+      -- opted-in attrs are its only surface.
+      local _, tokens = validate_attrs_silently(schema, code_block.attributes, kind_name, location)
       table.insert(projections, {
         kind = kind_name,
         attrs = attrs,
-        location = "codeblock." .. kind_name,
+        location = location,
         body_text = code_block.text or "",
+        tokens = tokens,
       })
       return nil
     end,
   })
 
   return projections
+end
+
+-- resolve_code_token(code, report) -> resolved_token | nil
+--
+-- Resolves ONE `Code` inline span against the declared vocabularies — the
+-- single place the first recognition surface's rules live (design.md §06
+-- Interface, ADR-0011). Factored out of resolve_tokens so the projection
+-- builder can re-derive a block's OWN tokens with byte-identical
+-- recognition, rather than duplicating the rules or matching the two walks'
+-- results up by position (see build_block_projections).
+--
+-- `report` selects whether an undeclared member records a validation error.
+-- resolve_tokens passes true — it is the pass that OWNS the document-wide
+-- error reporting (design.md §06 Responsibility). The projection builder
+-- passes false: every span it re-resolves was already resolved and already
+-- reported by that pass, and reporting again would double every error.
+-- Resolution itself is pure and deterministic, so the two agree by
+-- construction.
+function resolve_code_token(code, report)
+  -- Split on the FIRST colon only: everything before it is the candidate
+  -- vocabulary name, everything after is the member key verbatim.
+  local vocabulary_name, member_key = code.text:match("^([^:]*):(.*)$")
+  if not vocabulary_name then
+    return nil
+  end
+
+  local vocabulary = token_vocabularies[vocabulary_name]
+  if not vocabulary then
+    return nil
+  end
+
+  -- The reference's location, following the same "<node-type>.<name>"
+  -- convention every other validate-phase location string already uses
+  -- (validate_block's "div." .. kind_name, validate_only_codeblock's
+  -- "codeblock." .. kind_name).
+  local location = "code." .. vocabulary_name
+
+  local properties = vocabulary.members[member_key]
+  if properties == nil then
+    if report then
+      -- Fails closed, naming BOTH the vocabulary and the unknown member
+      -- (design.md §06 Failure behavior). Never short-circuits the walk:
+      -- every later reference is still resolved, so two unknown members
+      -- produce two collected errors (§00 all-errors-collected).
+      add_error(
+        "token:" .. vocabulary_name,
+        location,
+        "unknown member '" .. member_key .. "' in token vocabulary '" .. vocabulary_name .. "'"
+      )
+    end
+    return nil
+  end
+
+  return {
+    vocabulary = vocabulary_name,
+    member = member_key,
+    properties = properties,
+    location = location,
+  }
+end
+
+-- resolve_tokens(doc) -> { { vocabulary, member, properties, location }, ... }
+--
+-- The token resolution pass (design.md §06, ADR-0011,
+-- CONTEXT.md#term-token-resolution-pass): walks the document ONCE for token
+-- references and resolves each against its vocabulary's closed member set,
+-- recording a validation error for any member not in the set.
+--
+-- A document-wide check (CONTEXT.md#term-document-wide-check): called only
+-- after the per-block/link/grammar validate walk has already completed (so
+-- an opted-in attr's block already passed its own schema) and before
+-- run_rules, which will consume its output (design.md §06 Interface).
+--
+-- Recognition is STRUCTURAL and singular. A `Code` INLINE span whose text
+-- matches `<vocabulary>:<member>` for a DECLARED vocabulary is a reference
+-- wherever it appears — headings included, since a heading's code span is an
+-- ordinary code span (ADR-0011: "What richmd recognizes"). Three deliberate
+-- non-recognitions, each ordinary prose rather than an error:
+--   * a span whose prefix names no DECLARED vocabulary (`foo:bar`) — richmd
+--     recognizes references only for vocabularies a consumer actually
+--     declared;
+--   * a span with no colon at all;
+--   * anything inside a fenced CodeBlock — a `Code` inline and a `CodeBlock`
+--     are different Pandoc node types, and this walk only ever registers the
+--     former, so a CodeBlock's text is never scanned. That text is another
+--     grammar's source, holding the same line the directive lift already
+--     holds (design.md §06, ADR-0011).
+--
+-- The `<vocabulary>:<member>` shape is richmd's OWN fixed syntax, identical
+-- for every consumer and deliberately not a knob. It splits on the FIRST
+-- colon only, so a member key may itself contain colons (`lens:a:b` is the
+-- member `a:b`). A reference is SINGULAR: richmd never splits it on any
+-- further delimiter, so `lens:state+composition` is ONE key lookup of the
+-- member `state+composition`, failing closed unless that exact key is
+-- declared. Multiplicity is repetition — two members cited means two spans
+-- (ADR-0011; there is no combinator, by decision).
+--
+-- Returns the resolved tokens (never a live reference into the Pandoc AST —
+-- a flat value, CONTEXT.md#term-resolved-token). This pass owns REPORTING
+-- for the inline surface, document-wide: a reference outside any recognized
+-- block (a plain paragraph, a top-level heading) is validated here and
+-- nowhere else, since it belongs to no block projection. The projection
+-- builder re-derives each block's own tokens for §05's `tokens` field
+-- (see build_block_projections).
+local function resolve_tokens(doc)
+  local resolved_tokens = {}
+
+  if next(token_vocabularies) == nil then
+    return resolved_tokens
+  end
+
+  doc:walk({
+    Code = function(code)
+      local resolved_token = resolve_code_token(code, true)
+      if resolved_token then
+        table.insert(resolved_tokens, resolved_token)
+      end
+      return nil
+    end,
+  })
+
+  return resolved_tokens
 end
 
 -- run_rules(doc)
@@ -1139,6 +1514,51 @@ local function render_only_codeblock(code_block)
   return render_fn(code_block, resolved_attrs)
 end
 
+-- render_only_code(code) -> pandoc_ast_node
+--
+-- Renders a recognized token reference as a token HOOK
+-- (CONTEXT.md#term-token-hook, ADR-0012) — the same generic
+-- "recognize, then hand it its rendering" shape as render_only_div and
+-- render_only_codeblock above, with resolve_code_token playing the
+-- registry:lookup role: an unrecognized span is prose and is left completely
+-- untouched (`return nil`), exactly as a non-richmd Div is.
+--
+--   `lens:state` -> <code class="richmd-token"
+--                         data-vocabulary="lens" data-member="state">state</code>
+--
+-- The vocabulary prefix leaves the visible text because it is ADDRESSING, not
+-- something the reader is reading; the member stays, because that is what the
+-- reference says. Pandoc's HTML writer emits the `data-` prefixes itself from
+-- the Attr's attributes list.
+--
+-- The hook carries the vocabulary and member ONLY — never the member's
+-- `properties`, which are the consumer's, carried and never interpreted
+-- (ADR-0011). Emitting a `color` or `label` here would put visual identity in
+-- a consumer's JSON where no `--richmd-*` variable could override it,
+-- contradicting principle P3 (ADR-0012, "The hook carries no properties").
+-- richmd emits the structure and says WHICH member this is; the consumer's own
+-- stylesheet keys on [data-vocabulary="lens"][data-member="state"] and decides
+-- what that looks like — which is why theme/default.css styles .richmd-token
+-- not at all.
+--
+-- Only reachable once #errors == 0, so every span this resolves already
+-- validated; `report = false` because resolve_tokens (validate phase) already
+-- owns and has already done the reporting.
+local function render_only_code(code)
+  local resolved_token = resolve_code_token(code, false)
+  if not resolved_token then
+    return nil -- not a token reference; ordinary prose, left untouched
+  end
+
+  return pandoc.Code(
+    resolved_token.member,
+    pandoc.Attr("", { "richmd-token" }, {
+      { "vocabulary", resolved_token.vocabulary },
+      { "member", resolved_token.member },
+    })
+  )
+end
+
 -- Table threaded through every Header node processed in this one filter
 -- run (§00 invariant: slugs are a pure, documented function) — tracks
 -- slugs already assigned so the 2nd/3rd/... occurrence of the same heading
@@ -1244,6 +1664,18 @@ function Pandoc(doc)
     CodeBlock = validate_only_codeblock,
   })
 
+  -- Token resolution (design.md §06, ADR-0011): a document-wide check that
+  -- runs AFTER every per-block schema check above (so an opted-in attr's
+  -- block already passed its own schema) and BEFORE the cross-block rules
+  -- below, which consume its resolved tokens
+  -- (CONTEXT.md#term-token-resolution-pass). Contributes to the SAME
+  -- `errors` table via the SAME add_error closure. This pass owns REPORTING;
+  -- its return value is unused here because a projection's `tokens` field is
+  -- re-derived per block by build_block_projections, which reads containment
+  -- off each block's own content rather than matching this document-wide
+  -- walk's results up by position.
+  resolve_tokens(doc)
+
   -- Cross-block rules (design.md §05, ADR-0008): a document-wide check that
   -- runs AFTER every per-block, link, and grammar check above has already
   -- collected its errors (CONTEXT.md#term-document-wide-check), regardless
@@ -1273,11 +1705,27 @@ function Pandoc(doc)
   end
 
   -- --- Render phase (only reachable because #errors == 0 above) ---
+  --
+  -- Heading ids are assigned in their OWN pass, before the main render walk
+  -- below, because that walk is bottom-up: its Code handler rewrites a
+  -- recognized `lens:invariants` span to the bare member text `invariants`
+  -- BEFORE the enclosing Header is visited, so a heading_anchor_id called
+  -- from inside that walk would slugify the rewritten span as prose (yielding
+  -- `invariants-invariants`) — it can no longer tell addressing from prose,
+  -- because the thing it recognizes by is exactly what the hook consumed.
+  -- Assigning ids first means heading_anchor_id always sees the ORIGINAL
+  -- markup — the identical AST the validate phase's independent re-parse of
+  -- this same document sees (target_anchor_ids) — which is what keeps the two
+  -- phases in exact agreement (§00 invariant: a `#fragment` link "checks the
+  -- identical id a target heading actually receives"). Order, not
+  -- coincidence, is what holds that invariant here.
+  doc = doc:walk({ Header = render_only_header })
+
   doc = doc:walk({
     Div = render_only_div,
-    Header = render_only_header,
     Link = render_only_link,
     CodeBlock = render_only_codeblock,
+    Code = render_only_code,
   })
 
   -- Inject the theme stylesheet into the document head.

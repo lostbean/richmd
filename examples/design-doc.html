@@ -1355,6 +1355,24 @@
           safely once the client reconnects, without a central lock or a rewrite
           of the sync protocol.
         </p>
+        <p>
+          Sections below are tagged with the lens they serve —
+          <code class="richmd-token" data-vocabulary="lens" data-member="state"
+            >state</code
+          >,
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="robustness"
+            >robustness</code
+          >, and friends. Those are token references: this document declares its
+          own <code>lens</code> vocabulary in
+          <code>examples/.richmd/tokens/lens.json</code>, and richmd checks
+          every citation against that closed set, so a misspelled lens fails the
+          document instead of rendering as ordinary prose. richmd ships no
+          vocabulary of its own — the set, and the properties on each member,
+          are this document’s.
+        </p>
         <div class="richmd-toc">
           <div class="richmd-toc-title">Contents</div>
           <ul class="richmd-toc-list">
@@ -1365,10 +1383,20 @@
             </li>
             <li class="richmd-toc-sub"><a href="#goals">Goals</a></li>
             <li class="richmd-toc-sub"><a href="#non-goals">Non-goals</a></li>
-            <li class="richmd-toc-sub"><a href="#invariants">Invariants</a></li>
-            <li class="richmd-toc-sub"><a href="#principles">Principles</a></li>
             <li class="richmd-toc-sub">
-              <a href="#component-breakdown">Component breakdown</a>
+              <a href="#invariants-lensinvariants-lensrobustness"
+                >Invariants lens:invariants lens:robustness</a
+              >
+            </li>
+            <li class="richmd-toc-sub">
+              <a href="#principles-lenscomposition"
+                >Principles lens:composition</a
+              >
+            </li>
+            <li class="richmd-toc-sub">
+              <a href="#component-breakdown-lensmodeling"
+                >Component breakdown lens:modeling</a
+              >
             </li>
             <li class="richmd-toc-sub">
               <a href="#sync-engine">Sync engine</a>
@@ -1440,30 +1468,61 @@
             </p>
           </div>
         </div>
-        <h2 id="invariants">Invariants</h2>
+        <h2 id="invariants">
+          Invariants
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="invariants"
+            >invariants</code
+          >
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="robustness"
+            >robustness</code
+          >
+        </h2>
+        <p>
+          Two lenses, two references — a reference is singular, so citing two
+          lenses means writing two spans. richmd never splits one reference into
+          parts.
+        </p>
         <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>No silent drops</strong>
-          </div>
           <p class="richmd-statement-body">
+            <strong>No silent drops</strong>
+            <code
+              class="richmd-token"
+              data-vocabulary="lens"
+              data-member="robustness"
+              >robustness</code
+            >
             A committed edit is never discarded without leaving a recoverable
             history entry — see conflict resolver.
           </p>
         </div>
         <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Monotonic clocks</strong>
-          </div>
           <p class="richmd-statement-body">
+            <strong>Monotonic clocks</strong>
+            <code
+              class="richmd-token"
+              data-vocabulary="lens"
+              data-member="state"
+              >state</code
+            >
             A client’s Lamport clock only moves forward; any regression is
             treated as corruption, not a valid state.
           </p>
         </div>
         <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Idempotent replay</strong>
-          </div>
           <p class="richmd-statement-body">
+            <strong>Idempotent replay</strong>
+            <code
+              class="richmd-token"
+              data-vocabulary="lens"
+              data-member="state"
+              >state</code
+            >
             Re-applying the same op twice is a no-op — required for
             at-least-once delivery over flaky connections.
           </p>
@@ -1478,7 +1537,15 @@
             </p>
           </div>
         </div>
-        <h2 id="principles">Principles</h2>
+        <h2 id="principles">
+          Principles
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="composition"
+            >composition</code
+          >
+        </h2>
         <div class="richmd-statement">
           <div class="richmd-statement-label">
             <strong>Boring resolution</strong>
@@ -1489,10 +1556,14 @@
           </p>
         </div>
         <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Field, not document</strong>
-          </div>
           <p class="richmd-statement-body">
+            <strong>Field, not document</strong>
+            <code
+              class="richmd-token"
+              data-vocabulary="lens"
+              data-member="composition"
+              >composition</code
+            >
             Resolve conflicts at the smallest unit that has independent meaning
             to a user — a field, not the whole note.
           </p>
@@ -1506,7 +1577,15 @@
             to something, never an error state a user has to unblock.
           </p>
         </div>
-        <h2 id="component-breakdown">Component breakdown</h2>
+        <h2 id="component-breakdown">
+          Component breakdown
+          <code
+            class="richmd-token"
+            data-vocabulary="lens"
+            data-member="modeling"
+            >modeling</code
+          >
+        </h2>
         <p>Three cooperating pieces, each independently testable:</p>
         <div class="richmd-card-grid" data-cols="3">
           <div class="richmd-card">
