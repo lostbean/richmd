@@ -165,7 +165,11 @@ A heading's [anchor id](CONTEXT.md#term-anchor-id) is its own explicit
 Pandoc id (`{#id}`) when authored, else its [slug](CONTEXT.md#term-slug),
 computed by one documented, tested function of its text (GitHub-flavored
 rules). `#fragment` link resolution checks the identical id a target
-heading actually receives, so headings and links can never disagree.
+heading actually receives, so headings and links can never disagree. A
+heading's text for this purpose is its prose: a
+[token reference](CONTEXT.md#term-token-reference) richmd recognizes within
+it contributes nothing, so tagging a heading never renames its anchor. See
+[ADR-0012](../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012).
 :::
 
 :::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
@@ -209,6 +213,18 @@ A consumer adds a [block kind](CONTEXT.md#term-block-kind) through the
 [extension directory](CONTEXT.md#term-extension-directory)'s schema + Lua
 pair. Modifying richmd's own core source is never the extension path. See
 [ADR-0003](../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003).
+:::
+
+## Pending updates
+
+:::pending {kind=build since=2026-07-16}
+**Token references as addressing (§06, §08) are designed, not yet built.** A
+recognized [token reference](CONTEXT.md#term-token-reference) must contribute
+nothing to a heading's [slug](CONTEXT.md#term-slug), and must render as its
+[token hook](CONTEXT.md#term-token-hook) rather than as inert prose. Today it
+does neither: tagging a heading renames its anchor and breaks links to it. See
+[ADR-0012](../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012)
+and [issue #19](https://github.com/lostbean/richmd/issues/19).
 :::
 
 ## 01 System at a glance
@@ -597,11 +613,27 @@ owns the mechanism; the set is always the consumer's. See
   [block kind registry](#04-block-kind-registry), whose schemas opt attrs
   into a vocabulary; [cross-block rules](#05-cross-block-rules), which read
   resolved tokens off the [block projection](CONTEXT.md#term-block-projection)'s
-  `tokens` field.
+  `tokens` field; the
+  [link resolver and slugifier](#08-link-resolver-and-slugifier), whose
+  heading [slug](CONTEXT.md#term-slug) skips a recognized reference, and whose
+  render pass emits the [token hook](CONTEXT.md#term-token-hook).
+- **Renders as a hook, never as prose**: in the
+  [render phase](CONTEXT.md#term-render-phase), a recognized inline reference
+  becomes its member's text carrying the
+  [token hook](CONTEXT.md#term-token-hook) — the vocabulary prefix is
+  addressing, so it leaves the reader's text. richmd emits the hook and stops
+  there: a member's properties never reach the page, because painting them
+  would put visual identity outside the [theme](CONTEXT.md#term-theme)
+  (§00 P3) and would mean reading a property's meaning
+  ([ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011)).
+  A consumer's stylesheet keys on the hook and owns the look. See
+  [ADR-0012](../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012).
 - **Invariants held**: a token reference resolves to a declared member (§00,
-  the invariant this component introduces); all-errors-collected (§00) — an
-  unknown member never short-circuits the walk; document-wide checks run
-  after what they depend on (§00).
+  the invariant this component introduces); a heading's anchor id is
+  deterministic (§00) — a recognized reference contributes nothing to a
+  heading's slug, so tagging never renames an anchor; all-errors-collected
+  (§00) — an unknown member never short-circuits the walk; document-wide
+  checks run after what they depend on (§00).
 - **Failure behavior**: a malformed vocabulary file (bad JSON, a missing or
   non-map `members` field) is a load-time error naming the offending file —
   fatal at filter startup, identical to §04's and §05's directory contracts,
@@ -668,14 +700,21 @@ filesystem/AST walk the validate phase already did.
   no special marker syntax required to make rewriting itself work; assign
   every heading its [anchor id](CONTEXT.md#term-anchor-id) — its own
   explicit Pandoc id when authored, else its [slug](CONTEXT.md#term-slug)
-  via the documented pure function; when `--tree` (§02) is present, classify
+  via the documented pure function, reading the heading's prose only, so a
+  [token reference](CONTEXT.md#term-token-reference) §06 recognizes within it
+  never reaches the anchor; render each recognized inline reference as its
+  [token hook](CONTEXT.md#term-token-hook); when `--tree` (§02) is present, classify
   each rewritten link as [in-tree](CONTEXT.md#term-in-tree-link) by
   comparing its resolved `.md` path (fragment stripped) against the flag's
   path set.
-- **Interface**: a link-rewrite pass and a heading-id pass, both operating
+- **Interface**: a link-rewrite pass, a heading-id pass, and a token-hook
+  pass over inline `Code` spans, all operating
   on the Pandoc AST during the render phase; the identical id logic (explicit
   id else slugify) is also exported standalone so `#fragment` link
-  resolution during validate can call it. Fragment resolution additionally
+  resolution during validate can call it — and it asks §06 which of a
+  heading's spans are recognized references, so the id a link resolves against
+  during validate and the id the heading receives during render are computed
+  from the identical prose. Fragment resolution additionally
   indexes every raw HTML `id="..."` attribute found while walking the target
   document's AST, so an `<a id="...">` (or any other HTML element's `id`)
   resolves exactly like a heading anchor id. The link-rewrite pass

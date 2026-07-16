@@ -1025,6 +1025,8 @@ footer.colophon {
 <dd><span class="enf mechanism">mechanism</span> <span>strong → weak</span></dd>
 <dt>Chips</dt>
 <dd><span class="script-chip">deciding-script</span> <span class="entry-id">P1</span> <span>script that decides · citable id</span></dd>
+<dt>Pending</dt>
+<dd><span class="badge build">build</span> <span class="since">since YYYY-MM-DD</span></dd>
 </dl>
 </details>
 
@@ -1194,7 +1196,11 @@ keys its vocabulary declares. See
 Pandoc id (<code>{#id}</code>) when authored, else its <a href="CONTEXT.md#term-slug">slug</a>,
 computed by one documented, tested function of its text (GitHub-flavored
 rules). <code>#fragment</code> link resolution checks the identical id a target
-heading actually receives, so headings and links can never disagree.</p>
+heading actually receives, so headings and links can never disagree. A
+heading's text for this purpose is its prose: a
+<a href="CONTEXT.md#term-token-reference">token reference</a> richmd recognizes within
+it contributes nothing, so tagging a heading never renames its anchor. See
+<a href="../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012">ADR-0012</a>.</p>
 </div>
 </div>
 <div class="entry invariant">
@@ -1242,6 +1248,20 @@ never in generator logic.</p>
 pair. Modifying richmd's own core source is never the extension path. See
 <a href="../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003">ADR-0003</a>.</p>
 </div>
+</div>
+</div>
+</div>
+<h2 id="pending-updates">Pending updates</h2>
+<div class="pending">
+<div class="entry"><div class="entry-head"><span class="badges"><span class="badge build">build</span> <span class="since">since 2026-07-16</span></span></div>
+<div class="body">
+<p><strong>Token references as addressing (§06, §08) are designed, not yet built.</strong> A
+recognized <a href="CONTEXT.md#term-token-reference">token reference</a> must contribute
+nothing to a heading's <a href="CONTEXT.md#term-slug">slug</a>, and must render as its
+<a href="CONTEXT.md#term-token-hook">token hook</a> rather than as inert prose. Today it
+does neither: tagging a heading renames its anchor and breaks links to it. See
+<a href="../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012">ADR-0012</a>
+and <a href="https://github.com/lostbean/richmd/issues/19">issue #19</a>.</p>
 </div>
 </div>
 </div>
@@ -1640,11 +1660,27 @@ within the <a href="CONTEXT.md#term-validate-phase">validate phase</a>; the
 <a href="#04-block-kind-registry">block kind registry</a>, whose schemas opt attrs
 into a vocabulary; <a href="#05-cross-block-rules">cross-block rules</a>, which read
 resolved tokens off the <a href="CONTEXT.md#term-block-projection">block projection</a>'s
-<code>tokens</code> field.</li>
+<code>tokens</code> field; the
+<a href="#08-link-resolver-and-slugifier">link resolver and slugifier</a>, whose
+heading <a href="CONTEXT.md#term-slug">slug</a> skips a recognized reference, and whose
+render pass emits the <a href="CONTEXT.md#term-token-hook">token hook</a>.</li>
+<li><strong>Renders as a hook, never as prose</strong>: in the
+<a href="CONTEXT.md#term-render-phase">render phase</a>, a recognized inline reference
+becomes its member's text carrying the
+<a href="CONTEXT.md#term-token-hook">token hook</a> — the vocabulary prefix is
+addressing, so it leaves the reader's text. richmd emits the hook and stops
+there: a member's properties never reach the page, because painting them
+would put visual identity outside the <a href="CONTEXT.md#term-theme">theme</a>
+(§00 P3) and would mean reading a property's meaning
+(<a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>).
+A consumer's stylesheet keys on the hook and owns the look. See
+<a href="../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012">ADR-0012</a>.</li>
 <li><strong>Invariants held</strong>: a token reference resolves to a declared member (§00,
-the invariant this component introduces); all-errors-collected (§00) — an
-unknown member never short-circuits the walk; document-wide checks run
-after what they depend on (§00).</li>
+the invariant this component introduces); a heading's anchor id is
+deterministic (§00) — a recognized reference contributes nothing to a
+heading's slug, so tagging never renames an anchor; all-errors-collected
+(§00) — an unknown member never short-circuits the walk; document-wide
+checks run after what they depend on (§00).</li>
 <li><strong>Failure behavior</strong>: a malformed vocabulary file (bad JSON, a missing or
 non-map <code>members</code> field) is a load-time error naming the offending file —
 fatal at filter startup, identical to §04's and §05's directory contracts,
@@ -1713,14 +1749,21 @@ without a <code>#fragment</code>) to its sibling <code>.html</code> target, auto
 no special marker syntax required to make rewriting itself work; assign
 every heading its <a href="CONTEXT.md#term-anchor-id">anchor id</a> — its own
 explicit Pandoc id when authored, else its <a href="CONTEXT.md#term-slug">slug</a>
-via the documented pure function; when <code>--tree</code> (§02) is present, classify
+via the documented pure function, reading the heading's prose only, so a
+<a href="CONTEXT.md#term-token-reference">token reference</a> §06 recognizes within it
+never reaches the anchor; render each recognized inline reference as its
+<a href="CONTEXT.md#term-token-hook">token hook</a>; when <code>--tree</code> (§02) is present, classify
 each rewritten link as <a href="CONTEXT.md#term-in-tree-link">in-tree</a> by
 comparing its resolved <code>.md</code> path (fragment stripped) against the flag's
 path set.</li>
-<li><strong>Interface</strong>: a link-rewrite pass and a heading-id pass, both operating
+<li><strong>Interface</strong>: a link-rewrite pass, a heading-id pass, and a token-hook
+pass over inline <code>Code</code> spans, all operating
 on the Pandoc AST during the render phase; the identical id logic (explicit
 id else slugify) is also exported standalone so <code>#fragment</code> link
-resolution during validate can call it. Fragment resolution additionally
+resolution during validate can call it — and it asks §06 which of a
+heading's spans are recognized references, so the id a link resolves against
+during validate and the id the heading receives during render are computed
+from the identical prose. Fragment resolution additionally
 indexes every raw HTML <code>id=&quot;...&quot;</code> attribute found while walking the target
 document's AST, so an <code>&lt;a id=&quot;...&quot;&gt;</code> (or any other HTML element's <code>id</code>)
 resolves exactly like a heading anchor id. The link-rewrite pass

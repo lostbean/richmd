@@ -160,6 +160,17 @@ reference into the Pandoc AST — the same consumer-facing contract a
 [block projection](#term-block-projection) already holds to
 ([ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008)).
 
+### Token hook {#term-token-hook}
+
+What a recognized inline [token reference](#term-token-reference) renders as:
+a `richmd-token` class plus its vocabulary and member as data attributes
+(`<code class="richmd-token" data-vocabulary="lens" data-member="state">state</code>`).
+Structure only — it names which member this is and carries no
+[properties](#term-token-vocabulary), so a consumer's stylesheet decides what
+a member looks like and a [theme](#term-theme) can still override it (P3). The
+[block](#term-block)-attr surface needs no hook: a block's own renderer
+already receives the member as its attr value.
+
 ### Token resolution pass {#term-token-resolution-pass}
 
 The [validate-phase](#term-validate-phase) pass that walks a
@@ -287,7 +298,12 @@ The HTML `id` richmd derives from a heading's text by a single documented,
 pure function (GitHub-flavored rules: lowercase, punctuation stripped except
 hyphens, spaces to hyphens, duplicate headings suffixed `-1`/`-2`...). A
 heading's actual [anchor id](#term-anchor-id) is this slug only when the
-heading carries no explicit id of its own.
+heading carries no explicit id of its own. The text it reads is the heading's
+prose: a [token reference](#term-token-reference) richmd recognizes is
+addressing, not prose, and contributes nothing
+([ADR-0012](../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012)) —
+an ordinary code span, and a span naming no declared
+[vocabulary](#term-token-vocabulary), are prose and contribute normally.
 
 ### Anchor id {#term-anchor-id}
 
