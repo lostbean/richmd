@@ -1,0 +1,14 @@
+{
+  "members": {
+    "modeling": { "order": 0, "label": "Modeling", "rigor": "structural" },
+    "depth": { "order": 1, "label": "Depth", "rigor": "structural" },
+    "composition": {
+      "order": 2,
+      "label": "Composition",
+      "rigor": "structural"
+    },
+    "state": { "order": 3, "label": "State", "rigor": "behavioral" },
+    "invariants": { "order": 4, "label": "Invariants", "rigor": "behavioral" },
+    "robustness": { "order": 5, "label": "Robustness", "rigor": "behavioral" }
+  }
+}

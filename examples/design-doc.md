@@ -8,6 +8,14 @@ A design proposal for letting notebook edits made offline reconcile safely
 once the client reconnects, without a central lock or a rewrite of the sync
 protocol.
 
+Sections below are tagged with the lens they serve — `lens:state`,
+`lens:robustness`, and friends. Those are token references: this document
+declares its own `lens` vocabulary in `examples/.richmd/tokens/lens.json`,
+and richmd checks every citation against that closed set, so a misspelled
+lens fails the document instead of rendering as ordinary prose. richmd ships
+no vocabulary of its own — the set, and the properties on each member, are
+this document's.
+
 ::: {.toc}
 :::
 
@@ -55,24 +63,27 @@ Real-time collaborative cursors are out of scope for this iteration — see
 non-goals above. Revisit once offline sync has shipped and stabilized.
 :::
 
-## Invariants
+## Invariants `lens:invariants` `lens:robustness`
+
+Two lenses, two references — a reference is singular, so citing two lenses
+means writing two spans. richmd never splits one reference into parts.
 
 ::: {.labeled-block type="invariant"}
-**No silent drops**
+**No silent drops** `lens:robustness`
 
 A committed edit is never discarded without leaving a recoverable history
 entry — see conflict resolver.
 :::
 
 ::: {.labeled-block type="invariant"}
-**Monotonic clocks**
+**Monotonic clocks** `lens:state`
 
 A client's Lamport clock only moves forward; any regression is treated as
 corruption, not a valid state.
 :::
 
 ::: {.labeled-block type="invariant"}
-**Idempotent replay**
+**Idempotent replay** `lens:state`
 
 Re-applying the same op twice is a no-op — required for at-least-once
 delivery over flaky connections.
@@ -83,7 +94,7 @@ Any resolver change that can silently drop a committed edit is a launch
 blocker, full stop — see [Conflict resolver](#conflict-resolver).
 :::
 
-## Principles
+## Principles `lens:composition`
 
 ::: {.labeled-block type="principle"}
 **Boring resolution**
@@ -93,7 +104,7 @@ hard to reason about in an incident.
 :::
 
 ::: {.labeled-block type="principle"}
-**Field, not document**
+**Field, not document** `lens:composition`
 
 Resolve conflicts at the smallest unit that has independent meaning to a
 user — a field, not the whole note.
@@ -106,7 +117,7 @@ Corruption is rejected outright; ordinary conflicts always resolve to
 something, never an error state a user has to unblock.
 :::
 
-## Component breakdown
+## Component breakdown `lens:modeling`
 
 Three cooperating pieces, each independently testable:
 
