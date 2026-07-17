@@ -185,8 +185,9 @@ which consume its [resolved tokens](#term-resolved-token).
 
 A frozen snapshot of a [block](#term-block) taken once, when the
 [block projection](#term-block-projection) list is built (§05) — its kind,
-attrs, location, body text, and the [resolved tokens](#term-resolved-token)
-found within it, copied out at that moment, never a live
+attrs, location, body text, the [resolved tokens](#term-resolved-token) and
+the [contained links](#term-contained-link) found within it, copied out at
+that moment, never a live
 reference into the Pandoc AST. A later phase mutating the AST (the
 [render phase](#term-render-phase) rewrites link targets and assigns slugs)
 never changes a projection already handed to a
@@ -195,7 +196,28 @@ projection is built and consumed entirely within the
 [validate phase](#term-validate-phase), before the render phase exists. Never
 the raw Pandoc AST node a block-kind renderer works with — decouples rule
 authoring from richmd's internal AST representation. See
-[ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008).
+[ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008)
+and [ADR-0013](../adr/0013-contained-links-on-the-block-projection.md#adr-0013).
+
+### Contained link {#term-contained-link}
+
+One link found within a [block](#term-block), reported on its
+[block projection](#term-block-projection) as the link's visible text and its
+**authored** target — the target exactly as written in the source, fragment
+included, never the sibling `.html` the
+[render phase](#term-render-phase) rewrites a
+[cross-document link](#term-cross-document-link) to. The authored target is
+what a [cross-block rule](#term-cross-block-rule) asserts against, because a
+rule author writes `.md` links and reasons in `.md` terms; handing them the
+render phase's rewrite would leak an internal transformation into consumer
+code. Covers a link only: an image's target is a source path, not a
+reference a rule asserts on. A flat value, never a live reference into the
+Pandoc AST — the same consumer-facing contract a
+[resolved token](#term-resolved-token) already holds to.
+
+_Avoid_: "cross-reference" — it presumes the link points somewhere
+meaningful, whereas a contained link is every link in the block, resolved or
+dangling alike.
 
 ### Cross-block rule {#term-cross-block-rule}
 

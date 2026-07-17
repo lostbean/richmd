@@ -512,7 +512,12 @@ add_error) ... end }`, or a bare `function` of the same signature — the
   that every [resolved token](CONTEXT.md#term-resolved-token) on its `tokens`
   field already names a declared member (§00 invariant) — so a rule reads a
   token's properties directly, never re-checking membership nor scanning
-  `body_text` for a reference. A
+  `body_text` for a reference. Each
+  [contained link](CONTEXT.md#term-contained-link) on the `links` field
+  likewise carries its authored target, so a rule asserting a required
+  cross-link matches that target — never `body_text`, which cannot tell a
+  real link from its visible text alone. Both fields are always lists, empty
+  when the block carries none, so a rule needs no nil check. A
   violation's reported [error source](CONTEXT.md#term-error-source) is the
   rule's own filename, `rule:`-prefixed (e.g. `rule:foundation-ordering`) so
   it can never collide with a same-named block kind; its `<location>` names
@@ -543,11 +548,13 @@ add_error) ... end }`, or a bare `function` of the same signature — the
 :::info {title="Still not a semantic validator"}
 A [cross-block rule](CONTEXT.md#term-cross-block-rule) sees only
 [block projections](CONTEXT.md#term-block-projection) — kind, attrs,
-location, body text. It can enforce document structure (ordering,
-cardinality, required links) but has no access to a mermaid diagram's parsed
-graph or a vega-lite spec's field bindings — the
-["not a semantic validator for diagrams/charts" no-goal](#00-foundation)
-still holds.
+location, body text, resolved tokens, contained links. It can enforce
+document structure (ordering, cardinality, required links) but has no access
+to a mermaid diagram's parsed graph or a vega-lite spec's field bindings —
+the ["not a semantic validator for diagrams/charts" no-goal](#00-foundation)
+still holds. A [contained link](CONTEXT.md#term-contained-link) does not
+cross that line: richmd reports a link's authored target, and never reads
+what the target means.
 :::
 
 See [ADR-0008](../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008).

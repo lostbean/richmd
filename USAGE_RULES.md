@@ -532,17 +532,18 @@ richmd: [rule:at-most-one-callout] div.callout: at most one callout block is all
 A rule runs once per document, after every per-block, link, grammar, and
 token resolution check has already run — regardless of whether those checks
 found errors — against the document's full **block projection** list: one
-`{ kind, attrs, location, body_text, tokens }` entry per recognized block,
-in document order, frozen at the moment the list is built (never a live
-reference into the Pandoc AST). `kind` is the block's kind name (e.g.
+`{ kind, attrs, location, body_text, tokens, links }` entry per recognized
+block, in document order, frozen at the moment the list is built (never a
+live reference into the Pandoc AST). `kind` is the block's kind name (e.g.
 `"callout"`); `attrs` is a plain table of its resolved attributes;
 `location` is the same `"div.<kind>"` / `"codeblock.<kind>"` string a
 per-block error already uses; `body_text` is the block's content flattened
 to plain text; `tokens` is the list of resolved token vocabulary references
-found within the block (see "Token vocabularies" below — always a list,
-empty when the block has none, so it never needs a nil check). A rule can
-assume every projection it receives already passed its own block kind
-schema.
+found within the block (see "Token vocabularies" below); `links` is the list
+of links found within the block (see "Requiring a link from a rule" below).
+`tokens` and `links` are always lists, empty when the block has none, so
+neither ever needs a nil check. A rule can assume every projection it
+receives already passed its own block kind schema.
 
 The Lua file returns either `{ check = function(block_projections,
 add_error) ... end }` or a bare `check` function directly — same two
@@ -566,6 +567,58 @@ failure (non-zero exit, no HTML) — but every error already collected
 before the crash (from an earlier per-block check, or an earlier rule) is
 still printed, and the crash itself is reported naming the crashing rule
 (not a block location), since the failure is document-wide.
+
+### Requiring a link from a rule
+
+`body_text` flattens a block to visible text, so it cannot tell a real link
+from its text: a block reading `see ADR-0019` and one carrying
+`[ADR-0019](../adr/0019-ownership.md#adr-0019)` have identical `body_text`. A
+rule that needs a **link** — not a mention — reads `links` instead.
+
+Every link found within a block arrives on that block's projection as
+`links`, in document order. Each entry is a flat `{ text, target }`:
+
+```lua
+-- .richmd/rules/entries-cite-a-decision.lua
+-- Every entry must LINK its governing decision record — a link whose
+-- fragment matches `#adr-NNNN`, not merely the visible text `ADR-NNNN`.
+return {
+  check = function(block_projections, add_error)
+    for _, bp in ipairs(block_projections) do
+      if bp.kind == "entry" then
+        local cites = false
+        for _, link in ipairs(bp.links) do
+          if link.target:match("#adr%-%d%d%d%d$") then
+            cites = true
+          end
+        end
+        if not cites then
+          add_error(
+            "rule:entries-cite-a-decision",
+            bp.location,
+            "an entry must link its governing decision record"
+          )
+        end
+      end
+    end
+  end,
+}
+```
+
+Three things worth knowing about what lands in `links`:
+
+- `target` is the target **exactly as authored**, fragment included — always
+  the `.md` you wrote, never the sibling `.html` richmd rewrites a
+  cross-document link to when it renders. You match what you wrote.
+- Only links are collected. An **image** is not a link: its target is a
+  source path the page loads, not a reference to another document.
+- A link inside a **nested** block appears on both the inner and the outer
+  block's `links`, because it is genuinely within both — the same
+  containment `body_text` already reports. A link outside any recognized
+  block appears in no projection.
+
+A `codeblock` kind's body is another grammar's source text and is never
+scanned, so its `links` is always empty.
 
 ## Token vocabularies: your own closed set of terms
 
