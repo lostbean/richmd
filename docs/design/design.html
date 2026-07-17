@@ -1555,7 +1555,12 @@ every projection it receives already passed its own
 that every <a href="CONTEXT.md#term-resolved-token">resolved token</a> on its <code>tokens</code>
 field already names a declared member (§00 invariant) — so a rule reads a
 token's properties directly, never re-checking membership nor scanning
-<code>body_text</code> for a reference. A
+<code>body_text</code> for a reference. Each
+<a href="CONTEXT.md#term-contained-link">contained link</a> on the <code>links</code> field
+likewise carries its authored target, so a rule asserting a required
+cross-link matches that target — never <code>body_text</code>, which cannot tell a
+real link from its visible text alone. Both fields are always lists, empty
+when the block carries none, so a rule needs no nil check. A
 violation's reported <a href="CONTEXT.md#term-error-source">error source</a> is the
 rule's own filename, <code>rule:</code>-prefixed (e.g. <code>rule:foundation-ordering</code>) so
 it can never collide with a same-named block kind; its <code>&lt;location&gt;</code> names
@@ -1588,11 +1593,13 @@ errors gathered before it struck.</li>
 <div class="body">
 <p>A <a href="CONTEXT.md#term-cross-block-rule">cross-block rule</a> sees only
 <a href="CONTEXT.md#term-block-projection">block projections</a> — kind, attrs,
-location, body text. It can enforce document structure (ordering,
-cardinality, required links) but has no access to a mermaid diagram's parsed
-graph or a vega-lite spec's field bindings — the
-<a href="#00-foundation">&quot;not a semantic validator for diagrams/charts&quot; no-goal</a>
-still holds.</p>
+location, body text, resolved tokens, contained links. It can enforce
+document structure (ordering, cardinality, required links) but has no access
+to a mermaid diagram's parsed graph or a vega-lite spec's field bindings —
+the <a href="#00-foundation">&quot;not a semantic validator for diagrams/charts&quot; no-goal</a>
+still holds. A <a href="CONTEXT.md#term-contained-link">contained link</a> does not
+cross that line: richmd reports a link's authored target, and never reads
+what the target means.</p>
 </div>
 </div>
 <p>See <a href="../adr/0008-cross-block-rules-as-block-projection-lua-hook.md#adr-0008">ADR-0008</a>.</p>

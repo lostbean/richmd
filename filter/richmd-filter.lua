@@ -841,7 +841,7 @@ local function validate_only_codeblock(code_block)
 end
 
 -- build_block_projections(doc)
---   -> { { kind, attrs, location, body_text, tokens }, ... }
+--   -> { { kind, attrs, location, body_text, tokens, links }, ... }
 --
 -- Builds the document's ordered block projection list
 -- (CONTEXT.md#term-block-projection): a frozen snapshot of every recognized
@@ -859,8 +859,9 @@ end
 -- stated invariant, ADR-0008). Never a live reference into the Pandoc AST:
 -- `attrs` is copied into a plain table, `body_text` is extracted via
 -- pandoc.utils.stringify (the standard Pandoc idiom for AST-to-plain-text)
--- for a Div, or the CodeBlock's own `.text` field directly, and `tokens`
--- holds flat resolved-token values (CONTEXT.md#term-resolved-token).
+-- for a Div, or the CodeBlock's own `.text` field directly, `tokens`
+-- holds flat resolved-token values (CONTEXT.md#term-resolved-token), and
+-- `links` holds flat contained links (CONTEXT.md#term-contained-link).
 --
 -- --- How a token is associated with the block it was found WITHIN ---
 --
@@ -901,6 +902,44 @@ end
 -- dedupes by any property: it validates membership and never interprets a
 -- property's meaning (ADR-0011). A block with no references gets an empty
 -- list, never nil, so a rule never needs a nil check.
+--
+-- --- How a link is associated with the block it was found WITHIN ---
+--
+-- `links` is "the contained links found within it"
+-- (CONTEXT.md#term-block-projection, ADR-0013), gathered by the SAME nested
+-- walk idiom `tokens` uses above and for the same reason: containment is
+-- read off the AST's actual structure rather than by matching a
+-- document-wide walk's results up by position. Every consequence named
+-- above therefore holds identically here — a link inside a NESTED block
+-- appears on BOTH the inner and the outer block's `links` (it genuinely is
+-- within both, the same containment body_text reports), and a link OUTSIDE
+-- any recognized block lands in no projection at all.
+--
+-- Pandoc `Link` inlines ONLY. An Image is NOT a link: its target is a
+-- source path the page loads, not a reference to another document, and
+-- collecting both would force every rule matching on `target` to first
+-- disambiguate which kind it had (ADR-0013 weighed this and rejected it).
+--
+-- `target` is the target EXACTLY AS AUTHORED, fragment included — never the
+-- sibling `.html` the render phase rewrites a cross-document link to
+-- (rewrite_cross_document_link below). A projection is built and consumed
+-- entirely within the validate phase, before the render phase exists, so the
+-- authored target is simply what is there; and handing a rule the rewritten
+-- one would make richmd's internal rewrite load-bearing for consumer code —
+-- the exact coupling ADR-0008 refused (ADR-0013). `text` is the link's own
+-- content flattened via the same stringify idiom body_text uses.
+local function block_content_links(block_content, links)
+  pandoc.Div(block_content):walk({
+    Link = function(link)
+      table.insert(links, {
+        text = pandoc.utils.stringify(link.content),
+        target = link.target,
+      })
+      return nil
+    end,
+  })
+end
+
 local function block_content_tokens(block_content, resolved_tokens)
   pandoc.Div(block_content):walk({
     Code = function(code)
@@ -932,12 +971,15 @@ local function build_block_projections(doc)
       -- within the body) — see this function's comment for the ordering.
       local _, tokens = validate_attrs_silently(schema, div.attributes, kind_name, location)
       block_content_tokens(div.content, tokens)
+      local links = {}
+      block_content_links(div.content, links)
       table.insert(projections, {
         kind = kind_name,
         attrs = attrs,
         location = location,
         body_text = pandoc.utils.stringify(div.content),
         tokens = tokens,
+        links = links,
       })
       return nil
     end,
@@ -954,7 +996,9 @@ local function build_block_projections(doc)
       local location = "codeblock." .. kind_name
       -- A CodeBlock's body is another grammar's source text and is NEVER
       -- scanned for references (design.md §06 Failure behavior), so its
-      -- opted-in attrs are its only surface.
+      -- opted-in attrs are its only surface. That body holds no Pandoc
+      -- inlines to walk either, so `links` is an always-empty list — still a
+      -- list, never nil, so a rule reads it without a special case.
       local _, tokens = validate_attrs_silently(schema, code_block.attributes, kind_name, location)
       table.insert(projections, {
         kind = kind_name,
@@ -962,6 +1006,7 @@ local function build_block_projections(doc)
         location = location,
         body_text = code_block.text or "",
         tokens = tokens,
+        links = {},
       })
       return nil
     end,

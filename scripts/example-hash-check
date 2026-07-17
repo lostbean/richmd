@@ -41,6 +41,36 @@
 #                    output (wired to `npm run example:update-hash` /
 #                    `npm run example:design-doc:update-hash`; see
 #                    package.json).
+#
+# Where it renders (and why not in examples/): this script renders a COPY of
+# the whole examples/ tree in a throwaway temp directory and hashes the HTML
+# produced THERE, so it never writes to — or otherwise touches — the real,
+# committed examples/<name>.html at all. A check must not mutate the
+# artifact it checks: richmd's `render` subcommand writes its output as a
+# sibling .html next to the source .md, and those examples/*.html files are
+# COMMITTED, TRACKED artifacts, not build debris. An earlier version of this
+# script rendered in place, silently overwriting the tracked file on every
+# run; a subsequent `nix fmt` would then reflow the regenerated file, leaving
+# the working tree dirty with whitespace-only diffs to committed generated
+# files — in direct tension with `nix flake check`, the repo's own
+# formatted-tree gate, and an invitation to either commit the noise or
+# "fix" it by moving a golden hash, which would silently destroy the very
+# render-clean guarantee this hash pinning exists to provide. Rendering
+# elsewhere makes that class of bug structurally impossible: there is
+# nothing under examples/ for this script to write. (Same reasoning, and the
+# same shape, as scripts/theme-swap-check — see its header.) Note that
+# `richmd render --check` cannot serve here: it does its own strict
+# byte-compare against the committed HTML rather than handing back the
+# rendered output, and this script must normalize non-deterministic ids out
+# of those bytes BEFORE hashing (see the determinism note above).
+#
+# The WHOLE examples/ directory is copied, not just the one .md file: an
+# example resolves its custom block kinds from a sibling `.richmd/`
+# extension directory relative to the document's OWN location (ADR-0003),
+# and examples/custom-theme-demo.md carries a cross-document link to
+# data-status-report.md which must resolve at validate time (§00 invariant:
+# cross-document links always resolve). Copying one file alone fails the
+# render.
 set -euo pipefail
 
 usage() {
@@ -68,9 +98,9 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 
-MD_PATH="$REPO_ROOT/examples/$EXAMPLE_NAME.md"
-HTML_PATH="$REPO_ROOT/examples/$EXAMPLE_NAME.html"
-GOLDEN_PATH="$REPO_ROOT/examples/$EXAMPLE_NAME.html.sha256"
+EXAMPLES_DIR="$REPO_ROOT/examples"
+MD_PATH="$EXAMPLES_DIR/$EXAMPLE_NAME.md"
+GOLDEN_PATH="$EXAMPLES_DIR/$EXAMPLE_NAME.html.sha256"
 CLI_PATH="$REPO_ROOT/bin/richmd.js"
 
 if [ ! -f "$MD_PATH" ]; then
@@ -78,16 +108,34 @@ if [ ! -f "$MD_PATH" ]; then
   exit 2
 fi
 
+# Work in a throwaway copy of the whole examples/ tree — never the real one
+# (see this file's header for why, and for why the WHOLE directory).
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/richmd-example-hash-check-XXXXXX")"
+# Best-effort cleanup: TMP_DIR lives under the system temp dir, never the
+# repo, so failing to remove it leaves inert litter, not a lost source file.
+# This trap is tidiness, not correctness — nothing under examples/ is at
+# risk either way, precisely because the render happens elsewhere.
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+cp -R "$EXAMPLES_DIR/." "$TMP_DIR/"
+TMP_MD_PATH="$TMP_DIR/$EXAMPLE_NAME.md"
+TMP_HTML_PATH="$TMP_DIR/$EXAMPLE_NAME.html"
+# The copied tree carries the committed .html files along with everything
+# else; remove this doc's so the render below cannot be mistaken for a stale
+# file already on disk — the hash must always come from output produced by
+# THIS run.
+rm -f "$TMP_HTML_PATH"
+
 # Render fresh — never trust a stale HTML file already on disk (render.js
 # itself writes no output at all on a validation failure, so a nonzero exit
 # here is itself a hard failure, not something to paper over).
-if ! node "$CLI_PATH" render "$MD_PATH"; then
+if ! node "$CLI_PATH" render "$TMP_MD_PATH"; then
   echo "error: rendering $MD_PATH failed (see richmd's own error output above)" >&2
   exit 1
 fi
 
-if [ ! -f "$HTML_PATH" ]; then
-  echo "error: render reported success but $HTML_PATH does not exist" >&2
+if [ ! -f "$TMP_HTML_PATH" ]; then
+  echo "error: render reported success but produced no HTML for $MD_PATH" >&2
   exit 2
 fi
 
@@ -101,7 +149,7 @@ NORMALIZED="$(sed -E \
   -e 's/richmd-mermaid-[0-9]+/richmd-mermaid-STABLE/g' \
   -e 's/richmd_vega_[0-9]+/richmd_vega_STABLE/g' \
   -e 's/richmd_mermaid_[0-9]+/richmd_mermaid_STABLE/g' \
-  "$HTML_PATH")"
+  "$TMP_HTML_PATH")"
 NEW_HASH="$(printf '%s' "$NORMALIZED" | shasum -a 256 | awk '{print $1}')"
 
 if [ "$MODE" = "update" ]; then
