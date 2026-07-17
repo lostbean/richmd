@@ -13,21 +13,18 @@
 # a different doc, e.g. `scripts/example-hash-check design-doc`.
 #
 # Determinism note (read before treating a failure as a false positive):
-# filter/blocks/vega-lite.lua's and filter/blocks/mermaid.lua's render_fns
-# each mint a fresh math.random(...)-based id per render — `richmd-vega-N`
-# / `richmd-mermaid-N` as HTML element ids, and the same number reused
-# inside a JS identifier (`embedRichmdVega_richmd_vega_N`,
-# `renderMermaid_richmd_mermaid_N`, since hyphens aren't valid in JS
-# identifiers, both use `richmd_vega_N` / `richmd_mermaid_N` there) — by
-# design, all of these differ run to run even with byte-identical source.
-# Rather than seed the RNG or otherwise change either renderer's shipped
-# behavior (out of scope for example/tooling work), this script normalizes
-# every occurrence of the varying numeric suffix — hyphen-joined or
-# underscore-joined, HTML id or JS identifier — out of the rendered HTML
-# before hashing. This is the ONLY normalization applied; any other diff in
-# the rendered output is a real regression. (A doc with no mermaid/vega-lite
-# blocks is simply untouched by these sed passes — normalization is a no-op,
-# not a requirement.)
+# rendering is deterministic — the SAME source always produces the SAME
+# bytes — so the rendered HTML is hashed exactly as richmd emits it, with no
+# normalization of any kind. Every diff in the rendered output is therefore a
+# real regression; there is no run-to-run noise for a mismatch here to be
+# blamed on. This script once normalized filter/blocks/mermaid.lua's and
+# filter/blocks/vega-lite.lua's per-render `math.random(...)` container ids
+# away before hashing, because back then two renders of one source genuinely
+# did differ. Those ids are now per-document ordinals (`richmd-mermaid-1`,
+# `richmd-vega-1`, ... — issue #22), which made both the non-determinism and
+# the normalization papering over it obsolete: hashing the real bytes is what
+# keeps these goldens able to catch a future determinism regression at all,
+# which a normalizing pass would silently hide.
 #
 # Usage: scripts/example-hash-check [--update] [example-name]
 #   (no args)        render, hash, compare data-status-report against its
@@ -59,10 +56,11 @@
 # elsewhere makes that class of bug structurally impossible: there is
 # nothing under examples/ for this script to write. (Same reasoning, and the
 # same shape, as scripts/theme-swap-check — see its header.) Note that
-# `richmd render --check` cannot serve here: it does its own strict
-# byte-compare against the committed HTML rather than handing back the
-# rendered output, and this script must normalize non-deterministic ids out
-# of those bytes BEFORE hashing (see the determinism note above).
+# `richmd render --check` does not serve here: it byte-compares a fresh
+# render against the committed sibling .html, which answers "is the committed
+# HTML fresh?", whereas this script pins the rendered OUTPUT ITSELF against a
+# golden hash — the question "did this example's markup/theme output change
+# at all, deliberately or not?", which survives regenerating the .html.
 #
 # The WHOLE examples/ directory is copied, not just the one .md file: an
 # example resolves its custom block kinds from a sibling `.richmd/`
@@ -139,18 +137,9 @@ if [ ! -f "$TMP_HTML_PATH" ]; then
   exit 2
 fi
 
-# Normalize the known non-deterministic tokens (vega-lite.lua's and
-# mermaid.lua's math.random container/function ids, in both their
-# hyphen-joined HTML-id form and underscore-joined JS-identifier form — see
-# header note) before hashing, so the golden hash reflects genuine
-# content/markup drift only, never run-to-run noise.
-NORMALIZED="$(sed -E \
-  -e 's/richmd-vega-[0-9]+/richmd-vega-STABLE/g' \
-  -e 's/richmd-mermaid-[0-9]+/richmd-mermaid-STABLE/g' \
-  -e 's/richmd_vega_[0-9]+/richmd_vega_STABLE/g' \
-  -e 's/richmd_mermaid_[0-9]+/richmd_mermaid_STABLE/g' \
-  "$TMP_HTML_PATH")"
-NEW_HASH="$(printf '%s' "$NORMALIZED" | shasum -a 256 | awk '{print $1}')"
+# Hash the rendered bytes exactly as richmd emitted them — no normalization
+# (see the determinism note in this file's header).
+NEW_HASH="$(shasum -a 256 <"$TMP_HTML_PATH" | awk '{print $1}')"
 
 if [ "$MODE" = "update" ]; then
   printf '%s\n' "$NEW_HASH" >"$GOLDEN_PATH"

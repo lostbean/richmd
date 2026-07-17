@@ -371,6 +371,30 @@ local function vega_lite_base_config_js()
   }]]
 end
 
+-- chart_ordinal / next_ordinal() -> integer
+--
+-- A per-document counter handing each vega-lite chart on the page its own
+-- ordinal, in document order: 1, 2, 3... — the same mechanism, for the same
+-- reason, as mermaid.lua's own next_ordinal() (see its comment for the full
+-- rationale; issue #22). The ordinal is the ONLY varying part of the ids
+-- below, so the rendered page is a pure function of its source, which is
+-- what design.md §02's `--check` byte-compare requires. It replaces a
+-- per-render `math.random(1, 1000000000)` id that made every render of a
+-- chart-bearing document differ from the last.
+--
+-- The "richmd-vega-" prefix keeps this sequence in its own namespace: chart
+-- N and mermaid diagram N on the same page get `richmd-vega-N` and
+-- `richmd-mermaid-N`, which never collide. As in mermaid.lua, this
+-- module-level state is per-DOCUMENT because bin/richmd.js spawns one
+-- `pandoc` process per document, so the Lua state is created fresh per
+-- document and dies with the process.
+local chart_ordinal = 0
+
+local function next_ordinal()
+  chart_ordinal = chart_ordinal + 1
+  return chart_ordinal
+end
+
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
 -- Embeds the raw vega-lite JSON spec in a <div class="richmd-vega">
@@ -459,7 +483,7 @@ end
 -- chart on multi-chart pages.
 local function render(block, resolved_attrs)
   local source = block.text or ""
-  local container_id = "richmd-vega-" .. tostring(math.random(1, 1000000000))
+  local container_id = "richmd-vega-" .. tostring(next_ordinal())
   local fn_suffix = container_id:gsub("-", "_")
 
   local spec_html = "<div id=\""
