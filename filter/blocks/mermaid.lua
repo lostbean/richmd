@@ -221,6 +221,38 @@ local function mermaid_theme_variables_js()
     }]]
 end
 
+-- diagram_ordinal / next_ordinal() -> integer
+--
+-- A per-document counter handing each mermaid diagram on the page its own
+-- ordinal, in document order: 1, 2, 3... The ordinal is the ONLY varying
+-- part of the ids below, which makes the whole rendered page a pure function
+-- of its source — the property design.md §02's `--check` contract depends on
+-- ("byte-compares that same result against the existing sibling `.html`":
+-- impossible to satisfy if two renders of one source disagree). This
+-- replaces a per-render `math.random(1, 1000000000)` id, under which every
+-- render of a diagram-bearing document differed from the last and `--check`
+-- could never exit 0 however fresh the committed file was (issue #22).
+--
+-- Uniqueness holds within a page (the only scope an HTML id must be unique
+-- in) on two counts: the counter increments per diagram, and the
+-- "richmd-mermaid-" prefix keeps this sequence in its own namespace, so
+-- vega-lite.lua's identically-shaped `richmd-vega-N` sequence can never
+-- collide with it.
+--
+-- This module-level state is per-DOCUMENT, not global-and-growing, because
+-- bin/richmd.js spawns one `pandoc` process per document (spawnSync): the
+-- Lua state is created fresh for each document and dies with the process, so
+-- one document's ids can never depend on what was rendered before it. That
+-- process model is load-bearing for this counter's correctness — a future
+-- move to one long-lived pandoc process across many documents would need a
+-- per-document reset here.
+local diagram_ordinal = 0
+
+local function next_ordinal()
+  diagram_ordinal = diagram_ordinal + 1
+  return diagram_ordinal
+end
+
 -- render_fn(block, resolved_attrs) -> pandoc_ast_node
 --
 -- Embeds the raw mermaid source in a <pre class="mermaid"> container (per
@@ -272,7 +304,7 @@ end
 -- concept vega-lite.lua's render_fn wraps its own chart target in.
 local function render(block, resolved_attrs)
   local source = block.text or ""
-  local diagram_id = "richmd-mermaid-" .. tostring(math.random(1, 1000000000))
+  local diagram_id = "richmd-mermaid-" .. tostring(next_ordinal())
   local target_id = diagram_id .. "-target"
 
   local pre_html = '<pre class="mermaid richmd-mermaid" id="'

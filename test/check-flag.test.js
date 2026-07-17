@@ -256,14 +256,13 @@ describe("richmd render --check --offline (against a plain committed file)", () 
   });
 });
 
-// mermaid/vega-lite blocks embed a randomly generated per-render element id
-// (filter/blocks/mermaid.lua, filter/blocks/vega-lite.lua), so two separate
-// renders of the identical source are never byte-identical to each other —
-// a pre-existing property of those two block kinds, unrelated to --check's
-// own logic. A deterministic block kind (callout) is used here instead to
-// prove the same-flags-on-both-sides case: when the committed file and the
-// --check invocation agree on every flag (including a non-boolean one like
-// --tree), the comparison is a clean match.
+// A callout (rather than a diagram) carries the same-flags-on-both-sides
+// case here simply because this document already exercises --tree's
+// cross-document link resolution: when the committed file and the --check
+// invocation agree on every flag (including a non-boolean one like --tree),
+// the comparison is a clean match. Diagram kinds render deterministically
+// too (issue #22 — see test/diagram-determinism.test.js, which covers
+// --check against a diagram-bearing document directly).
 describe("richmd render --check --tree (matching flags on both sides)", () => {
   let workDir;
   let mainPath;
