@@ -97,8 +97,9 @@ document uses exactly one config directory, never a merge of several found
 along the walk. Its children are named, purpose-specific subdirectories, one
 per consumer-facing extension point richmd defines — the
 [extension directory](#term-extension-directory), the
-[rules directory](#term-rules-directory), and the
-[tokens directory](#term-tokens-directory); a further extension point earns
+[rules directory](#term-rules-directory), the
+[tokens directory](#term-tokens-directory), and the
+[shell directory](#term-shell-directory); a further extension point earns
 another child under the same convention, never a parallel discovery
 mechanism.
 See [ADR-0009](../adr/0009-config-dir-upward-walk-bounded-at-repo-root.md#adr-0009).
@@ -123,6 +124,72 @@ The [config directory](#term-config-directory)'s `tokens/` child
 (`.richmd/tokens/`), holding one
 [token vocabulary](#term-token-vocabulary) JSON file per vocabulary.
 Optional, like the [rules directory](#term-rules-directory).
+
+### Shell directory {#term-shell-directory}
+
+The [config directory](#term-config-directory)'s `shell/` child
+(`.richmd/shell/`), holding the single [shell hook](#term-shell-hook) file
+(`.richmd/shell/shell.lua`). A subdirectory like the
+[extension directory](#term-extension-directory) — same discovery mechanism,
+never a parallel one — but a **singleton** by contract: it holds at most one
+hook, so a second file defining an already-defined region is a fatal load-time
+error, not a merge. Optional, like the [rules directory](#term-rules-directory).
+
+### Document shell {#term-document-shell}
+
+The page frame every [rendered page](#term-rendered-page) is wrapped in: the
+outer `.richmd-doc` element and the `.richmd-container` it holds, whose
+layout classes are derived from the [document](#term-document)'s own
+`richmd-layout` frontmatter. The one richmd-owned structure that reads
+`doc.meta` to shape the page rather than rendering a [block](#term-block)'s own
+content. Both the built-in layout read and the consumer
+[shell hook](#term-shell-hook) are instances of the same idea — a producer
+reads `doc.meta` and shapes the shell — which is why one component owns them.
+
+### Shell hook {#term-shell-hook}
+
+The fourth consumer-declarable contract, alongside the
+[block kind schema](#term-block-kind-schema), the
+[cross-block rule](#term-cross-block-rule), and the
+[token vocabulary](#term-token-vocabulary): a single `.richmd/shell/shell.lua`
+returning a table of at most two named regions, `masthead` and `colophon`,
+each a function `region(doc_meta) -> pandoc.Blocks`. richmd calls each defined
+region during the [render phase](#term-render-phase) and injects its returned
+blocks into the [document shell](#term-document-shell) — the
+[masthead](#term-masthead) prepended inside `.richmd-container`, the
+[colophon](#term-colophon) appended. The hook receives `doc.meta` exactly as
+Pandoc exposes it (nested `MetaInlines`/`MetaString`/`MetaList`), the same
+value the built-in layout read sees, and returns **structure-only** blocks
+carrying `richmd-*` classes — never raw styled HTML — so the
+[theme](#term-theme) owns the look (P3), exactly as the
+[token hook](#term-token-hook) carries a member without painting it. It is not
+a validator: it runs after the [validate phase](#term-validate-phase)'s gate is
+already green and can add no [validation error](#term-validation-error); a
+consumer that must _require_ a frontmatter key writes a
+[cross-block rule](#term-cross-block-rule) instead. See
+[ADR-0014](../adr/0014-document-shell-hook-as-fourth-consumer-contract.md#adr-0014).
+
+_Avoid_: "frontmatter renderer" — the hook shapes the shell, and its input
+happens to be frontmatter; naming it for the input hides that its output is
+document chrome, not a per-key transform.
+
+### Masthead {#term-masthead}
+
+The [shell hook](#term-shell-hook)'s top region: the structure-only
+[document shell](#term-document-shell) chrome prepended inside
+`.richmd-container`, ahead of the document's own [blocks](#term-block). Built
+from `doc.meta` — an eyebrow line, a lede paragraph, whatever the consumer's
+frontmatter declares. Optional; a hook may define `colophon` alone, or neither.
+
+### Colophon {#term-colophon}
+
+The [shell hook](#term-shell-hook)'s bottom region: the structure-only
+[document shell](#term-document-shell) chrome appended at the end of
+`.richmd-container`, after the document's own [blocks](#term-block) — a footer
+line built from `doc.meta`. Optional, independent of the
+[masthead](#term-masthead). _Avoid_: "footer" — names an HTML tag, not the
+document-chrome role; the region is a colophon whatever element the theme
+renders it as.
 
 ### Token vocabulary {#term-token-vocabulary}
 

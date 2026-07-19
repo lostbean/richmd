@@ -20,6 +20,7 @@ local Slugify = require("slugify")
 local ExtensionLoader = require("extension-loader")
 local RulesLoader = require("rules-loader")
 local TokensLoader = require("tokens-loader")
+local ShellLoader = require("shell-loader")
 local HeadingScope = require("heading-scope")
 
 -- One registry instance, shared across validate and render phases and
@@ -283,6 +284,20 @@ local rules = RulesLoader.load(config_dir .. "/" .. RulesLoader.DEFAULT_DIR)
 -- validation error collected below. References are actually resolved later,
 -- once per document, as a step of the validate phase (see Pandoc(doc)).
 local token_vocabularies = TokensLoader.load(config_dir .. "/" .. TokensLoader.DEFAULT_DIR)
+
+-- Document-shell hook (design.md §10, ADR-0014, CONTEXT.md#term-shell-hook)
+-- — a single consumer-authored `.lua` file under the shell directory
+-- (default `.richmd/shell/`, resolved against the walked config_dir above,
+-- same convention as the three loaders just above). Loaded ONCE at filter
+-- startup, same timing as ExtensionLoader.load / RulesLoader.load /
+-- TokensLoader.load. A malformed hook file, or two files defining the same
+-- region (the singleton contract), is a fatal load-time error
+-- (filter/shell-loader.lua calls `error(...)`) that aborts the whole filter
+-- run before any AST walk begins — distinct from a per-block validation
+-- error collected below. Each defined region is actually invoked later, once
+-- per document, in the RENDER phase (see wrap_blocks_in_page_shell below) —
+-- never as a validate step; the shell hook renders chrome, it never gates.
+local shell_regions = ShellLoader.load(config_dir .. "/" .. ShellLoader.DEFAULT_DIR)
 
 -- All validation errors collected across the whole document (§00 invariant:
 -- never fail-fast on the first error).
@@ -1476,7 +1491,60 @@ end
 -- sets the attribute directly on the live DOM node and persists the choice;
 -- the anti-flash script re-applies a stored choice, if any, on the next
 -- load — but a first-ever render never carries a hardcoded value.
-local function wrap_blocks_in_page_shell(blocks, doc_meta)
+-- render_shell_region(region_name, region_fn, doc_meta) -> pandoc.Blocks
+--
+-- Calls one loaded shell region (masthead/colophon) in the RENDER phase,
+-- past the fail-closed gate (design.md §10, ADR-0014). The region is the
+-- consumer's own Lua `function(doc_meta) -> pandoc.Blocks`, handed the raw
+-- `doc.meta` metavalue tree exactly as container_classes reads it (never
+-- pre-stringified — a region may need the inline markup inside an eyebrow).
+--
+-- A region that RAISES, or returns anything other than pandoc.Blocks (or a
+-- value pandoc.Blocks can coerce), is a HARD filter failure naming
+-- `shell.lua` and the region — no partial HTML written — exactly as a
+-- crashing block render_fn or cross-block rule already hard-fails (§03
+-- failure behavior). It never silently drops the region or emits a broken
+-- page. Uses the same `error("richmd: ...", 0)` fatal style as the rest of
+-- the codebase.
+local function render_shell_region(region_name, region_fn, doc_meta)
+  local ok, result = pcall(region_fn, doc_meta)
+  if not ok then
+    error(
+      "richmd: shell hook 'shell.lua' "
+        .. region_name
+        .. " region raised an error while rendering: "
+        .. tostring(result),
+      0
+    )
+  end
+
+  -- A region may return nil to inject nothing (the same effect as leaving the
+  -- region undefined) — design.md §10: "A region left undefined injects
+  -- nothing". nil is legal; only a non-Blocks, non-nil value is the failure.
+  if result == nil then
+    return nil
+  end
+
+  -- pandoc.Blocks coerces a Blocks/list/single-block input into a Blocks
+  -- list, but throws on a genuinely non-block value (a number, a string, a
+  -- table that is not a block). Catch that so the failure names the region
+  -- rather than surfacing as a bare pandoc constructor error.
+  local coerced_ok, blocks = pcall(pandoc.Blocks, result)
+  if not coerced_ok then
+    error(
+      "richmd: shell hook 'shell.lua' "
+        .. region_name
+        .. " region returned a value that is not pandoc.Blocks (must return"
+        .. " pandoc.Blocks, or nil to inject nothing): "
+        .. tostring(result),
+      0
+    )
+  end
+
+  return blocks
+end
+
+local function wrap_blocks_in_page_shell(blocks, doc_meta, shell_regions)
   -- Pandoc's HTML writer (Text.Pandoc.Shared.makeSections, run unconditionally
   -- inside every writer, independent of --section-divs) auto-converts ANY Div
   -- whose FIRST child block is a Header into an HTML <section> tag, merging
@@ -1495,6 +1563,32 @@ local function wrap_blocks_in_page_shell(blocks, doc_meta)
   -- renders as an empty line with no visible or structural effect.
   local container_children = pandoc.List(blocks)
   container_children:insert(1, pandoc.RawBlock("html", ""))
+
+  -- Consumer shell hook (design.md §10, ADR-0014): a masthead region's blocks
+  -- are prepended INSIDE the container, AFTER the leading anti-section guard
+  -- RawBlock (index 1 above) and BEFORE the document's own blocks; a colophon
+  -- region's blocks are appended at the container's END, after the document's
+  -- own content. Both run in this render phase, past the gate. shell_regions
+  -- is the merged { masthead?, colophon? } table ShellLoader.load returned at
+  -- startup — empty when no hook is present, so this whole step is inert for
+  -- a document with no `.richmd/shell/` (byte-identical to the pre-hook shell).
+  if shell_regions and shell_regions.masthead then
+    local masthead_blocks = render_shell_region("masthead", shell_regions.masthead, doc_meta)
+    if masthead_blocks then
+      -- Insert AFTER the guard RawBlock (index 1), preserving the region's
+      -- own block order; iterate in reverse so successive inserts at index 2
+      -- land the blocks in their original order.
+      for i = #masthead_blocks, 1, -1 do
+        container_children:insert(2, masthead_blocks[i])
+      end
+    end
+  end
+  if shell_regions and shell_regions.colophon then
+    local colophon_blocks = render_shell_region("colophon", shell_regions.colophon, doc_meta)
+    if colophon_blocks then
+      container_children:extend(colophon_blocks)
+    end
+  end
 
   local shell_children = pandoc.List({
     pandoc.RawBlock("html", anti_flash_theme_script_html()),
@@ -1784,7 +1878,7 @@ function Pandoc(doc)
   -- the shell's content; see wrap_blocks_in_page_shell's own comment for why
   -- this is the correct (AST-level, not string-postprocessing) way to reach
   -- what would otherwise require wrapping Pandoc's own <body> tag.
-  doc.blocks = wrap_blocks_in_page_shell(doc.blocks, doc.meta)
+  doc.blocks = wrap_blocks_in_page_shell(doc.blocks, doc.meta, shell_regions)
 
   return doc
 end
