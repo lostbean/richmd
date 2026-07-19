@@ -1188,6 +1188,21 @@ keys its vocabulary declares. See
 </div>
 </div>
 <div class="entry invariant">
+<div class="entry-head"><span class="label">The shell hook renders, never gates</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill robustness">robustness</span></span></div>
+<div class="body">
+<p>The consumer <a href="CONTEXT.md#term-shell-hook">shell hook</a> runs only in the
+<a href="CONTEXT.md#term-render-phase">render phase</a>, after the fail-closed gate is
+already green: it emits structure-only
+<a href="CONTEXT.md#term-document-shell">document shell</a> chrome and can add no
+<a href="CONTEXT.md#term-validation-error">validation error</a>. Its region set is a
+document singleton — a second definition of the same region is a fatal
+load-time error, never a silent merge — and a region returning a non-<code>Blocks</code>
+value or raising at render time is a hard filter failure naming the hook, never
+a partial or silently wrong page. See
+<a href="../adr/0014-document-shell-hook-as-fourth-consumer-contract.md#adr-0014">ADR-0014</a>.</p>
+</div>
+</div>
+<div class="entry invariant">
 <div class="entry-head"><span class="label">A heading's anchor id is deterministic: explicit id, else slug</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill state">state</span></span></div>
 <div class="body">
 <p>A heading's <a href="CONTEXT.md#term-anchor-id">anchor id</a> is its own explicit
@@ -1606,9 +1621,10 @@ what the target means.</p>
 <h2 id="06-token-vocabulary-resolution-06-token-vocabulary-resolution"><span class="secno">06</span> · Token vocabulary resolution {#06-token-vocabulary-resolution}</h2>
 <p><strong>Owns recognizing and resolving
 <a href="CONTEXT.md#term-token-reference">token references</a> against declared
-<a href="CONTEXT.md#term-token-vocabulary">vocabularies</a>.</strong> The third
-consumer-declarable contract, alongside §04's block schemas and §05's rules —
-and the only one operating below block granularity, at the inline span. richmd
+<a href="CONTEXT.md#term-token-vocabulary">vocabularies</a>.</strong> One of richmd's
+consumer-declarable contracts, alongside §04's block schemas, §05's rules, and
+§12's <a href="CONTEXT.md#term-shell-hook">shell hook</a> — and the only one operating
+below block granularity, at the inline span. richmd
 owns the mechanism; the set is always the consumer's. See
 <a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>.</p>
 <ul>
@@ -1797,14 +1813,17 @@ reach the shared base config identically — with an author's own explicit
 <a href="../adr/0007-shared-categorical-palette-for-vega-lite-specs.md#adr-0007">ADR-0007</a>.</li>
 <li><strong>Interface</strong>: default mode emits CDN <code>&lt;script&gt;</code> tags for the mermaid.js
 and vega-lite runtimes; <code>--offline</code> (§02) downloads the pinned versions
-once and embeds them directly in the page instead. Container width is a
-per-document choice, authored as a YAML frontmatter key
-(<code>richmd-layout: narrow</code>, defaulting to <code>wide</code> when absent) — a
-data-heavy report reads better wide, a prose-heavy document can opt into
-the narrower reading column.</li>
+once and embeds them directly in the page instead. The page frame those
+scripts and this stylesheet inject <em>into</em> — the <code>.richmd-doc</code>/
+<code>.richmd-container</code> <a href="CONTEXT.md#term-document-shell">document shell</a> and its
+<code>richmd-layout</code> container width — is owned by §12, not here: this component
+owns the theme variables and the diagram runtime, never the shell's
+structure.</li>
 <li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>'s render phase for
-injection; a consumer's own CSS file, which overrides <code>--richmd-*</code>
-variables or replaces the stylesheet wholesale to reskin.</li>
+injection; the <a href="#12-document-shell">document shell</a> (§12), which builds the
+frame this stylesheet and these scripts are injected into; a consumer's own
+CSS file, which overrides <code>--richmd-*</code> variables or replaces the stylesheet
+wholesale to reskin.</li>
 <li><strong>Invariants held</strong>: style is swappable (§00 principle P3) — the
 generator never hardcodes a visual identity, only the variable contract.</li>
 <li><strong>Failure behavior</strong>: a diagram that fails to parse client-side (a gap the
@@ -1822,7 +1841,83 @@ silent one. See
 <a href="../adr/0004-cdn-default-offline-bundling-opt-in.md#adr-0004">ADR-0004</a>.</p>
 </div>
 </div>
-<h2 id="10-ci-10-ci"><span class="secno">10</span> · CI {#10-ci}</h2>
+<h2 id="10-document-shell-10-document-shell"><span class="secno">10</span> · Document shell {#10-document-shell}</h2>
+<p><strong>Owns the page frame and every path that reads <code>doc.meta</code> to shape it.</strong> One
+component owns the <a href="CONTEXT.md#term-document-shell">document shell</a> — the
+<code>.richmd-doc</code>/<code>.richmd-container</code> wrapper — its <code>richmd-layout</code> container width,
+and the consumer <a href="CONTEXT.md#term-shell-hook">shell hook</a> that injects
+<a href="CONTEXT.md#term-masthead">masthead</a>/<a href="CONTEXT.md#term-colophon">colophon</a>
+chrome. The layout read and the hook are two instances of one idea — a producer
+reads <code>doc.meta</code> and shapes the shell — so they share a home rather than living
+as two unrelated readers. The fourth consumer-declarable contract, and the only
+one scoped to the whole document rather than a <a href="CONTEXT.md#term-block">block</a>
+or an inline span. See
+<a href="../adr/0014-document-shell-hook-as-fourth-consumer-contract.md#adr-0014">ADR-0014</a>.</p>
+<ul>
+<li><strong>Responsibility</strong>: wrap the rendered <a href="CONTEXT.md#term-block">blocks</a> in the
+document shell during the <a href="CONTEXT.md#term-render-phase">render phase</a>;
+derive the container's layout classes from the
+<a href="CONTEXT.md#term-document">document</a>'s own <code>richmd-layout</code> frontmatter key
+(<code>narrow</code>, else the <code>wide</code> default) — the built-in <code>doc.meta</code>→shell read; and
+load the <a href="CONTEXT.md#term-shell-directory">shell directory</a>'s single hook
+file when present, calling each region it defines and injecting the result.</li>
+<li><strong>Interface</strong>: two producers, one shell. The <strong>built-in layout read</strong> is a
+pure function of <code>doc.meta</code> to the container's class list. The <strong>consumer
+hook</strong> is a <code>.richmd/shell/shell.lua</code> returning <code>{ masthead?, colophon? }</code>,
+each <code>region(doc_meta) -&gt; pandoc.Blocks</code>; <code>doc_meta</code> is the raw Pandoc
+metavalue tree (the same value the layout read sees), and a region returns
+structure-only blocks carrying <code>richmd-*</code> classes. richmd calls each defined
+region during the render phase and injects it into the container — the
+masthead prepended (after the leading anti-section guard block, before the
+document's own blocks), the colophon appended at the container's end. A
+region left undefined injects nothing; the hook file itself is optional.</li>
+<li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>, which loads the shell
+directory at startup exactly as it loads §04's
+<a href="CONTEXT.md#term-extension-directory">extension directory</a>, §05's
+<a href="CONTEXT.md#term-rules-directory">rules directory</a>, and §06's
+<a href="CONTEXT.md#term-tokens-directory">tokens directory</a>, and invokes the shell
+wrap during the render phase; the
+<a href="#09-theme-and-diagram-runtime">theme and diagram runtime</a> (§09), whose
+stylesheet and scripts are injected <em>into</em> the frame this component builds and
+which owns the look of every <code>richmd-*</code> class a region emits (P3);
+<a href="#05-cross-block-rules">cross-block rules</a> (§05), the contract a consumer
+reaches for instead when it must <em>require</em> a frontmatter key rather than
+render one.</li>
+<li><strong>Invariants held</strong>: shell hook is structure-only and render-phase (§00, the
+invariant this component introduces); style is swappable (§00 P3) — a region
+emits <code>richmd-*</code> classes, never styled HTML, so the theme owns the look
+exactly as the <a href="CONTEXT.md#term-token-hook">token hook</a> (§06) carries a member
+without painting it; fail-closed gate (§00) — the hook runs only after the
+gate is already green and can add no
+<a href="CONTEXT.md#term-validation-error">validation error</a>.</li>
+<li><strong>Failure behavior</strong>: the shell directory is a <strong>singleton</strong> — a second file
+defining an already-defined region (two <code>masthead</code>s) is a fatal load-time
+error naming both files, identical to a malformed
+<a href="CONTEXT.md#term-extension-directory">extension directory</a> file (§04), never a
+silent last-loaded-wins merge. A hook file that fails to load (invalid Lua, a
+return value that is neither a table of regions nor a bare function) is the
+same fatal load-time error. A region that returns a non-<code>Blocks</code>, non-<code>nil</code>
+value, or raises a Lua runtime error while running, is a hard filter failure
+naming <code>shell.lua</code> and the region — no partial HTML written — exactly as a
+crashing block <a href="CONTEXT.md#term-block-kind-registry">render function</a> or
+<a href="#05-cross-block-rules">cross-block rule</a> already fails. Because the hook runs
+in the render phase, past the gate, a document that reached it already
+collected zero validation errors; a hook crash is a generator failure, never
+a silently wrong page.</li>
+</ul>
+<div class="callout info">
+<div class="entry-head"><span class="label">Why the shell hook is not a validator</span></div>
+<div class="body">
+<p>The <a href="CONTEXT.md#term-shell-hook">shell hook</a> renders chrome; it never gates a
+document. A consumer that wants a missing <code>lede</code> or a malformed <code>eyebrow</code> to
+<em>fail</em> the document writes a <a href="#05-cross-block-rules">cross-block rule</a> (§05) —
+document-wide validation is already that contract's job. Keeping the two apart
+is what lets the hook run past the gate in the render phase: by the time it
+runs, every <a href="CONTEXT.md#term-validation-error">validation error</a> is already
+collected, so the hook has nothing left to reject.</p>
+</div>
+</div>
+<h2 id="11-ci-11-ci"><span class="secno">11</span> · CI {#11-ci}</h2>
 <p><strong>Owns proving the gate on every push, not just on the author's machine.</strong>
 CI runs a strict superset of what <a href="https://github.com/lostbean/richmd/blob/main/lefthook.yml">lefthook</a>
 runs locally: every check lefthook's pre-commit hook runs (format, the design
@@ -1835,7 +1930,7 @@ slower checks have run too.</p>
 <li><strong>Responsibility</strong>: run <code>nix flake check</code> (formatting plus any flake
 checks), the full test suite for every deep module (filter core, block
 kind registry, token vocabulary resolution, grammar validators, link
-resolver/slugifier, theme/diagram runtime), the design gate
+resolver/slugifier, theme/diagram runtime, document shell), the design gate
 (<code>scripts/design-render --check</code> on every <code>design.md</code>,
 <code>scripts/layer-integrity .</code>), and the example-doc regression check
 (<code>examples/</code> — render the golden example, diff its output hash against
@@ -1846,7 +1941,7 @@ pull request.</li>
 <a href="https://github.com/lostbean/richmd/blob/main/flake.nix">flake.nix</a>
 devShell so CI's toolchain versions can never drift from a contributor's
 local <code>nix develop</code> shell.</li>
-<li><strong>Interacts with</strong>: every component in §02–§09 (it runs their tests) and
+<li><strong>Interacts with</strong>: every component in §02–§10 (it runs their tests) and
 the design layer itself (it runs the design gate).</li>
 <li><strong>Invariants held</strong>: none new — CI is the mechanism that keeps the
 fail-closed gate (§00) and schema-driven validation (§00) provably true on
@@ -1855,7 +1950,7 @@ every change, not just locally.</li>
 considered mergeable; CI never soft-fails or skips a channel the local
 gate runs.</li>
 </ul>
-<h2 id="11-end-to-end-walkthrough"><span class="secno">11</span> · End-to-end walkthrough</h2>
+<h2 id="12-end-to-end-walkthrough"><span class="secno">12</span> · End-to-end walkthrough</h2>
 <p><strong>Scenario: an author renders a design document, then fixes a broken
 diagram.</strong></p>
 <ol>

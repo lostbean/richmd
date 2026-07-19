@@ -488,8 +488,9 @@ never a silent fact:
 richmd: config directory resolved to '/path/to/docs/design'
 ```
 
-(That directory's `.richmd/blocks/`, `.richmd/rules/`, etc. — not the
-`.richmd` path itself — is what gets resolved and loaded.)
+(That directory's `.richmd/blocks/`, `.richmd/rules/`, `.richmd/tokens/`, and
+`.richmd/shell/` — not the `.richmd` path itself — is what gets resolved and
+loaded.)
 
 ## Cross-block rules: your own document-wide checks
 
@@ -844,6 +845,106 @@ Two things worth knowing about what lands in `tokens`:
   file — richmd refuses to run at all, identical to a malformed
   `.richmd/blocks/` or `.richmd/rules/` file. A broken vocabulary is never
   silently skipped.
+
+## Document shell: your own masthead and colophon
+
+The three contracts above are all scoped to a block or an inline span — none
+of them can read the document's **frontmatter** (`doc.meta`) or inject chrome
+into the page frame itself. The **document-shell hook** is the fourth
+consumer contract, and the only one scoped to the whole document: it reads
+your frontmatter and injects structure into the page shell — a **masthead**
+before the document's own content, a **colophon** after it.
+
+The built-in `richmd-layout` frontmatter key (which sets the container width,
+narrow vs. wide) is richmd's own instance of this same "read `doc.meta`,
+shape the shell" idea; the shell hook is the extensible version you own.
+
+Drop a single hook file at `.richmd/shell/shell.lua`, inside your document's
+config directory (same discovery as `.richmd/blocks/` above):
+
+```
+.richmd/shell/shell.lua
+```
+
+The file returns a table of **regions** — `masthead`, `colophon`, or both.
+Each region is optional, and each is a function
+`region(doc_meta) -> pandoc.Blocks`:
+
+```lua
+-- .richmd/shell/shell.lua
+-- doc_meta is the raw Pandoc metavalue tree (doc.meta) — nested
+-- MetaInlines/MetaString/MetaList, the same value richmd's own layout read
+-- sees. Use pandoc.utils.stringify to flatten a value to text, or walk it.
+return {
+  masthead = function(doc_meta)
+    return pandoc.Blocks({
+      pandoc.Div(
+        pandoc.Para(pandoc.utils.stringify(doc_meta.eyebrow or {})),
+        pandoc.Attr("", { "richmd-eyebrow" })
+      ),
+    })
+  end,
+  colophon = function(doc_meta)
+    return pandoc.Blocks({
+      pandoc.Div(
+        pandoc.Para(pandoc.utils.stringify(doc_meta.reviewed or {})),
+        pandoc.Attr("", { "richmd-colophon" })
+      ),
+    })
+  end,
+}
+```
+
+Given frontmatter like:
+
+```markdown
+---
+eyebrow: Incident retrospective
+reviewed: Signed off 2026-07-19
+---
+```
+
+richmd calls each defined region during the **render phase** with the
+document's raw `doc.meta`, and injects the returned Pandoc Blocks into
+`.richmd-container`: the **masthead prepended** (ahead of the document's own
+content), the **colophon appended** (after it). A region you leave undefined
+injects nothing, and the hook file itself is optional — omitting it renders
+exactly as before the hook existed.
+
+**A region returns structure, not style.** A region emits blocks carrying
+`richmd-*` classes and never raw styled HTML; richmd ships no CSS for them.
+The look is owned by the theme — the consumer's own stylesheet, keyed off
+those classes — exactly like the token hook emits `richmd-token` structure
+and the stylesheet paints it (principle P3, "style is swappable, never
+hardcoded"):
+
+```css
+.richmd-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--richmd-color-muted);
+}
+```
+
+The shell directory is a **singleton** — it holds at most one hook. Two files
+in `.richmd/shell/` both defining the same region (two `masthead`s) is a
+**fatal, load-time** error naming both files, never a silent
+last-loaded-wins merge — the same "nearest wins, never a merge" rule the
+config directory already follows. A malformed hook file (invalid Lua, a
+return value that isn't a table of region functions, or a `masthead`/
+`colophon` that isn't a function) is likewise a fatal load-time error naming
+the file — identical to a malformed `.richmd/blocks/`, `.richmd/rules/`, or
+`.richmd/tokens/` extension. A broken hook is never silently skipped.
+
+**The hook runs in the render phase, past the fail-closed gate — it never
+gates a document.** It cannot add a validation error, so it can never fail a
+document for a missing or malformed frontmatter key. A consumer who wants to
+_require_ a frontmatter key — fail the document when it's absent — writes a
+**cross-block rule** (`.richmd/rules/`) instead; document-wide validation is
+already that contract's job. A region that raises, or returns a value that
+isn't `pandoc.Blocks`, at render time is a hard filter failure naming
+`shell.lua` and the offending region, with **no HTML written** — exactly like
+a crashing block render function or cross-block rule.
 
 ## Failure behavior
 
