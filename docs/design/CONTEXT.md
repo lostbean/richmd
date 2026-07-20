@@ -191,6 +191,58 @@ line built from `doc.meta`. Optional, independent of the
 document-chrome role; the region is a colophon whatever element the theme
 renders it as.
 
+### Groups directory {#term-groups-directory}
+
+The [config directory](#term-config-directory)'s `groups/` child
+(`.richmd/groups/`), holding [group hook](#term-group-hook) Lua files.
+A subdirectory like the [extension directory](#term-extension-directory) —
+same discovery mechanism, never a parallel one. Optional, like the
+[rules directory](#term-rules-directory). Unlike the single-file
+[shell directory](#term-shell-directory), it may hold several hooks, but its
+singleton contract is **per kind**: two hooks that both claim the same
+[block kind](#term-block-kind) is a fatal load-time error naming both files,
+never a merge.
+
+### Block group {#term-block-group}
+
+A maximal run of consecutive [blocks](#term-block) of one
+[block kind](#term-block-kind), taken in document order. Consecutive means
+adjacent with no intervening block of a different kind: three `:::goal` blocks
+in a row are one goal group; a `:::no-goal` between the second and third splits
+them into two goal groups around a no-goal group. A group never reorders blocks
+and never reaches across a block of another kind, so it is always a contiguous
+document span. Only a kind a [group hook](#term-group-hook) claims forms groups;
+every other kind renders block-by-block as before. _Avoid_: "section" — a
+[document](#term-document) already has authored sections (heading spans); a
+block group is a render-time run of same-kind blocks, not a heading's scope.
+
+### Group hook {#term-group-hook}
+
+The fifth consumer-declarable contract, alongside the block kind schema,
+the [cross-block rule](#term-cross-block-rule), the
+[token vocabulary](#term-token-vocabulary), and the
+[shell hook](#term-shell-hook): a `.richmd/groups/*.lua` file returning a table
+with a `kinds` list (the [block kinds](#term-block-kind) it claims) and a
+`render` function `render(kind, rendered_blocks) -> pandoc.Blocks`. richmd finds
+each [block group](#term-block-group) of a claimed kind during the
+[render phase](#term-render-phase), renders that run's blocks block-by-block as
+usual, then calls the hook once per run with the run's `kind` and the list of
+already-rendered nodes in document order, replacing the run with the hook's
+returned blocks. The hook returns **structure-only** blocks carrying `richmd-*`
+classes — never raw styled HTML — so the [theme](#term-theme) owns the look
+(P3), exactly as the [shell hook](#term-shell-hook) does. It is not a validator:
+it runs after the [validate phase](#term-validate-phase)'s gate is already green
+and can add no [validation error](#term-validation-error). Its `kinds` claim is a
+singleton per kind — two hooks claiming the same kind is a fatal load-time
+error — and a hook that returns a non-`Blocks` value or raises at render time is
+a hard filter failure naming the file, never a partial page. See
+[ADR-0015](../adr/0015-group-render-hook-as-fifth-consumer-contract.md#adr-0015).
+
+_Avoid_: "grouping rule" — a [cross-block rule](#term-cross-block-rule)
+validates a run and gates; a group hook renders one and never gates. The two are
+the validate-side and render-side of "look at a run of blocks", and conflating
+their names hides which phase each runs in.
+
 ### Token vocabulary {#term-token-vocabulary}
 
 A named closed set of member keys, each carrying arbitrary consumer-owned
