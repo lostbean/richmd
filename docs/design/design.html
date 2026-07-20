@@ -1822,7 +1822,14 @@ are read from the page's live <code>--richmd-*</code> custom properties at rende
 time (via <code>getComputedStyle</code>), never hardcoded — so a diagram matches
 whatever theme (default or a consumer's reskin) is active, and
 re-renders when the theme toggle (§00) flips light/dark, exactly like
-the surrounding page's own colors do. A <a href="CONTEXT.md#term-categorical-palette">categorical
+the surrounding page's own colors do. Each live-read color is normalized
+to a comma-free <code>#rrggbb</code> hex string before it reaches a diagram (an
+<code>oklch(...)</code> token is converted through OKLab and linear sRGB; rgb/hex/
+named values pass through) — the one format both mermaid (which throws on
+<code>oklch()</code> and on commas in a <code>classDef</code>) and vega-lite (which rejects
+<code>oklch()</code>) accept, so a diagram-facing <code>--richmd-color-*</code> token may be
+authored in <em>any</em> CSS color syntax, modern color spaces included, without
+silently breaking a diagram. A <a href="CONTEXT.md#term-categorical-palette">categorical
 palette</a> of six <code>--richmd-color-cat-*</code>
 tokens is read the same live way and injected as every Vega-Lite spec's
 default color range — chart-derived or hand-authored alike, since both
@@ -1841,7 +1848,15 @@ structure.</li>
 injection; the <a href="#12-document-shell">document shell</a> (§12), which builds the
 frame this stylesheet and these scripts are injected into; a consumer's own
 CSS file, which overrides <code>--richmd-*</code> variables or replaces the stylesheet
-wholesale to reskin.</li>
+wholesale to reskin. A reskin keys and wins on two CSS-facing guarantees this
+component makes: <code>.richmd-doc</code> always carries a resolved
+<code>data-richmd-theme=&quot;light&quot;|&quot;dark&quot;</code> attribute (set at runtime by the anti-flash
+script, never baked into the static HTML) that a consumer keys theme-dependent
+CSS on instead of the bare <code>@media (prefers-color-scheme)</code> query; and the whole
+base ruleset ships inside the <code>@layer richmd-base</code> cascade layer, so an
+unlayered consumer override wins over it — light/dark scoped blocks included —
+with no specificity fight. See
+<a href="../adr/0016-css-facing-theme-contracts-resolved-attribute-and-cascade-layer.md#adr-0016">ADR-0016</a>.</li>
 <li><strong>Invariants held</strong>: style is swappable (§00 principle P3) — the
 generator never hardcodes a visual identity, only the variable contract.</li>
 <li><strong>Failure behavior</strong>: a diagram that fails to parse client-side (a gap the

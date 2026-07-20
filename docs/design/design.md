@@ -778,7 +778,14 @@ vega-lite source becomes a rendered visual in the reader's browser.
   time (via `getComputedStyle`), never hardcoded — so a diagram matches
   whatever theme (default or a consumer's reskin) is active, and
   re-renders when the theme toggle (§00) flips light/dark, exactly like
-  the surrounding page's own colors do. A [categorical
+  the surrounding page's own colors do. Each live-read color is normalized
+  to a comma-free `#rrggbb` hex string before it reaches a diagram (an
+  `oklch(...)` token is converted through OKLab and linear sRGB; rgb/hex/
+  named values pass through) — the one format both mermaid (which throws on
+  `oklch()` and on commas in a `classDef`) and vega-lite (which rejects
+  `oklch()`) accept, so a diagram-facing `--richmd-color-*` token may be
+  authored in _any_ CSS color syntax, modern color spaces included, without
+  silently breaking a diagram. A [categorical
   palette](CONTEXT.md#term-categorical-palette) of six `--richmd-color-cat-*`
   tokens is read the same live way and injected as every Vega-Lite spec's
   default color range — chart-derived or hand-authored alike, since both
@@ -797,7 +804,15 @@ vega-lite source becomes a rendered visual in the reader's browser.
   injection; the [document shell](#12-document-shell) (§12), which builds the
   frame this stylesheet and these scripts are injected into; a consumer's own
   CSS file, which overrides `--richmd-*` variables or replaces the stylesheet
-  wholesale to reskin.
+  wholesale to reskin. A reskin keys and wins on two CSS-facing guarantees this
+  component makes: `.richmd-doc` always carries a resolved
+  `data-richmd-theme="light"|"dark"` attribute (set at runtime by the anti-flash
+  script, never baked into the static HTML) that a consumer keys theme-dependent
+  CSS on instead of the bare `@media (prefers-color-scheme)` query; and the whole
+  base ruleset ships inside the `@layer richmd-base` cascade layer, so an
+  unlayered consumer override wins over it — light/dark scoped blocks included —
+  with no specificity fight. See
+  [ADR-0016](../adr/0016-css-facing-theme-contracts-resolved-attribute-and-cascade-layer.md#adr-0016).
 - **Invariants held**: style is swappable (§00 principle P3) — the
   generator never hardcodes a visual identity, only the variable contract.
 - **Failure behavior**: a diagram that fails to parse client-side (a gap the

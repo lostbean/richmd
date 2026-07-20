@@ -121,6 +121,103 @@ describe("richmd render (custom-theme-demo.md, a copy of the real example doc)",
     const result = await runCli(["validate", demoMdPath]);
     assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
   });
+
+  // --- Cascade-layer contract (Fix 2) -------------------------------------
+  // richmd's default theme wraps ALL of its own rules in a single named
+  // cascade layer, `@layer richmd-base { … }`. A consumer who writes a plain
+  // UNLAYERED `.richmd-doc { --richmd-token: value }` rule then wins over
+  // every richmd rule — including richmd's own higher-specificity
+  // `.richmd-doc[data-richmd-theme="light"|"dark"]` and
+  // `:root[data-richmd-theme="dark"]` scoped blocks — because in the CSS
+  // cascade, any unlayered declaration outranks ALL layered declarations
+  // regardless of selector specificity. This is the mechanism that makes
+  // design.md §00 P3 ("style is swappable, never hardcoded") actually WIN.
+  //
+  // A real browser cascade engine is not available here (this repo has no
+  // headless browser; linkedom lacks CSSOM/getComputedStyle — see
+  // scripts/theme-swap-check's header for the same limitation), so these
+  // assertions verify the STRUCTURAL facts about the emitted CSS text that,
+  // by the documented cascade rule above, make the override win. That is an
+  // honest stand-in for a computed-style check for this specific claim.
+  function extractThemeStyleBlock(html) {
+    const blocks = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(
+      (m) => m[1],
+    );
+    const themeBlock = blocks.find((b) => b.includes("--richmd-"));
+    assert.ok(
+      themeBlock,
+      "richmd theme <style> block not found in rendered HTML",
+    );
+    return themeBlock;
+  }
+
+  it("emits richmd's theme rules inside a named `@layer richmd-base` cascade layer, with the :root token block inside it", async () => {
+    const html = await readFile(demoHtmlPath, "utf8");
+    const themeCss = extractThemeStyleBlock(html);
+
+    // (1) Layer present: the theme <style> declares the richmd-base layer and
+    // opens a block for it.
+    assert.match(themeCss, /@layer richmd-base\s*\{/);
+
+    // The :root light-token RULE sits INSIDE the layer block: the layer's
+    // opening brace precedes the `:root {` rule. (We anchor on the actual
+    // rule `:root {`, not a bare `:root`, because the file's header comment
+    // mentions ":root" in prose — matching that would be a false positive.)
+    const layerOpen = themeCss.search(/@layer richmd-base\s*\{/);
+    const rootRuleAt = themeCss.search(/:root\s*\{/);
+    assert.ok(
+      layerOpen >= 0 && rootRuleAt > layerOpen,
+      "the `:root {` token rule must appear after the @layer opening brace",
+    );
+  });
+
+  it("declares the light-theme tokens with their exact unchanged values inside richmd-base (layer wrap changed no value)", async () => {
+    const html = await readFile(demoHtmlPath, "utf8");
+    const themeCss = extractThemeStyleBlock(html);
+
+    // Standalone-identical proof: specific known token values are still
+    // declared verbatim. If the layer wrap had altered any value, these would
+    // fail. (These are the light :root defaults from theme/default.css §1.)
+    assert.match(themeCss, /--richmd-color-bg:\s*#f6f7fb/);
+    assert.match(themeCss, /--richmd-color-text:\s*#12172b/);
+    assert.match(themeCss, /--richmd-accent-500:\s*#4f46e5/);
+  });
+
+  it("puts the data-richmd-theme scoped blocks INSIDE richmd-base, so an unlayered consumer override outranks them too", async () => {
+    const html = await readFile(demoHtmlPath, "utf8");
+    const themeCss = extractThemeStyleBlock(html);
+
+    // The scoped attribute blocks that Fix 1 relies on must be inside the
+    // layer — otherwise an unlayered consumer .richmd-doc{} rule would NOT
+    // beat them. Assert each RULE (selector immediately followed by `{`, so a
+    // prose mention of the selector in the header comment is not a false
+    // positive) appears after the layer opens.
+    const layerOpen = themeCss.search(/@layer richmd-base\s*\{/);
+    assert.ok(layerOpen >= 0, "@layer richmd-base { must be present");
+
+    const scopedRuleRegexes = [
+      /\.richmd-doc\[data-richmd-theme="light"\]\s*\{/,
+      /\.richmd-doc\[data-richmd-theme="dark"\]\s*\{/,
+      /:root\[data-richmd-theme="dark"\]\s*\{/,
+    ];
+    for (const re of scopedRuleRegexes) {
+      const at = themeCss.search(re);
+      assert.ok(
+        at > layerOpen,
+        `${re} rule must appear inside the richmd-base layer`,
+      );
+    }
+
+    // And the theme block ends by closing the layer: the LAST non-whitespace
+    // char of the theme CSS is the layer's closing brace.
+    assert.match(themeCss, /\}\s*$/);
+
+    // Cascade rule (documented, not executed here): because these blocks are
+    // layered, a consumer's UNLAYERED `.richmd-doc { --richmd-*: … }` wins
+    // over them with no specificity matching required. Real-browser cascade
+    // resolution is not exercised (no CSSOM/getComputedStyle available); this
+    // is a structural assertion of the fact that makes the override win.
+  });
 });
 
 // Acceptance criterion: a malformed 'definition' block (missing the

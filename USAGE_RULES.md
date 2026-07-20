@@ -1072,6 +1072,51 @@ returns a value that isn't `pandoc.Blocks`, at render time is a hard filter
 failure naming the file and the offending kind, with **no HTML written** —
 exactly like a crashing block render function, cross-block rule, or shell region.
 
+## Theming: reskinning richmd
+
+richmd ships one default stylesheet built entirely from `--richmd-*` CSS custom
+properties, and never hardcodes visual identity — you reskin by overriding those
+tokens (or replacing the stylesheet). Three rules make a reskin predictable:
+
+- **Key theme-dependent CSS on the resolved attribute, never the bare media
+  query.** `.richmd-doc` always carries a `data-richmd-theme="dark"` (or
+  `="light"`) attribute reflecting the theme richmd actually resolved — the
+  reader's explicit choice if one is stored, otherwise the OS
+  `prefers-color-scheme` preference — set before first paint and kept in sync as
+  the OS preference or the toggle changes. Write your theme-dependent rules
+  against `.richmd-doc[data-richmd-theme="dark"]`, **not** against
+  `@media (prefers-color-scheme: dark)`: the media query reads only the OS
+  preference and so disagrees with a forced theme, whereas the attribute is the
+  single signal that always matches what's on screen. (The attribute is set at
+  runtime only — it is never written into the committed `.html`, so
+  `render --check` stays byte-identical.)
+
+- **Override with unlayered CSS — no specificity fight.** richmd's default token
+  and base rules ship inside the `@layer richmd-base` cascade layer. Because any
+  unlayered CSS beats all layered CSS regardless of specificity, write your
+  `--richmd-*` token overrides **outside any `@layer`** (or in a layer you
+  declare after richmd's) and a plain `.richmd-doc { … }` rule wins over
+  richmd's base — including its light/dark `data-richmd-theme` blocks — with no
+  need to match or out-specify richmd's own selectors:
+
+  ```css
+  /* unlayered — beats @layer richmd-base with no specificity match needed */
+  .richmd-doc {
+    --richmd-color-accent: oklch(0.6 0.2 260);
+  }
+  .richmd-doc[data-richmd-theme="dark"] {
+    --richmd-color-accent: oklch(0.72 0.16 260);
+  }
+  ```
+
+- **Diagram-facing tokens may use any CSS color syntax, including `oklch()`.**
+  The `--richmd-color-*` tokens a mermaid diagram or a vega-lite/chart block
+  reads live may be authored in any CSS color syntax. richmd's diagram runtime
+  normalizes each one to a hex format both mermaid and vega-lite accept before
+  handing it over, so a modern-color-space theme (`oklch()`, and the like) won't
+  silently break a diagram even though mermaid throws on `oklch()` and vega-lite
+  rejects it.
+
 ## Failure behavior
 
 Every validation error is reported as:

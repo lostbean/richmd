@@ -482,7 +482,13 @@ The CSS asset controlling a [rendered page](#term-rendered-page)'s visual
 identity. richmd ships exactly one default stylesheet, built entirely from
 `--richmd-*` CSS custom properties; a consumer reskins by overriding the
 variables or supplying a replacement stylesheet — richmd's core never
-hardcodes visual identity.
+hardcodes visual identity. The default stylesheet's tokens and base rules ship
+inside the `@layer richmd-base` cascade layer, so an unlayered consumer override
+wins over them without a specificity fight; and `.richmd-doc` always carries a
+resolved `data-richmd-theme` signal (`light`/`dark`, set at runtime) that a
+consumer's theme-dependent CSS keys on rather than the bare
+`@media (prefers-color-scheme)` query. See
+[ADR-0016](../adr/0016-css-facing-theme-contracts-resolved-attribute-and-cascade-layer.md#adr-0016).
 
 ### Categorical palette {#term-categorical-palette}
 
