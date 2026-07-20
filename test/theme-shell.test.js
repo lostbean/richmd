@@ -286,3 +286,316 @@ describe("richmd render (page shell + theme toggle)", () => {
     assert.equal(dispatchedEvents[1].type, "richmd-theme-changed");
   });
 });
+
+// The anti-flash script must ALWAYS set data-richmd-theme on .richmd-doc to
+// the RESOLVED active theme — stored choice if present, else the OS
+// preference — from first paint, and keep it in sync with OS changes (unless
+// an explicit stored choice wins). These tests eval the REAL emitted
+// anti-flash script text against fake document/matchMedia/localStorage
+// doubles, proving the resolution logic, not just substrings.
+describe("richmd render — anti-flash resolved-theme attribute", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+  let html;
+
+  before(async () => {
+    workDir = await mkdtemp(path.join(tmpdir(), "richmd-render-antiflash-"));
+    mdPath = path.join(workDir, "plain.md");
+    htmlPath = path.join(workDir, "plain.html");
+    await writeFile(mdPath, "# Hello\n\nJust a plain paragraph.\n");
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    html = await readFile(htmlPath, "utf8");
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  function extractAntiFlashScript(pageHtml) {
+    const scriptMatches = [
+      ...pageHtml.matchAll(/<script>([\s\S]*?)<\/script>/g),
+    ].map((m) => m[1]);
+    // The anti-flash script is the one that reads localStorage and touches
+    // data-richmd-theme via document.currentScript.parentElement — distinct
+    // from the toggle script (which finds .richmd-doc via querySelector and
+    // attaches a button click listener).
+    return scriptMatches.find(
+      (s) =>
+        s.includes("localStorage") &&
+        s.includes("currentScript") &&
+        s.includes("data-richmd-theme"),
+    );
+  }
+
+  // Builds the fake DOM/matchMedia/localStorage double the anti-flash script
+  // runs against. `stored` is the localStorage value ("light"/"dark"/null),
+  // `osDark` whether the OS prefers dark. Returns handles to inspect the
+  // resolved attribute and to fire the media-query change listener.
+  function runAntiFlash(script, { stored = null, osDark = false } = {}) {
+    const attrs = {};
+    const parentEl = {
+      setAttribute(name, value) {
+        attrs[name] = String(value);
+      },
+      getAttribute(name) {
+        return Object.hasOwn(attrs, name) ? attrs[name] : null;
+      },
+    };
+
+    const store = {};
+    if (stored != null) store["richmd-theme"] = stored;
+    const fakeLocalStorage = {
+      getItem: (k) => (Object.hasOwn(store, k) ? store[k] : null),
+      setItem: (k, v) => {
+        store[k] = String(v);
+      },
+    };
+
+    let mqlDark = osDark;
+    let changeListener = null;
+    const mql = {
+      get matches() {
+        return mqlDark;
+      },
+      addEventListener(type, fn) {
+        if (type === "change") changeListener = fn;
+      },
+      addListener(fn) {
+        changeListener = fn;
+      },
+    };
+    const fakeWindow = {
+      matchMedia: (q) => {
+        // Only the dark query is asked for by the script.
+        assert.match(q, /prefers-color-scheme:\s*dark/);
+        return mql;
+      },
+    };
+
+    const dispatchedEvents = [];
+    const fakeDocument = {
+      currentScript: { parentElement: parentEl },
+      dispatchEvent(event) {
+        dispatchedEvents.push(event);
+      },
+    };
+
+    class FakeCustomEvent {
+      constructor(type) {
+        this.type = type;
+      }
+    }
+
+    const fn = new Function(
+      "document",
+      "window",
+      "localStorage",
+      "CustomEvent",
+      script,
+    );
+    fn(fakeDocument, fakeWindow, fakeLocalStorage, FakeCustomEvent);
+
+    return {
+      resolved: () => parentEl.getAttribute("data-richmd-theme"),
+      fireOsChange(nextDark) {
+        mqlDark = nextDark;
+        assert.ok(
+          changeListener,
+          "expected the anti-flash script to register an OS change listener",
+        );
+        changeListener();
+      },
+      dispatchedEvents,
+      store,
+    };
+  }
+
+  it("sets a matchMedia change listener via addEventListener('change') and always resolves the attribute on load", async () => {
+    const script = extractAntiFlashScript(html);
+    assert.ok(script, "expected to find the anti-flash script");
+    const run = runAntiFlash(script, { stored: null, osDark: false });
+    assert.equal(run.resolved(), "light");
+  });
+
+  it("OS-driven resolution: no stored choice, OS dark -> attribute 'dark'; OS light -> 'light'", async () => {
+    const script = extractAntiFlashScript(html);
+    assert.equal(runAntiFlash(script, { osDark: true }).resolved(), "dark");
+    assert.equal(runAntiFlash(script, { osDark: false }).resolved(), "light");
+  });
+
+  it("stored choice wins on load: stored 'light' while OS is dark -> 'light'", async () => {
+    const script = extractAntiFlashScript(html);
+    const run = runAntiFlash(script, { stored: "light", osDark: true });
+    assert.equal(run.resolved(), "light");
+  });
+
+  it("falls back to 'light' when window.matchMedia is not a function (older/headless)", async () => {
+    const script = extractAntiFlashScript(html);
+    const attrs = {};
+    const parentEl = {
+      setAttribute(n, v) {
+        attrs[n] = String(v);
+      },
+      getAttribute(n) {
+        return Object.hasOwn(attrs, n) ? attrs[n] : null;
+      },
+    };
+    const fakeLocalStorage = { getItem: () => null, setItem: () => {} };
+    const fakeDocument = {
+      currentScript: { parentElement: parentEl },
+      dispatchEvent() {},
+    };
+    const fn = new Function(
+      "document",
+      "window",
+      "localStorage",
+      "CustomEvent",
+      script,
+    );
+    fn(fakeDocument, {}, fakeLocalStorage, class {});
+    assert.equal(parentEl.getAttribute("data-richmd-theme"), "light");
+  });
+
+  it("OS-change sync (no stored choice): firing the media-query change updates the attribute AND dispatches richmd-theme-changed", async () => {
+    const script = extractAntiFlashScript(html);
+    const run = runAntiFlash(script, { stored: null, osDark: false });
+    assert.equal(run.resolved(), "light");
+    run.fireOsChange(true);
+    assert.equal(run.resolved(), "dark");
+    assert.equal(run.dispatchedEvents.length, 1);
+    assert.equal(run.dispatchedEvents[0].type, "richmd-theme-changed");
+  });
+
+  it("OS-change ignored when a stored choice exists: stored 'light', OS flips to dark -> attribute STAYS 'light', no event", async () => {
+    const script = extractAntiFlashScript(html);
+    const run = runAntiFlash(script, { stored: "light", osDark: false });
+    assert.equal(run.resolved(), "light");
+    run.fireOsChange(true);
+    assert.equal(run.resolved(), "light");
+    assert.equal(run.dispatchedEvents.length, 0);
+  });
+
+  it("end-to-end: the OS-change event the anti-flash script dispatches drives a registered diagram rerender callback (via the real diagram-theme script)", async () => {
+    const scriptMatches = [
+      ...html.matchAll(/<script>([\s\S]*?)<\/script>/g),
+    ].map((m) => m[1]);
+    const antiFlash = extractAntiFlashScript(html);
+    const diagramTheme = scriptMatches.find((s) =>
+      s.includes("richmdDiagramTheme"),
+    );
+    assert.ok(antiFlash && diagramTheme);
+
+    // One shared fake document so the anti-flash script's dispatchEvent
+    // actually reaches the diagram-theme script's registered listener — the
+    // real cross-script wiring, not parallel stubs.
+    const documentListeners = {};
+    const attrs = {};
+    const parentEl = {
+      setAttribute(n, v) {
+        attrs[n] = String(v);
+      },
+      getAttribute(n) {
+        return Object.hasOwn(attrs, n) ? attrs[n] : null;
+      },
+    };
+    const fakeDocument = {
+      currentScript: { parentElement: parentEl },
+      querySelector() {
+        return parentEl;
+      },
+      addEventListener(type, fn) {
+        documentListeners[type] = documentListeners[type] || [];
+        documentListeners[type].push(fn);
+      },
+      dispatchEvent(event) {
+        (documentListeners[event.type] || []).forEach((fn) => fn(event));
+      },
+    };
+    function fakeGetComputedStyle() {
+      return { getPropertyValue: () => "" };
+    }
+    class FakeCustomEvent {
+      constructor(type) {
+        this.type = type;
+      }
+    }
+    let mqlDark = false;
+    let changeListener = null;
+    const mql = {
+      get matches() {
+        return mqlDark;
+      },
+      addEventListener(type, fn) {
+        if (type === "change") changeListener = fn;
+      },
+    };
+    const fakeWindow = { matchMedia: () => mql };
+    const fakeLocalStorage = { getItem: () => null, setItem: () => {} };
+
+    // Load the diagram-theme script first (registers the
+    // richmd-theme-changed listener), matching real page order.
+    const loadDiagram = new Function(
+      "document",
+      "getComputedStyle",
+      "window",
+      diagramTheme + "\n;return window;",
+    );
+    const win = loadDiagram(fakeDocument, fakeGetComputedStyle, fakeWindow);
+
+    let rerendered = false;
+    win.richmdDiagramRerenders.push(() => {
+      rerendered = true;
+    });
+
+    const loadAntiFlash = new Function(
+      "document",
+      "window",
+      "localStorage",
+      "CustomEvent",
+      antiFlash,
+    );
+    loadAntiFlash(fakeDocument, win, fakeLocalStorage, FakeCustomEvent);
+
+    assert.ok(changeListener, "expected an OS change listener");
+    mqlDark = true;
+    changeListener();
+
+    assert.equal(parentEl.getAttribute("data-richmd-theme"), "dark");
+    assert.equal(
+      rerendered,
+      true,
+      "expected the OS-change event to drive a diagram rerender via the real wiring",
+    );
+  });
+
+  it("byte-stability: two renders of the same input are byte-identical AND the .richmd-doc element carries no baked-in data-richmd-theme attribute (runtime-only)", async () => {
+    // Same input file rendered twice to the same output path — the emitted
+    // HTML (title included) must be a pure function of the input, so the two
+    // renders are byte-identical.
+    const stablePath = path.join(workDir, "stable.md");
+    const stableHtml = path.join(workDir, "stable.html");
+    const md = "# Stable\n\nA paragraph with a `code` span.\n";
+    await writeFile(stablePath, md);
+    const r1 = await runCli(["render", stablePath]);
+    const out1 = await readFile(stableHtml, "utf8");
+    const r2 = await runCli(["render", stablePath]);
+    const out2 = await readFile(stableHtml, "utf8");
+    assert.equal(r1.code, 0, `stderr: ${r1.stderr}`);
+    assert.equal(r2.code, 0, `stderr: ${r2.stderr}`);
+    assert.equal(out1, out2, "expected two renders to be byte-identical");
+    // The attribute is set only at runtime by the anti-flash script; it must
+    // never appear baked onto the .richmd-doc element in the static output
+    // (that would break --check). Scoped to the .richmd-doc opening tag on
+    // purpose: the inlined theme/default.css legitimately mentions
+    // `[data-richmd-theme="…"]` in its CSS selectors/comments — those are not
+    // a build-time attribute on the element, so a bare document-wide search
+    // would give a false positive.
+    assert.doesNotMatch(
+      out1,
+      /<div class="richmd-doc"[^>]*data-richmd-theme=/,
+      "static HTML must not bake a data-richmd-theme attribute onto .richmd-doc",
+    );
+  });
+});

@@ -1366,26 +1366,74 @@ end
 --
 -- A tiny inline <script>, emitted as the FIRST child of .richmd-doc (ahead
 -- of the topbar and the container), so it runs before the browser paints
--- any of the doc's actual content. It reads a previously-persisted user
--- choice back out of localStorage and — if one exists — applies it to
--- .richmd-doc's data-richmd-theme attribute immediately, synchronously,
--- before first paint. Without this, a returning reader with a stored "dark"
--- preference would see a flash of the light theme (CSS's
--- prefers-color-scheme default) before the toggle script further down the
--- page ever got a chance to run. No dependency on DOMContentLoaded here on
--- purpose: .richmd-doc already exists in the parse tree by the time this
--- inline script tag itself runs (it's the previous sibling), so this can
--- run synchronously as the parser reaches it — that's what "before first
--- paint" requires.
+-- any of the doc's actual content. It resolves the ACTIVE theme and applies
+-- it to .richmd-doc's data-richmd-theme attribute immediately, synchronously,
+-- before first paint.
+--
+-- The resolved theme is: an explicit stored choice ("light"/"dark") when the
+-- reader has one, ELSE the OS preference via
+-- `matchMedia('(prefers-color-scheme: dark)')`. The attribute is therefore
+-- ALWAYS present and correct from first paint — even for a reader who has
+-- never toggled — so a single CSS selector keyed on
+-- `.richmd-doc[data-richmd-theme]` always reflects the RESOLVED theme, never
+-- disagreeing with the bare media query the way a consumer's own
+-- `@media (prefers-color-scheme: dark)` block could (design.md §00 P3: the
+-- attribute is a runtime STATE signal driving token selection, not hardcoded
+-- visual identity — it is never baked into the static HTML, only set here at
+-- runtime). Without this a returning reader with a stored "dark" preference
+-- would also see a flash of the light theme before the toggle script ran.
+--
+-- This script is ALSO where the OS-preference change listener lives — the
+-- single source of truth for "resolve the theme" (its `resolve()` helper),
+-- so the resolve logic is never duplicated across two scripts. When the OS
+-- preference flips AND the reader has no explicit stored choice (the
+-- attribute is tracking the OS), it updates the attribute to the newly
+-- resolved value and dispatches `richmd-theme-changed` so diagrams re-render.
+-- An explicit stored choice always wins: an OS flip never overrides it,
+-- matching the CSS precedence where the attribute wins over the media query.
+--
+-- No dependency on DOMContentLoaded here on purpose: .richmd-doc already
+-- exists in the parse tree by the time this inline script tag itself runs
+-- (it's the previous sibling), so this can run synchronously as the parser
+-- reaches it — that's what "before first paint" requires.
 local function anti_flash_theme_script_html()
   return [[<script>
   (function () {
-    try {
-      var stored = localStorage.getItem("richmd-theme");
-      if (stored === "light" || stored === "dark") {
-        document.currentScript.parentElement.setAttribute("data-richmd-theme", stored);
+    var doc = document.currentScript.parentElement;
+    function stored() {
+      try {
+        var s = localStorage.getItem("richmd-theme");
+        return s === "light" || s === "dark" ? s : null;
+      } catch (e) {
+        return null;
       }
-    } catch (e) {}
+    }
+    function osTheme() {
+      if (typeof window.matchMedia !== "function") return "light";
+      return window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+    }
+    function resolve() {
+      return stored() || osTheme();
+    }
+    doc.setAttribute("data-richmd-theme", resolve());
+    if (typeof window.matchMedia === "function") {
+      var mql = window.matchMedia("(prefers-color-scheme: dark)");
+      var onChange = function () {
+        // An explicit stored choice wins over the OS — leave the attribute
+        // alone in that case (matches the CSS attribute-over-media-query
+        // precedence). Otherwise track the OS and let diagrams re-render.
+        if (stored()) return;
+        doc.setAttribute("data-richmd-theme", osTheme());
+        document.dispatchEvent(new CustomEvent("richmd-theme-changed"));
+      };
+      if (typeof mql.addEventListener === "function") {
+        mql.addEventListener("change", onChange);
+      } else if (typeof mql.addListener === "function") {
+        mql.addListener(onChange);
+      }
+    }
   })();
 </script>]]
 end
@@ -1551,15 +1599,18 @@ end
 -- string post-processing of Pandoc's own output (which would be fragile and
 -- inconsistent with richmd's AST-based architecture everywhere else).
 --
--- No data-richmd-theme attribute is set on .richmd-doc here: the CSS's
--- prefers-color-scheme media query is the correct default (theme/default.css
--- §1b) for a page nobody has interacted with yet, and forcing a literal
--- "light" or "dark" value here would override that OS-driven default for
--- every reader on first visit, which is not richmd's call to make. Once a
--- reader clicks the toggle, the toggle script (theme_toggle_script_html)
--- sets the attribute directly on the live DOM node and persists the choice;
--- the anti-flash script re-applies a stored choice, if any, on the next
--- load — but a first-ever render never carries a hardcoded value.
+-- No data-richmd-theme attribute is baked into the static HTML here: the
+-- emitted markup must be a pure function of the input (byte-identical across
+-- renders, so `richmd render --check` passes), and the attribute is a
+-- RUNTIME state signal, not build-time visual identity (§00 P3). The
+-- anti-flash script (anti_flash_theme_script_html), running as .richmd-doc's
+-- first child before first paint, is what sets data-richmd-theme on the live
+-- DOM node — ALWAYS, to the RESOLVED active theme (stored choice if any,
+-- else the OS preference), and keeps it in sync when the OS preference
+-- changes. Once a reader clicks the toggle, the toggle script
+-- (theme_toggle_script_html) sets an explicit choice and persists it, which
+-- then wins over the OS on every later load and OS change. The static output
+-- itself never carries a value.
 -- render_shell_region(region_name, region_fn, doc_meta) -> pandoc.Blocks
 --
 -- Calls one loaded shell region (masthead/colophon) in the RENDER phase,
