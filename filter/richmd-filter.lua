@@ -21,6 +21,7 @@ local ExtensionLoader = require("extension-loader")
 local RulesLoader = require("rules-loader")
 local TokensLoader = require("tokens-loader")
 local ShellLoader = require("shell-loader")
+local GroupsLoader = require("groups-loader")
 local HeadingScope = require("heading-scope")
 
 -- One registry instance, shared across validate and render phases and
@@ -298,6 +299,22 @@ local token_vocabularies = TokensLoader.load(config_dir .. "/" .. TokensLoader.D
 -- per document, in the RENDER phase (see wrap_blocks_in_page_shell below) —
 -- never as a validate step; the shell hook renders chrome, it never gates.
 local shell_regions = ShellLoader.load(config_dir .. "/" .. ShellLoader.DEFAULT_DIR)
+
+-- Group render hooks (design.md §11, ADR-0015, CONTEXT.md#term-group-hook) —
+-- consumer-authored `.lua` files under the groups directory (default
+-- `.richmd/groups/`, resolved against the walked config_dir above, same
+-- convention as the four loaders just above). Loaded ONCE at filter startup,
+-- same timing as the other loaders. A malformed hook file, or two files
+-- claiming the same block kind (the per-kind singleton contract), is a fatal
+-- load-time error (filter/groups-loader.lua calls `error(...)`) that aborts
+-- the whole filter run before any AST walk begins — distinct from a per-block
+-- validation error collected below. Each hook is actually invoked later, once
+-- per matching run of consecutive same-kind blocks, in the RENDER phase (see
+-- group_top_level_blocks below) — never as a validate step; a group hook
+-- wraps chrome, it never gates. The value is a map { [kind] = { fn, file } };
+-- empty when no hook is present, so the whole grouping pass is inert for a
+-- document with no `.richmd/groups/` (byte-identical to the pre-hook output).
+local group_hooks = GroupsLoader.load(config_dir .. "/" .. GroupsLoader.DEFAULT_DIR)
 
 -- All validation errors collected across the whole document (§00 invariant:
 -- never fail-fast on the first error).
@@ -1544,6 +1561,113 @@ local function render_shell_region(region_name, region_fn, doc_meta)
   return blocks
 end
 
+-- render_group(kind, group_hook, rendered_blocks) -> pandoc.Blocks
+--
+-- Calls one loaded group hook in the RENDER phase, past the fail-closed gate
+-- (design.md §11, ADR-0015). The hook is the consumer's own Lua
+-- `function(kind, rendered_blocks) -> pandoc.Blocks`, handed the run's kind
+-- (a string) and the list of ALREADY-RENDERED AST nodes for that run in
+-- document order (composing over the per-block render_fn, never
+-- re-implementing it).
+--
+-- A hook that RAISES, or returns anything other than pandoc.Blocks (or a
+-- value pandoc.Blocks can coerce), is a HARD filter failure naming the hook's
+-- own file AND the offending kind — no partial HTML written — exactly as a
+-- crashing shell region already hard-fails (render_shell_region above, §03
+-- failure behavior). It never silently drops the run or emits a broken page.
+-- Uses the same `error("richmd: ...", 0)` fatal style as the rest of the
+-- codebase.
+local function render_group(kind, group_hook, rendered_blocks)
+  local ok, result = pcall(group_hook.fn, kind, rendered_blocks)
+  if not ok then
+    error(
+      "richmd: group hook '"
+        .. group_hook.file
+        .. "' raised an error while rendering the '"
+        .. kind
+        .. "' group: "
+        .. tostring(result),
+      0
+    )
+  end
+
+  -- pandoc.Blocks coerces a Blocks/list/single-block input into a Blocks
+  -- list, but throws on a genuinely non-block value (a number, a string, a
+  -- table that is not a block). Catch that so the failure names the file and
+  -- kind rather than surfacing as a bare pandoc constructor error. Unlike a
+  -- shell region, a group hook has no "nil injects nothing" contract — it is
+  -- called only for a run it claimed, and must return the blocks that replace
+  -- that run.
+  local coerced_ok, blocks = pcall(pandoc.Blocks, result)
+  if not coerced_ok then
+    error(
+      "richmd: group hook '"
+        .. group_hook.file
+        .. "' returned a value that is not pandoc.Blocks for the '"
+        .. kind
+        .. "' group (must return pandoc.Blocks): "
+        .. tostring(result),
+      0
+    )
+  end
+
+  return blocks
+end
+
+-- group_top_level_blocks(rendered_blocks, original_kinds, group_hooks)
+--   -> pandoc.List(Block)
+--
+-- The group render pass (design.md §11, ADR-0015): scans the TOP-LEVEL
+-- rendered block list for maximal runs of CONSECUTIVE blocks whose ORIGINAL
+-- kind (captured before the render walk stripped it off the node — see
+-- Pandoc(doc)) is claimed by a group hook, and replaces each such run with the
+-- hook's returned blocks. Grouping is contiguous and order-preserving: a block
+-- of another kind (or an unclaimed/no-kind block) splits a run, and no block
+-- is ever reordered. Only top-level blocks group — this never recurses into
+-- nested divs.
+--
+-- `rendered_blocks[i]` and `original_kinds[i]` are index-aligned: the render
+-- walk replaces each top-level Div/CodeBlock 1:1, preserving count and order,
+-- so the kind captured for block i before the walk still describes block i
+-- after it. `original_kinds[i]` is nil for any block that was never a
+-- recognized richmd kind (plain paragraphs, headings, ordinary code).
+--
+-- Inert when group_hooks is empty (no `.richmd/groups/`): the membership check
+-- always misses, every block passes through untouched, and the output is
+-- byte-identical to the pre-hook render.
+local function group_top_level_blocks(rendered_blocks, original_kinds, group_hooks)
+  if next(group_hooks) == nil then
+    return pandoc.List(rendered_blocks)
+  end
+
+  local out = pandoc.List({})
+  local i = 1
+  local n = #rendered_blocks
+  while i <= n do
+    local kind = original_kinds[i]
+    local hook = kind and group_hooks[kind] or nil
+    if not hook then
+      out:insert(rendered_blocks[i])
+      i = i + 1
+    else
+      -- Extend the run while the next block's ORIGINAL kind is the SAME
+      -- claimed kind (a different kind, even one claimed by another hook,
+      -- splits the run — the design's contiguity rule).
+      local run = {}
+      local j = i
+      while j <= n and original_kinds[j] == kind do
+        table.insert(run, rendered_blocks[j])
+        j = j + 1
+      end
+      local grouped = render_group(kind, hook, run)
+      out:extend(grouped)
+      i = j
+    end
+  end
+
+  return out
+end
+
 local function wrap_blocks_in_page_shell(blocks, doc_meta, shell_regions)
   -- Pandoc's HTML writer (Text.Pandoc.Shared.makeSections, run unconditionally
   -- inside every writer, independent of --section-divs) auto-converts ANY Div
@@ -1860,12 +1984,38 @@ function Pandoc(doc)
   -- coincidence, is what holds that invariant here.
   doc = doc:walk({ Header = render_only_header })
 
+  -- Capture each TOP-LEVEL block's ORIGINAL richmd kind BEFORE the render walk
+  -- below (design.md §11, ADR-0015): render_only_div transforms a `:::goal`
+  -- Div into a rendered node that no longer carries the `goal` class, so the
+  -- original kind cannot be recovered from the post-render node. The render
+  -- walk replaces each top-level Div/CodeBlock 1:1 (preserving count and
+  -- order), so this index-aligned list still describes each block after the
+  -- walk. A block that is not a recognized richmd kind (a plain paragraph,
+  -- heading, or ordinary code) gets nil here — the same generic
+  -- richmd_kind_of / richmd_kind_of_codeblock the two phases already use,
+  -- never an `if kind == "..."` branch. Only top-level blocks are captured;
+  -- the grouping pass never recurses into nested divs.
+  local original_kinds = {}
+  for index, block in ipairs(doc.blocks) do
+    if block.tag == "Div" then
+      original_kinds[index] = richmd_kind_of(block)
+    elseif block.tag == "CodeBlock" then
+      original_kinds[index] = richmd_kind_of_codeblock(block)
+    end
+  end
+
   doc = doc:walk({
     Div = render_only_div,
     Link = render_only_link,
     CodeBlock = render_only_codeblock,
     Code = render_only_code,
   })
+
+  -- Group render pass (design.md §11, ADR-0015): wrap each maximal run of
+  -- consecutive top-level blocks whose original kind a hook claimed into the
+  -- hook's structure-only blocks. Inert (byte-identical pass-through) when no
+  -- `.richmd/groups/` hook is loaded.
+  doc.blocks = group_top_level_blocks(doc.blocks, original_kinds, group_hooks)
 
   -- Inject the theme stylesheet into the document head.
   doc.meta["header-includes"] = pandoc.List({ pandoc.MetaBlocks({

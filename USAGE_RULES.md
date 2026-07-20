@@ -946,6 +946,132 @@ isn't `pandoc.Blocks`, at render time is a hard filter failure naming
 `shell.lua` and the offending region, with **no HTML written** — exactly like
 a crashing block render function or cross-block rule.
 
+## Group render: wrap a run of same-kind blocks into one section
+
+The four contracts above each render or validate one thing at a time — a block
+kind schema and the token vocabulary see a single block or a single inline span,
+a cross-block rule sees a whole run but only to **validate** it, and the shell
+hook sees the whole document but only to inject chrome around it. None of them
+can take a **run of sibling blocks** and wrap it into one section. The
+**group hook** is the fifth consumer contract, and the render-phase sibling of
+the cross-block rule: where a rule sees a run to reject it, a group hook sees the
+same run to _wrap_ it — turning a flat sequence of same-kind blocks into one
+titled section, without the author grouping them by hand.
+
+Drop a `.lua` file into `.richmd/groups/`, inside your document's config
+directory (same discovery as `.richmd/blocks/` above):
+
+```
+.richmd/groups/callouts.lua
+```
+
+The file returns a table with two keys:
+
+- `kinds` — a list of the block-kind name strings the hook claims.
+- `render` — a function `render(kind, rendered_blocks) -> pandoc.Blocks`, where
+  `kind` is the run's block kind (a string) and `rendered_blocks` is the list of
+  already-rendered Pandoc AST nodes for that run, in document order.
+
+richmd finds each **maximal run of consecutive blocks of a claimed kind** during
+the render phase, renders each block block-by-block exactly as usual, then calls
+the hook **once per run** and replaces the run with the blocks the hook returns.
+"Consecutive" means adjacent with no intervening block of a different kind — a
+block of another kind splits a run. Grouping never reorders blocks and never
+reaches across another kind's block, and a kind no hook claims renders exactly as
+today, byte-for-byte identical to a document with no groups directory. Passing
+`kind` to `render` lets **one hook file claim several kinds** and switch its
+heading and class on the kind:
+
+```lua
+-- .richmd/groups/callouts.lua
+local TITLES = { callout = "Notes", cards = "Card groups" }
+return {
+  kinds = { "callout", "cards" },
+  render = function(kind, rendered_blocks)
+    local children = { pandoc.Header(3, TITLES[kind] or kind) }
+    for _, node in ipairs(rendered_blocks) do
+      table.insert(children, node)
+    end
+    return pandoc.Blocks({
+      pandoc.Div(children, pandoc.Attr("", { "richmd-group", "richmd-group--" .. kind })),
+    })
+  end,
+}
+```
+
+Grouping is generic over **any registered kind** — a built-in like `callout`
+above, or one of your **own** block kinds (`.richmd/blocks/`), which group
+identically. Given a source document with three consecutive `callout`s followed
+by a `cards` block:
+
+```markdown
+::: {.callout tint="info"}
+First note.
+:::
+
+::: {.callout tint="warning"}
+Second note.
+:::
+
+::: {.callout}
+Third note.
+:::
+
+::: {.cards cols="2"}
+
+### A card
+
+Card body.
+
+:::
+```
+
+the three callouts — a single maximal run — are wrapped in one
+`richmd-group--callout` section under a "Notes" heading, and the lone `cards`
+block in its own `richmd-group--cards` section under "Card groups". The author
+wrote a flat sequence; the sectioning is **derived** from the runs, never grouped
+by hand. Had a fourth block of another kind sat between the second and third
+callout, that would be **two** callout runs — two `richmd-group--callout`
+sections — not one, because a block of a different kind splits a run.
+
+**The hook returns structure, not style.** It emits blocks carrying `richmd-*`
+classes and never raw styled HTML; richmd ships no CSS for them. The look is
+owned by the theme — the consumer's own stylesheet, keyed off those classes —
+exactly like the shell hook injects `richmd-*` chrome and the token hook emits
+`richmd-token` structure, and the stylesheet paints it (principle P3, "style is
+swappable, never hardcoded"):
+
+```css
+.richmd-group {
+  margin-block: 2rem;
+}
+.richmd-group--callout {
+  border-inline-start: 3px solid var(--richmd-color-accent);
+  padding-inline-start: 1rem;
+}
+```
+
+The groups directory may hold **several** hook files — unlike the shell
+directory's single-file rule — but its singleton contract is **per kind**: two
+hook files both claiming the same kind is a **fatal, load-time** error naming
+both files, never a silent last-loaded-wins merge. As long as no two files claim
+the same kind, any number of hooks coexist. A malformed hook file (invalid Lua, a
+return value that isn't a table, a `kinds` that isn't a list of strings, or a
+`render` that isn't a function) is likewise a fatal load-time error naming the
+file — identical to a malformed `.richmd/blocks/`, `.richmd/rules/`,
+`.richmd/tokens/`, or `.richmd/shell/` extension. A broken hook is never silently
+skipped.
+
+**The hook runs in the render phase, past the fail-closed gate — it never gates a
+document.** It cannot add a validation error, so it can never fail a document for
+a malformed run. A consumer who wants a malformed run to _fail_ — the wrong
+number of blocks, an illegal ordering — writes a **cross-block rule**
+(`.richmd/rules/`) instead; validating a run is already that contract's job,
+which is exactly why the two are split across the gate. A hook that raises, or
+returns a value that isn't `pandoc.Blocks`, at render time is a hard filter
+failure naming the file and the offending kind, with **no HTML written** —
+exactly like a crashing block render function, cross-block rule, or shell region.
+
 ## Failure behavior
 
 Every validation error is reported as:

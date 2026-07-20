@@ -1203,6 +1203,23 @@ a partial or silently wrong page. See
 </div>
 </div>
 <div class="entry invariant">
+<div class="entry-head"><span class="label">The group hook renders a consecutive run, never gates</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill robustness">robustness</span></span></div>
+<div class="body">
+<p>The consumer <a href="CONTEXT.md#term-group-hook">group hook</a> runs only in the render
+phase, after the fail-closed gate is already green: it wraps a
+<a href="CONTEXT.md#term-block-group">block group</a> — a maximal run of consecutive
+same-kind <a href="CONTEXT.md#term-block">blocks</a> — into structure-only blocks and can
+add no
+<a href="CONTEXT.md#term-validation-error">validation error</a>. Grouping is contiguous and
+order-preserving: a block of another kind splits a run, and no block is ever
+reordered. A kind is claimed by at most one hook — a second hook claiming it is a
+fatal load-time error naming both files — and a hook returning a non-<code>Blocks</code>
+value or raising at render time is a hard filter failure naming the file, never a
+partial or silently wrong page. See
+<a href="../adr/0015-group-render-hook-as-fifth-consumer-contract.md#adr-0015">ADR-0015</a>.</p>
+</div>
+</div>
+<div class="entry invariant">
 <div class="entry-head"><span class="label">A heading's anchor id is deterministic: explicit id, else slug</span><span class="badges"><span class="enf mechanism">mechanism</span> <span class="script-chip">richmd-filter-core</span> <span class="pill state">state</span></span></div>
 <div class="body">
 <p>A heading's <a href="CONTEXT.md#term-anchor-id">anchor id</a> is its own explicit
@@ -1275,7 +1292,7 @@ Lua filter — not two Pandoc invocations. See
     Parse[&quot;Pandoc parse → AST&quot;]
     Validate[&quot;Validate phase\nschema lookup per block\n+ grammar validators\n+ token resolution\n+ cross-block rules&quot;]
     Gate{&quot;Errors empty?&quot;}
-    Render[&quot;Render phase\nlink rewrite · slugify\ntheme + diagram runtime&quot;]
+    Render[&quot;Render phase\nlink rewrite · slugify\nblock + group render\ntheme + diagram runtime&quot;]
     Page[&quot;Rendered page (.html)&quot;]
     Errors[&quot;Validation errors\n(all collected, exit 1)&quot;]
 
@@ -1622,8 +1639,9 @@ what the target means.</p>
 <p><strong>Owns recognizing and resolving
 <a href="CONTEXT.md#term-token-reference">token references</a> against declared
 <a href="CONTEXT.md#term-token-vocabulary">vocabularies</a>.</strong> One of richmd's
-consumer-declarable contracts, alongside §04's block schemas, §05's rules, and
-§12's <a href="CONTEXT.md#term-shell-hook">shell hook</a> — and the only one operating
+consumer-declarable contracts, alongside §04's block schemas, §05's rules,
+§10's <a href="CONTEXT.md#term-shell-hook">shell hook</a>, and §11's
+<a href="CONTEXT.md#term-group-hook">group hook</a> — and the only one operating
 below block granularity, at the inline span. richmd
 owns the mechanism; the set is always the consumer's. See
 <a href="../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011">ADR-0011</a>.</p>
@@ -1851,7 +1869,8 @@ chrome. The layout read and the hook are two instances of one idea — a produce
 reads <code>doc.meta</code> and shapes the shell — so they share a home rather than living
 as two unrelated readers. The fourth consumer-declarable contract, and the only
 one scoped to the whole document rather than a <a href="CONTEXT.md#term-block">block</a>
-or an inline span. See
+or an inline span; the fifth, the <a href="#11-group-render">group hook</a> (§11), is its
+render-phase sibling scoped to a <em>run</em> of blocks. See
 <a href="../adr/0014-document-shell-hook-as-fourth-consumer-contract.md#adr-0014">ADR-0014</a>.</p>
 <ul>
 <li><strong>Responsibility</strong>: wrap the rendered <a href="CONTEXT.md#term-block">blocks</a> in the
@@ -1917,7 +1936,82 @@ runs, every <a href="CONTEXT.md#term-validation-error">validation error</a> is a
 collected, so the hook has nothing left to reject.</p>
 </div>
 </div>
-<h2 id="11-ci-11-ci"><span class="secno">11</span> · CI {#11-ci}</h2>
+<h2 id="11-group-render-11-group-render"><span class="secno">11</span> · Group render {#11-group-render}</h2>
+<p><strong>Owns wrapping a run of same-kind blocks into one titled section at render
+time.</strong> One component owns the consumer <a href="CONTEXT.md#term-group-hook">group hook</a>
+— the fifth consumer-declarable contract, and the render-phase sibling of the
+validate-side <a href="#05-cross-block-rules">cross-block rule</a> (§05) and the
+document-scoped <a href="#10-document-shell">shell hook</a> (§10). Where a block's own
+<a href="CONTEXT.md#term-block-kind-registry">render function</a> sees only its own block,
+this component sees a whole <a href="CONTEXT.md#term-block-group">block group</a> — a
+maximal run of consecutive same-kind blocks — and lets a consumer wrap that run
+into a section <em>without</em> the author grouping the blocks by hand. See
+<a href="../adr/0015-group-render-hook-as-fifth-consumer-contract.md#adr-0015">ADR-0015</a>.</p>
+<ul>
+<li><strong>Responsibility</strong>: during the <a href="CONTEXT.md#term-render-phase">render phase</a>,
+scan the <a href="CONTEXT.md#term-document">document</a>'s top-level blocks for maximal
+runs of consecutive <a href="CONTEXT.md#term-block">blocks</a> whose
+<a href="CONTEXT.md#term-block-kind">kind</a> a loaded hook claims; render each block in
+the run block-by-block exactly as today, then call the claiming hook once per
+run with the run's kind and the already-rendered nodes, and replace the run
+with the hook's returned blocks. A kind no hook claims is never grouped — its
+blocks render one at a time, byte-identical to a document with no groups
+directory.</li>
+<li><strong>Interface</strong>: a <code>.richmd/groups/*.lua</code> file returning a table with a <code>kinds</code>
+list — the block kinds it claims — and a <code>render</code> function
+<code>render(kind, rendered_blocks) -&gt; pandoc.Blocks</code>, where <code>kind</code> is the run's
+block kind and <code>rendered_blocks</code> is the list of already-rendered AST nodes for
+that run in document order. The hook returns <strong>structure-only</strong> blocks
+carrying <code>richmd-*</code> classes (e.g. <code>richmd-group richmd-group--goal</code>), never raw
+styled HTML. Passing <code>kind</code> lets one hook file claim several kinds and switch
+its heading and class on the kind.</li>
+<li><strong>Interacts with</strong>: the <a href="#03-filter-core">filter core</a>, which loads this
+component's <a href="CONTEXT.md#term-groups-directory">groups directory</a> at startup exactly as it
+loads §04's <a href="CONTEXT.md#term-extension-directory">extension directory</a>, §05's
+<a href="CONTEXT.md#term-rules-directory">rules directory</a>, §06's
+<a href="CONTEXT.md#term-tokens-directory">tokens directory</a>, and §10's
+<a href="CONTEXT.md#term-shell-directory">shell directory</a>, and runs the group pass in
+the render phase after per-block render; the
+<a href="#09-theme-and-diagram-runtime">theme and diagram runtime</a> (§09), which owns
+the look of every <code>richmd-*</code> class a hook emits (P3); the
+<a href="#05-cross-block-rules">cross-block rules</a> (§05), the sibling contract a
+consumer reaches for instead when it must <em>validate</em> a run rather than render
+one.</li>
+<li><strong>Invariants held</strong>: the group hook renders a consecutive run, never gates
+(§00, the invariant this component introduces) — it runs past the green gate
+and adds no <a href="CONTEXT.md#term-validation-error">validation error</a>; grouping is
+contiguous and order-preserving, so a block of another kind splits a run and no
+block is reordered; style is swappable (§00 P3) — a hook emits <code>richmd-*</code>
+classes, never styled HTML; extend by composition (§00 P4) — the hook wraps
+each block's own already-correct render output, never re-implementing it.</li>
+<li><strong>Failure behavior</strong>: the <a href="CONTEXT.md#term-groups-directory">groups directory</a>
+enforces a <strong>per-kind singleton</strong> — two hook files both claiming the same kind
+is a fatal load-time error naming both files, never a silent last-loaded-wins
+merge. A hook file that fails to load (invalid Lua, a return value that is not
+a table, a <code>kinds</code> that is not a list of strings, or a <code>render</code> that is not a
+function) is the same fatal load-time error naming the file. A hook that
+returns a non-<code>Blocks</code>, non-<code>nil</code> value, or raises a Lua runtime error while
+running, is a hard filter failure naming the file and the offending kind — no
+partial HTML written — exactly as a crashing block render function or shell
+region already fails. Because the hook runs in the render phase, past the gate,
+a document that reached it already collected zero validation errors; a hook
+crash is a generator failure, never a silently wrong page.</li>
+</ul>
+<div class="callout info">
+<div class="entry-head"><span class="label">Why the group hook is not a cross-block rule</span></div>
+<div class="body">
+<p>The <a href="#05-cross-block-rules">cross-block rule</a> (§05) and the
+<a href="CONTEXT.md#term-group-hook">group hook</a> both look at a run of blocks, but on
+opposite sides of the gate: a rule runs in the
+<a href="CONTEXT.md#term-validate-phase">validate phase</a> and can <em>reject</em> the document; a
+group hook runs in the <a href="CONTEXT.md#term-render-phase">render phase</a>, past the
+gate, and only <em>wraps</em> what already validated. A consumer that wants a malformed
+run to fail writes a rule; one that wants a well-formed run sectioned writes a
+group hook. Keeping the two apart is what lets the hook compose with each block's
+own render output instead of re-deciding whether the run is legal.</p>
+</div>
+</div>
+<h2 id="12-ci-12-ci"><span class="secno">12</span> · CI {#12-ci}</h2>
 <p><strong>Owns proving the gate on every push, not just on the author's machine.</strong>
 CI runs a strict superset of what <a href="https://github.com/lostbean/richmd/blob/main/lefthook.yml">lefthook</a>
 runs locally: every check lefthook's pre-commit hook runs (format, the design
@@ -1930,7 +2024,7 @@ slower checks have run too.</p>
 <li><strong>Responsibility</strong>: run <code>nix flake check</code> (formatting plus any flake
 checks), the full test suite for every deep module (filter core, block
 kind registry, token vocabulary resolution, grammar validators, link
-resolver/slugifier, theme/diagram runtime, document shell), the design gate
+resolver/slugifier, theme/diagram runtime, document shell, group render), the design gate
 (<code>scripts/design-render --check</code> on every <code>design.md</code>,
 <code>scripts/layer-integrity .</code>), and the example-doc regression check
 (<code>examples/</code> — render the golden example, diff its output hash against
@@ -1941,7 +2035,7 @@ pull request.</li>
 <a href="https://github.com/lostbean/richmd/blob/main/flake.nix">flake.nix</a>
 devShell so CI's toolchain versions can never drift from a contributor's
 local <code>nix develop</code> shell.</li>
-<li><strong>Interacts with</strong>: every component in §02–§10 (it runs their tests) and
+<li><strong>Interacts with</strong>: every component in §02–§11 (it runs their tests) and
 the design layer itself (it runs the design gate).</li>
 <li><strong>Invariants held</strong>: none new — CI is the mechanism that keeps the
 fail-closed gate (§00) and schema-driven validation (§00) provably true on
@@ -1950,7 +2044,7 @@ every change, not just locally.</li>
 considered mergeable; CI never soft-fails or skips a channel the local
 gate runs.</li>
 </ul>
-<h2 id="12-end-to-end-walkthrough"><span class="secno">12</span> · End-to-end walkthrough</h2>
+<h2 id="13-end-to-end-walkthrough"><span class="secno">13</span> · End-to-end walkthrough</h2>
 <p><strong>Scenario: an author renders a design document, then fixes a broken
 diagram.</strong></p>
 <ol>
