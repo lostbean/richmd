@@ -294,6 +294,229 @@ describe("richmd render — shared diagram-theme script", () => {
     assert.equal(colors.categorical[5], "#b91c1c");
   });
 
+  // --- OKLCH normalization (Fix 3) ---------------------------------------
+  //
+  // design.md §09 "Theme and diagram runtime": a diagram's colors are read
+  // live from --richmd-* at render time, never hardcoded. Chrome returns
+  // oklch() values unchanged from getComputedStyle, but mermaid throws on
+  // oklch and vega throws "Unsupported color format" — so the moment any
+  // diagram-facing token is an oklch() value, every diagram silently fails.
+  // richmdDiagramTheme() therefore normalizes each color field: oklch() ->
+  // #rrggbb hex; everything else passes through unchanged (byte-stability of
+  // existing rgb/rgba/hex theme values). This is format conversion, not a
+  // color choice — the live-read contract (P3) is preserved.
+
+  function evalTheme(script, cssVars) {
+    const fakeDocEl = { tagName: "DIV" };
+    const fakeDocument = {
+      querySelector(sel) {
+        if (sel.includes("richmd-doc")) return fakeDocEl;
+        return null;
+      },
+      documentElement: fakeDocEl,
+      addEventListener() {},
+    };
+    function fakeGetComputedStyle() {
+      return {
+        getPropertyValue(name) {
+          return cssVars[name] || "";
+        },
+      };
+    }
+    const fn = new Function(
+      "document",
+      "getComputedStyle",
+      "window",
+      script + "\n;return window.richmdDiagramTheme();",
+    );
+    return fn(fakeDocument, fakeGetComputedStyle, {});
+  }
+
+  const HEX6 = /^#[0-9a-f]{6}$/;
+
+  it("normalizes every color field (and every categorical entry) to comma-free #rrggbb hex when the tokens are oklch() values — no oklch, no comma anywhere", async () => {
+    const script = extractDiagramThemeScript(html);
+    assert.ok(script);
+
+    // Every diagram-facing token set to an oklch() value.
+    const cssVars = {
+      "--richmd-color-bg": "oklch(98% 0.005 300)",
+      "--richmd-color-bg-alt": "oklch(95% 0.01 300)",
+      "--richmd-color-surface": "oklch(97% 0.008 260)",
+      "--richmd-color-surface-2": "oklch(93% 0.012 260)",
+      "--richmd-color-border": "oklch(85% 0.02 260)",
+      "--richmd-color-border-strong": "oklch(75% 0.03 260)",
+      "--richmd-color-text": "oklch(25% 0.02 260)",
+      "--richmd-color-text-muted": "oklch(45% 0.02 260)",
+      "--richmd-color-text-faint": "oklch(60% 0.02 260)",
+      "--richmd-color-accent-solid": "oklch(55% 0.2 275)",
+      "--richmd-color-accent-text": "oklch(50% 0.2 275)",
+      "--richmd-color-accent-tint": "oklch(92% 0.05 275)",
+      "--richmd-color-accent2-solid": "oklch(70% 0.15 195)",
+      "--richmd-color-accent2-text": "oklch(60% 0.15 195)",
+      "--richmd-color-cat-3": "oklch(65% 0.18 145)",
+      "--richmd-color-cat-4": "oklch(70% 0.16 70)",
+      "--richmd-color-cat-5": "oklch(65% 0.2 350)",
+      "--richmd-color-cat-6": "oklch(58% 0.22 25)",
+      "--richmd-font-body": "Inter, system-ui, sans-serif",
+    };
+
+    const colors = evalTheme(script, cssVars);
+
+    const colorFields = [
+      "bg",
+      "bgAlt",
+      "surface",
+      "surface2",
+      "border",
+      "borderStrong",
+      "text",
+      "textMuted",
+      "textFaint",
+      "accentSolid",
+      "accentText",
+      "accentTint",
+      "accent2Solid",
+      "accent2Text",
+    ];
+    for (const field of colorFields) {
+      assert.match(
+        colors[field],
+        HEX6,
+        `expected ${field} to be #rrggbb, got ${colors[field]}`,
+      );
+    }
+    for (let i = 0; i < colors.categorical.length; i++) {
+      assert.match(
+        colors.categorical[i],
+        HEX6,
+        `expected categorical[${i}] to be #rrggbb, got ${colors.categorical[i]}`,
+      );
+    }
+
+    // fontBody is a font stack, not a color — must NOT be touched.
+    assert.equal(colors.fontBody, "Inter, system-ui, sans-serif");
+
+    // Belt-and-braces: no oklch and no comma survives in any color field.
+    const allColorValues = colorFields
+      .map((f) => colors[f])
+      .concat(colors.categorical);
+    for (const val of allColorValues) {
+      assert.ok(!/oklch/i.test(val), `oklch survived in ${val}`);
+      assert.ok(!val.includes(","), `comma survived in ${val}`);
+    }
+  });
+
+  it("locks the OKLCH -> sRGB conversion math against a hand-verified reference value (CSS Color 4 sRGB-red anchor oklch(62.8% 0.25768 29.234) === #ff0000)", async () => {
+    const script = extractDiagramThemeScript(html);
+    assert.ok(script);
+
+    // oklch(62.8% 0.25768 29.234) is the CSS Color 4 spec's OKLCH encoding
+    // of pure sRGB red (#ff0000) — an exact, externally-verifiable anchor
+    // that locks the full OKLCH->OKLab->linear->gamma pipeline.
+    const red = evalTheme(script, {
+      "--richmd-color-accent-solid": "oklch(62.8% 0.25768 29.234)",
+    });
+    assert.equal(red.accentSolid, "#ff0000");
+
+    // A second value computed by this repo's own reference math, to lock the
+    // whole pipeline (L as percentage, mid-chroma, arbitrary hue).
+    const teal = evalTheme(script, {
+      "--richmd-color-accent-solid": "oklch(45% 0.08 190)",
+    });
+    assert.equal(teal.accentSolid, "#00635f");
+
+    // L given as a plain number (0..1) rather than a percentage.
+    const lavender = evalTheme(script, {
+      "--richmd-color-accent-solid": "oklch(0.96 0.025 300)",
+    });
+    assert.equal(lavender.accentSolid, "#f4eeff");
+
+    // An optional "/ alpha" component is ignored (we emit opaque hex).
+    const tealAlpha = evalTheme(script, {
+      "--richmd-color-accent-solid": "oklch(45% 0.08 190 / 0.5)",
+    });
+    assert.equal(tealAlpha.accentSolid, "#00635f");
+  });
+
+  it("passes rgb()/rgba()/hex/named values through UNCHANGED (byte-stability regression guard — only oklch is transformed)", async () => {
+    const script = extractDiagramThemeScript(html);
+    assert.ok(script);
+
+    const colors = evalTheme(script, {
+      "--richmd-color-border": "rgba(226,232,248,0.22)",
+      "--richmd-color-surface": "#1c2440",
+      "--richmd-color-bg": "rgb(17, 17, 17)",
+      "--richmd-color-text": "white",
+      "--richmd-color-accent-solid": "#818cf8",
+    });
+
+    assert.equal(colors.border, "rgba(226,232,248,0.22)");
+    assert.equal(colors.surface, "#1c2440");
+    assert.equal(colors.bg, "rgb(17, 17, 17)");
+    assert.equal(colors.text, "white");
+    assert.equal(colors.accentSolid, "#818cf8");
+  });
+
+  it("categorical[0] still === accentSolid after normalization (reuse preserved, both normalized)", async () => {
+    const script = extractDiagramThemeScript(html);
+    assert.ok(script);
+
+    const colors = evalTheme(script, {
+      "--richmd-color-accent-solid": "oklch(55% 0.2 275)",
+      "--richmd-color-accent2-solid": "oklch(70% 0.15 195)",
+    });
+
+    assert.equal(colors.categorical[0], colors.accentSolid);
+    assert.equal(colors.categorical[1], colors.accent2Solid);
+    assert.match(colors.categorical[0], HEX6);
+    assert.match(colors.categorical[1], HEX6);
+  });
+
+  it("a mermaid classDef string and a vega config built from the normalized object contain no oklch and no comma-in-color that would throw (lightweight consumer-shape guard; a real render-without-throwing assertion needs a headless browser and is intentionally NOT added — the repo has no browser dep)", async () => {
+    const script = extractDiagramThemeScript(html);
+    assert.ok(script);
+
+    const c = evalTheme(script, {
+      "--richmd-color-bg": "oklch(98% 0.005 300)",
+      "--richmd-color-surface": "oklch(97% 0.008 260)",
+      "--richmd-color-border": "oklch(85% 0.02 260)",
+      "--richmd-color-text": "oklch(25% 0.02 260)",
+      "--richmd-color-accent-solid": "oklch(55% 0.2 275)",
+      "--richmd-color-accent2-solid": "oklch(70% 0.15 195)",
+      "--richmd-color-cat-3": "oklch(65% 0.18 145)",
+    });
+
+    // A mermaid classDef line, exactly the shape mermaid's classDef parser
+    // chokes on when a fill contains commas (rgb(...)) or oklch(...).
+    const classDef = `classDef n fill:${c.surface},stroke:${c.border},color:${c.text};`;
+    assert.ok(!/oklch/i.test(classDef));
+    // Only the two literal separators the classDef syntax itself uses may
+    // appear — no comma inside a color token.
+    for (const token of [c.surface, c.border, c.text, c.accentSolid]) {
+      assert.ok(
+        !token.includes(","),
+        `classDef color token has comma: ${token}`,
+      );
+    }
+
+    // A vega config fragment (range.category is c.categorical) — must
+    // serialize with no oklch and every category color comma-free.
+    const vegaConfig = {
+      background: c.bg,
+      range: { category: c.categorical },
+      axis: { gridColor: c.border, labelColor: c.text },
+    };
+    const serialized = JSON.stringify(vegaConfig);
+    assert.ok(!/oklch/i.test(serialized));
+    for (const token of c.categorical) {
+      assert.ok(
+        !token.includes(","),
+        `vega category color has comma: ${token}`,
+      );
+    }
+  });
+
   it("richmdRerenderDiagrams calls every callback pushed onto richmdDiagramRerenders, and richmd-theme-changed triggers it", async () => {
     const script = extractDiagramThemeScript(html);
     assert.ok(script);

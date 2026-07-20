@@ -1261,10 +1261,62 @@ local function diagram_theme_script_html()
   window.richmdDiagramTheme = function () {
     var el = document.querySelector(".richmd-doc") || document.documentElement;
     var cs = getComputedStyle(el);
+    // Chrome returns oklch() unchanged from getComputedStyle, but mermaid
+    // throws on oklch (and its classDef parser chokes on rgb()'s commas)
+    // and vega throws "Unsupported color format" — so any diagram-facing
+    // token set to an oklch() value silently kills every diagram. Convert
+    // oklch() -> #rrggbb (OKLCH->OKLab->linear sRGB->gamma sRGB, CSS Color
+    // 4); pass every other value (rgb/rgba/hex/named/empty) through
+    // unchanged so existing theme values stay byte-stable. Format
+    // conversion only, not a color choice (design.md §00 P3, §09).
+    function normalizeColor(value) {
+      if (value == null) return value;
+      var s = String(value).trim();
+      if (s.slice(0, 6).toLowerCase() !== "oklch(") return value;
+      var close = s.indexOf(")");
+      var inner = s.slice(6, close === -1 ? s.length : close);
+      var slash = inner.indexOf("/");
+      if (slash !== -1) inner = inner.slice(0, slash);
+      var parts = inner.trim().split(/\s+/).filter(function (p) {
+        return p.length;
+      });
+      function comp(tok) {
+        if (tok == null || tok === "none") return 0;
+        if (tok.charAt(tok.length - 1) === "%") return parseFloat(tok) / 100;
+        return parseFloat(tok);
+      }
+      var L = comp(parts[0]);
+      var C = comp(parts[1]);
+      var H = comp(parts[2]);
+      if (isNaN(L)) L = 0;
+      if (isNaN(C)) C = 0;
+      if (isNaN(H)) H = 0;
+      var hr = (H * Math.PI) / 180;
+      var a = C * Math.cos(hr);
+      var b = C * Math.sin(hr);
+      var l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+      var m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+      var s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+      var l = l_ * l_ * l_;
+      var m = m_ * m_ * m_;
+      var sc = s_ * s_ * s_;
+      var r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * sc;
+      var g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * sc;
+      var bl = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * sc;
+      function enc(x) {
+        var y = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+        if (y < 0) y = 0;
+        if (y > 1) y = 1;
+        var i = Math.round(y * 255);
+        var hex = i.toString(16);
+        return hex.length === 1 ? "0" + hex : hex;
+      }
+      return "#" + enc(r) + enc(g) + enc(bl);
+    }
     function v(name, fallback) {
       var value = cs.getPropertyValue(name);
       value = value && value.trim();
-      return value || fallback;
+      return normalizeColor(value || fallback);
     }
     var accentSolid = v("--richmd-color-accent-solid", "#4f46e5");
     var accent2Solid = v("--richmd-color-accent2-solid", "#0891b2");
