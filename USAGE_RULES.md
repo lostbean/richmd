@@ -128,6 +128,14 @@ entirely from its attrs.
 | `delta` | no       | string | free-form trend text, e.g. `"↑ 12%"` |
 | `dir`   | no       | enum   | `up`, `down`                         |
 
+`dir` only takes effect when `delta` is also set — it annotates the delta
+line, so with no `delta` there is nothing for it to describe. When both are
+present, the delta div carries a direction modifier class alongside the base
+one: `dir="up"` → `richmd-stat-delta--up`, `dir="down"` →
+`richmd-stat-delta--down`. Use that class to tint deltas by direction (e.g.
+up positive, down danger); omitting `dir` emits only the base
+`richmd-stat-delta`.
+
 Body: **forbidden**.
 
 ### `stat-grid` (fenced div)
