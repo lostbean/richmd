@@ -249,16 +249,141 @@ describe("richmd render (embedded-svg, nonexistent file)", () => {
   });
 });
 
-describe("richmd validate (embedded-svg, forbidden body present)", () => {
+// Inline source: a nested ```svg code fence inside the :::svg div, no file=
+// attr. The SVG markup is spliced raw into the same .richmd-embedded-svg
+// container as the file case (ADR-0017: a self-contained document carries the
+// figure with no sibling asset file).
+describe("richmd render (embedded-svg, inline ```svg fence, no file=)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-embedded-svg-inline-"),
+    );
+    mdPath = path.join(workDir, "embedded-svg-inline.md");
+    htmlPath = path.join(workDir, "embedded-svg-inline.html");
+    await cp(path.join(fixturesDir, "embedded-svg-inline.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits 0 and splices the inline SVG into a .richmd-embedded-svg container, byte-faithfully", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(html, /class="richmd-embedded-svg"/);
+    // The nested <circle> element and the &amp; entity survive verbatim.
+    assert.match(html, /<circle cx="50" cy="50" r="40" fill="#4a9edb"/);
+    assert.match(html, /rock &amp; roll/);
+    // Never an <img> reference.
+    assert.doesNotMatch(html, /<img/);
+  });
+});
+
+// Inline source + caption= : the caption still comes solely from the attr
+// (never the body), wrapping the inline SVG in a real <figure>/<figcaption>.
+describe("richmd render (embedded-svg, inline fence + caption=)", () => {
+  let workDir;
+  let mdPath;
+  let htmlPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-render-embedded-svg-inline-caption-"),
+    );
+    mdPath = path.join(workDir, "embedded-svg-inline-caption.md");
+    htmlPath = path.join(workDir, "embedded-svg-inline-caption.html");
+    await cp(path.join(fixturesDir, "embedded-svg-inline-caption.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("wraps the inline svg div in a <figure> with a <figcaption> holding the caption text", async () => {
+    const result = await runCli(["render", mdPath]);
+    assert.equal(result.code, 0, `stderr was: ${result.stderr}`);
+    const html = await readFile(htmlPath, "utf8");
+    assert.match(
+      html,
+      /<figure>\s*<div class="richmd-embedded-svg">[\s\S]*?<\/div>\s*<figcaption>Inline figure<\/figcaption>\s*<\/figure>/,
+    );
+  });
+});
+
+// Neither a file= attr nor any inline source: an empty :::svg div. The
+// cross-field rule fails loud with the "no source" message.
+describe("richmd validate (embedded-svg, no source at all)", () => {
   let workDir;
   let mdPath;
 
   before(async () => {
     workDir = await mkdtemp(
-      path.join(tmpdir(), "richmd-validate-embedded-svg-forbidden-body-"),
+      path.join(tmpdir(), "richmd-validate-embedded-svg-no-source-"),
     );
-    mdPath = path.join(workDir, "embedded-svg-forbidden-body.md");
-    await cp(path.join(fixturesDir, "embedded-svg-forbidden-body.md"), mdPath);
+    mdPath = path.join(workDir, "embedded-svg-no-source.md");
+    await cp(path.join(fixturesDir, "embedded-svg-no-source.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero and reports that a source is required", async () => {
+    const result = await runCli(["validate", mdPath]);
+    assert.notEqual(result.code, 0);
+    assert.match(
+      result.stderr,
+      /needs a source: either a `file=` attr or a nested ```svg code fence/,
+    );
+  });
+});
+
+// A body that is not a single svg-class code fence (e.g. prose) with no
+// file= attr: an invalid body, distinct from the "no source" case.
+describe("richmd validate (embedded-svg, non-svg body)", () => {
+  let workDir;
+  let mdPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-validate-embedded-svg-prose-body-"),
+    );
+    mdPath = path.join(workDir, "embedded-svg-prose-body.md");
+    await cp(path.join(fixturesDir, "embedded-svg-prose-body.md"), mdPath);
+  });
+
+  after(async () => {
+    await rm(workDir, { recursive: true, force: true });
+  });
+
+  it("exits non-zero and reports the body must be a ```svg fence", async () => {
+    const result = await runCli(["validate", mdPath]);
+    assert.notEqual(result.code, 0);
+    assert.match(
+      result.stderr,
+      /body must be a single nested ```svg code fence/,
+    );
+  });
+});
+
+// Both a file= attr AND a nested ```svg fence: the cross-field rule rejects
+// exactly-two sources. (Reshaped from the old "forbidden body present" test,
+// which under the old design asserted a plain body was forbidden.)
+describe("richmd validate (embedded-svg, both file= and inline fence)", () => {
+  let workDir;
+  let mdPath;
+
+  before(async () => {
+    workDir = await mkdtemp(
+      path.join(tmpdir(), "richmd-validate-embedded-svg-two-sources-"),
+    );
+    mdPath = path.join(workDir, "embedded-svg-two-sources.md");
+    await cp(path.join(fixturesDir, "embedded-svg-two-sources.md"), mdPath);
     await cp(
       path.join(fixturesDir, "sample.svg"),
       path.join(workDir, "sample.svg"),
@@ -269,9 +394,12 @@ describe("richmd validate (embedded-svg, forbidden body present)", () => {
     await rm(workDir, { recursive: true, force: true });
   });
 
-  it("exits non-zero and reports the forbidden body", async () => {
+  it("exits non-zero and reports that only one source may be used", async () => {
     const result = await runCli(["validate", mdPath]);
     assert.notEqual(result.code, 0);
-    assert.match(result.stderr, /body is forbidden but content was present/);
+    assert.match(
+      result.stderr,
+      /has both a `file=` attr and an inline ```svg fence — use exactly one/,
+    );
   });
 });

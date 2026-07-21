@@ -194,26 +194,49 @@ Body: **required** — conventionally a bold label line followed by prose.
 
 ### `embedded-svg` (fenced div)
 
-Inlines a sibling `.svg` file's actual markup (a real `<svg>` element
-spliced into the page, never an `<img src="...">` reference) — stylable via
-CSS, inspectable in the page's own DOM. The `file` path is resolved
-relative to the **current document's own directory**. A missing file is a
-validation error naming the path; `richmd validate` catches it before
-`richmd render` would ever need to.
+Inlines an SVG's actual markup (a real `<svg>` element spliced into the
+page, never an `<img src="...">` reference) — stylable via CSS, inspectable
+in the page's own DOM.
 
-```
-::: {.embedded-svg file="diagram.svg" caption="Request flow, high level"}
-:::
-```
+An embedded-svg figure takes its source from **exactly one** of two forms:
+
+1. **A `file=` attr** — reads a sibling `.svg` file and inlines its markup.
+   The path is resolved relative to the **current document's own
+   directory**. A missing file is a validation error naming the path;
+   `richmd validate` catches it before `richmd render` would ever need to.
+
+   ```
+   ::: {.embedded-svg file="diagram.svg" caption="Request flow, high level"}
+   :::
+   ```
+
+2. **A nested ` ```svg ` code fence** — inline SVG source, for a
+   self-contained document with no sibling asset file. The fence's contents
+   are spliced in byte-faithfully.
+
+   ````
+   ::: {.embedded-svg caption="Request flow, high level"}
+   ```svg
+   <svg viewBox="0 0 240 120"><circle cx="60" cy="60" r="40" /></svg>
+   ```
+   :::
+   ````
 
 | Attr      | Required | Type   |
 | --------- | -------- | ------ |
-| `file`    | yes      | string |
+| `file`    | no       | string |
 | `caption` | no       | string |
 
-Body: **forbidden**. With `caption` present, the SVG is wrapped in a real
-`<figure>`/`<figcaption>` pair; omitting it renders exactly as before the
-attr existed — a bare div, no `<figure>` wrapper at all.
+**Exactly one source is required.** Providing **neither** a `file=` attr nor
+an inline ` ```svg ` fence is an error; providing **both** is an error. A
+body that is not a single nested ` ```svg ` fence (prose, or a bare `<svg>`
+written directly without a fence) is also an error — a bare inline `<svg>`
+must be wrapped in a ` ```svg ` fence.
+
+`caption` is the single caption source in **both** modes (the body is never
+a caption). With `caption` present, the SVG is wrapped in a real
+`<figure>`/`<figcaption>` pair; omitting it renders a bare
+`.richmd-embedded-svg` div with no `<figure>` wrapper at all.
 
 ### `mermaid` (fenced code block)
 

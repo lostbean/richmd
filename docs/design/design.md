@@ -475,8 +475,10 @@ goal/invariant/principle-style typed statement
 
 ### embedded SVG
 
-inline a sibling `.svg` file, with an optional caption rendered as a real
-`<figure>`/`<figcaption>` pair
+inline an SVG from exactly one source — a `file=` sibling `.svg` file, or a
+nested ` ```svg ` code fence carrying the markup inline
+([ADR-0017](../adr/0017-embedded-svg-two-sources-inline-via-nested-code-fence.md#adr-0017)) —
+with an optional `caption=` rendered as a real `<figure>`/`<figcaption>` pair
 
 ### chart
 

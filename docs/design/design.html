@@ -1518,8 +1518,10 @@ metadata, never a substitute for the title text itself</p>
 <article class="card" id="embedded-svg">
 <div class="entry-head"><span class="label">embedded SVG</span></div>
 <div class="body">
-<p>inline a sibling <code>.svg</code> file, with an optional caption rendered as a real
-<code>&lt;figure&gt;</code>/<code>&lt;figcaption&gt;</code> pair</p>
+<p>inline an SVG from exactly one source — a <code>file=</code> sibling <code>.svg</code> file, or a
+nested <code>```svg</code> code fence carrying the markup inline
+(<a href="../adr/0017-embedded-svg-two-sources-inline-via-nested-code-fence.md#adr-0017">ADR-0017</a>) —
+with an optional <code>caption=</code> rendered as a real <code>&lt;figure&gt;</code>/<code>&lt;figcaption&gt;</code> pair</p>
 </div>
 </article>
 <article class="card" id="chart">
