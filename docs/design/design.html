@@ -1363,7 +1363,7 @@ text rather than the parsed AST, because the shape it fixes is one Pandoc has
 already discarded by the time any Lua filter runs.</p>
 <ul>
 <li><strong>Responsibility</strong>: rewrite every fence-opener line of the form
-<code>:::kind {attrs}</code> (a run of three or more colons, a bareword kind token, then
+<code>:::\s*kind {attrs}</code> (a run of three or more colons, optional whitespace, a bareword kind token, then
 a brace-attr group) into <code>::: {.kind attrs}</code> at the identical colon count, so
 an attr-bearing bareword directive becomes a real Pandoc <code>Div</code> exactly as its
 native equivalent already does. Leave every other line byte-for-byte: a

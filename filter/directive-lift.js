@@ -48,7 +48,7 @@ function isIndentedCode(line) {
 // `{ ... }` to end of line. The kind token starting with a non-brace, non-space
 // character is what distinguishes this from an already-native `::: {.kind}`
 // (where the colons are immediately followed by whitespace then `{`).
-const BAREWORD_DIRECTIVE_RE = /^(\s*)(:{3,})([A-Za-z0-9_-]+)\s+\{(.*)\}\s*$/;
+const BAREWORD_DIRECTIVE_RE = /^(\s*)(:{3,})\s*([A-Za-z0-9_-]+)\s+\{(.*)\}\s*$/;
 
 // Returns true if `line` closes a fenced code block opened by `open` (an object
 // { char, len } captured from the opening fence). CommonMark: the closing fence

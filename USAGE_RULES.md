@@ -19,7 +19,7 @@ A fenced div's kind may be authored in **either** form, interchangeably:
 
 - **Native (canonical) form** — `::: {.kind attr=val}`, the Pandoc-native
   fenced-div opener. This is richmd's documented canonical syntax.
-- **Bareword form** — `:::kind {attr=val}`, the kind written directly after
+- **Bareword form** — `:::kind {attr=val}` or `::: kind {attr=val}`, the kind written after
   the colons, attrs in a following brace group (the markdown-it-container /
   remark-directive convention many consumers migrating to richmd already
   author).
@@ -29,7 +29,7 @@ forms reach the identical validator, the identical schema, and produce the
 identical errors — pick whichever you prefer per block. The colon count is
 preserved (a `::::kind {…}` nested opener stays four colons), and the
 normalization never touches directive syntax quoted inside a code fence as a
-literal example (a `:::kind {…}` line inside a ` ``` ` block is left
+literal example (a `:::kind {…}` or `::: kind {…}` line inside a ` ``` ` block is left
 verbatim, exactly as Pandoc reads it).
 
 ## Fenced div vs. fenced code block — read this before authoring a new kind

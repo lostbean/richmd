@@ -1,10 +1,10 @@
-# Accept the bareword directive form `:::kind {attrs}` via a pre-parse text lift, not only Pandoc-native `::: {.kind}`
+# Accept the bareword directive form `:::kind {attrs}` (or `::: kind {attrs}`) via a pre-parse text lift, not only Pandoc-native `::: {.kind}`
 
 <a id="adr-0010"></a>
 
 Pandoc's markdown reader recognizes a bareword-class fenced div
 (`:::goal`) only while no attribute group follows; the moment a `{…}` group
-appears (`:::invariant {enforcement=convention}` — the widely-used
+appears (`:::invariant {enforcement=convention}` or `::: invariant {enforcement=convention}` — the widely-used
 markdown-it-container / remark-directive form) Pandoc parses the line as a
 plain `Para` beginning `Str ":::invariant"`, not a `Div`. Such a block reaches
 neither per-block validation nor the cross-block
