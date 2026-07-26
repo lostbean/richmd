@@ -94,9 +94,32 @@
           # time — this is what makes `nix run .#richmd` work standalone,
           # without requiring the devShell to be active (point 2 of the work
           # order).
+          #
+          # `nodejs` belongs on that same PATH for a less obvious reason.
+          # Nix rewrites the helpers' `#!/usr/bin/env node` shebangs to
+          # absolute store paths, so running a helper *directly* would be
+          # self-contained — but the Lua filters never do that. They shell
+          # out as `io.popen("node <helper> < <tmp>")` (filter/blocks/
+          # mermaid.lua, filter/blocks/vega-lite.lua), a bare `node`
+          # resolved through PATH at run time by /bin/sh. With no host node
+          # installed that lookup fails, the helper never runs, and the
+          # filter reports the missing-validator diagnostic instead of
+          # rendering. Pinning node here is what makes ADR-0001's "Node
+          # helpers pinned" true at *run* time and not merely at build time.
+          #
+          # No further wiring is needed for the helpers' own npm imports
+          # (mermaid, linkedom, ajv): buildNpmPackage installs node_modules/
+          # as a sibling of helpers/ under $out/lib/node_modules/richmd, so
+          # Node's ordinary parent-directory resolution finds them from the
+          # helper's own location, independent of cwd and NODE_PATH.
           postInstall = ''
             wrapProgram $out/bin/richmd \
-              --prefix PATH : ${pkgs.lib.makeBinPath [ pandoc ]}
+              --prefix PATH : ${
+                pkgs.lib.makeBinPath [
+                  pandoc
+                  pkgs.nodejs
+                ]
+              }
           '';
 
           meta = {
