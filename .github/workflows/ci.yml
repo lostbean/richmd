@@ -57,5 +57,18 @@ jobs:
       - name: custom-theme-demo example-doc regression check (examples/ golden hash)
         run: nix develop -c scripts/example-hash-check custom-theme-demo
 
+      - name: committed example HTML is current (render --check every examples/*.md)
+        # The golden-hash steps above hash a FRESH render and compare it to the
+        # committed .sha256 -- they never read the committed .html, so those
+        # files could drift indefinitely without any step noticing (all four
+        # had). `render --check` is the one check that reads them.
+        run: |
+          nix develop -c bash -c '
+            set -e
+            for f in examples/*.md; do
+              node bin/richmd.js render "$f" --check
+            done
+          '
+
       - name: custom-theme-demo theme-swap proof (custom-theme.css genuinely reskins the rendered page)
         run: nix develop -c node scripts/theme-swap-check
