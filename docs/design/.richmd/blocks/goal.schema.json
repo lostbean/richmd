@@ -1,0 +1,14 @@
+{
+  "attrs": {
+    "lens": {
+      "required": false,
+      "type": "string"
+    },
+    "title": {
+      "required": true,
+      "type": "string"
+    }
+  },
+  "body": "required",
+  "kind": "goal"
+}

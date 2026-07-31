@@ -1,0 +1,21 @@
+{
+  "attrs": {
+    "cols": {
+      "enum_values": ["2", "3", "4"],
+      "required": false,
+      "type": "enum"
+    },
+    "size": {
+      "enum_values": ["md", "sm"],
+      "required": false,
+      "type": "enum"
+    },
+    "tint": {
+      "enum_values": ["teal", "violet", "amber", "blue", "rose", "slate"],
+      "required": false,
+      "type": "enum"
+    }
+  },
+  "body": "required",
+  "kind": "cards"
+}

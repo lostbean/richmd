@@ -1,0 +1,19 @@
+{
+  "attrs": {
+    "lens": {
+      "required": false,
+      "type": "string"
+    },
+    "level": {
+      "enum_values": ["interface", "boundary"],
+      "required": true,
+      "type": "enum"
+    },
+    "title": {
+      "required": true,
+      "type": "string"
+    }
+  },
+  "body": "required",
+  "kind": "behavior"
+}

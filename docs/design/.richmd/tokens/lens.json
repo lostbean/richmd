@@ -1,0 +1,22 @@
+{
+  "members": {
+    "composition": {
+      "order": 2
+    },
+    "depth": {
+      "order": 1
+    },
+    "invariants": {
+      "order": 4
+    },
+    "modeling": {
+      "order": 0
+    },
+    "robustness": {
+      "order": 5
+    },
+    "state": {
+      "order": 3
+    }
+  }
+}

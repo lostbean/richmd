@@ -4,9 +4,22 @@ pre-commit:
       run: nix fmt -- {staged_files}
       stage_fixed: true
     design-gate:
+      # Renders with the working-tree richmd (bin/richmd.js), not a pinned
+      # release: this repo IS richmd, so a pinned binary could not catch a
+      # rendering regression in the very tree it is gating.
       run: |
         set -e
         git ls-files '*design.md' | while read -r f; do
-          scripts/design-render --check "$f"
+          node bin/richmd.js render "$f" --check
         done
         scripts/layer-integrity .
+    richmd-projection-freshness:
+      # The .richmd/ config is generated from the framework schema; re-project
+      # into a temp dir and compare, so a hand-edit or a schema bump that was
+      # never re-projected fails here rather than silently skewing the gate.
+      run: |
+        set -e
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        scripts/richmd-project scripts/design-schema.json "$tmp" >/dev/null
+        diff -r docs/design/.richmd "$tmp"

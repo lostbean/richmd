@@ -1,0 +1,19 @@
+{
+  "attrs": {
+    "kind": {
+      "enum_values": ["build", "verify", "foundation", "ruling"],
+      "required": true,
+      "type": "enum"
+    },
+    "since": {
+      "required": true,
+      "type": "string"
+    },
+    "title": {
+      "required": true,
+      "type": "string"
+    }
+  },
+  "body": "optional",
+  "kind": "pending"
+}

@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-# design-schema-version: 3
+#!/usr/bin/env python3
 #
 # layer-integrity — cross-artifact link checker for a TARGET repo's design
 # layer (design docs + CONTEXT + ADRs). Checks mechanical well-formedness:
@@ -20,12 +19,12 @@
 #      exists and links every CONTEXT.md by exact relative path, and every
 #      non-root design.md is linked from the root design doc.
 #   5. No orphan design.html — every design.html sits next to a design.md.
-#      (Freshness is design-render's job, not this script's.)
+#      (Freshness is the renderer's job, not this script's.)
 #   6. No verbatim-duplicate non-trivial lines within one design.md or
 #      CONTEXT.md — the mechanical shadow of "cross-links, never restatement".
 #      Trivial lines (blank, fences, rules, table separators, pure markup,
-#      <24 chars), citation-only lines (all links), and fenced code blocks
-#      are exempt.
+#      <24 chars), citation-only lines (all links), behavior clause bodies,
+#      and fenced code blocks are exempt.
 #   7. No generation debris — a generation-wrapper artifact line (per the
 #      schema's generation_debris_patterns, e.g. a literal '</content>') in
 #      any layer artifact (design.md, CONTEXT.md, CONTEXT-MAP.md, COVERAGE.md,
@@ -44,6 +43,16 @@
 #
 # Usage: layer-integrity [repo-root]     (default: .)
 #
+# SHAPE — parse once, then answer every check as a lookup.
+# The gate reads each layer file exactly ONCE, into an index of its lines,
+# fence-stripped lines, term anchors, ADR anchor elements, and outbound links.
+# Every check is then a function over already-parsed data, never a function
+# that reads a file. That is why this is one python program and not a shell
+# script driving per-match subprocesses: the one-process shape removes the
+# spawn cost, and the parse-once shape removes the re-scan cost. A check added
+# later cannot reintroduce the re-scan, because there is no per-link file read
+# to copy.
+#
 # Discovery prunes dot-dirs, node_modules, and — when the root is a git
 # repo — gitignored paths (a gitignored tree is not part of the system).
 # Non-git roots are scanned in full.
@@ -55,293 +64,434 @@
 # resolves.
 # Anchor patterns (term id + heading regex, adr id + filename + element regex)
 # and the design-ish link markers all come from the schema — never hardcoded.
-# Schema regexes are matched with python re (their flavor uses \s, which BSD
-# grep's ERE does not support).
+# Schema regexes are python-re flavored (their flavor uses \s, which BSD
+# grep's ERE does not support), and this program is the matching engine.
 #
 # Exit 0: clean. Exit 1: at least one violation (one report line each: file,
 # what, why). Exit 2: usage/IO error — including "no design layer" when the
 # target repo has no design artifacts at all (sync branches on that message).
+#
+# ONE FILE, STANDARD LIBRARY ONLY. The script is copy-installed on its own
+# into host repos that have python3 and git and nothing else.
 
-set -euo pipefail
+import json
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from typing import Optional
 
-usage() {
-  echo "usage: $(basename "$0") [repo-root]" >&2
-}
 
-if [ "$#" -gt 1 ]; then
-  usage
-  exit 2
-fi
+# --- Violation reporting ------------------------------------------------------
 
-REPO_ARG="${1:-.}"
-if [ ! -d "$REPO_ARG" ]; then
-  echo "error: repo root not found: $REPO_ARG" >&2
-  exit 2
-fi
-REPO="$(cd "$REPO_ARG" && pwd -P)"
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "error: python3 is required (used for schema parsing and path resolution)" >&2
-  exit 2
-fi
+class Report:
+    """Collects violations. `found` drives the exit code."""
 
-# --- Schema: locate and load contracts --------------------------------------
-# Lookup chain: $DESIGN_SCHEMA -> script-sibling design-schema.json (the
-# copy-installed layout) -> ../schema/design-schema.json (framework layout).
-if [ -n "${DESIGN_SCHEMA:-}" ]; then
-  SCHEMA="$DESIGN_SCHEMA"
-else
-  SELF="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$0")"
-  SELF_DIR="$(dirname "$SELF")"
-  if [ -f "$SELF_DIR/design-schema.json" ]; then
-    SCHEMA="$SELF_DIR/design-schema.json"
-  else
-    SCHEMA="$SELF_DIR/../schema/design-schema.json"
-  fi
-fi
-if [ ! -f "$SCHEMA" ]; then
-  echo "error: design schema not found: $SCHEMA (set DESIGN_SCHEMA to the framework's schema/design-schema.json)" >&2
-  exit 2
-fi
+    def __init__(self) -> None:
+        self.found = False
 
-# schema_get <key> [<key> ...] — walk nested keys in the schema JSON.
-schema_get() {
-  python3 -c 'import json,sys,functools; print(functools.reduce(lambda d,k: d[k], sys.argv[2:], json.load(open(sys.argv[1]))))' "$SCHEMA" "$@"
-}
+    def violation(self, file: str, what: str, why: str) -> None:
+        print(f"violation: {file}: {what}: {why}")
+        self.found = True
 
-# entry_point_matching <suffix> — the layer entry point ending in <suffix>.
-entry_point_matching() {
-  python3 -c 'import json,sys; print([p for p in json.load(open(sys.argv[1]))["layer_layout"]["entry_points"] if p.endswith(sys.argv[2])][0])' "$SCHEMA" "$1"
-}
 
-if ! TERM_ID_RE="$(schema_get anchors term id_pattern)" ||
-  ! TERM_HEADING_RE="$(schema_get anchors term heading_regex)" ||
-  ! ADR_ID_RE="$(schema_get anchors adr id_pattern)" ||
-  ! ADR_FILE_RE="$(schema_get anchors adr filename_pattern)" ||
-  ! ADR_ELEMENT_RE="$(schema_get anchors adr element_regex)" ||
-  ! ADR_DIR_REL="$(schema_get layer_layout adr_dir)" ||
-  ! ROOT_DESIGN_REL="$(entry_point_matching design.md)" ||
-  ! MAP_REL="$(entry_point_matching CONTEXT-MAP.md)"; then
-  echo "error: cannot read layer contracts from schema: $SCHEMA (requires anchors.term.{id_pattern,heading_regex}, anchors.adr.{id_pattern,filename_pattern,element_regex}, layer_layout.{adr_dir,entry_points})" >&2
-  exit 2
-fi
+def die(message: str) -> "None":
+    print(message, file=sys.stderr)
+    sys.exit(2)
 
-# Design-ish link classification markers — declared by the schema, never
-# hardcoded here. A marker starting with "re:" is a regex matched against the
-# whole destination; a marker ending in "/" is a directory (matched against
-# the link's resolved target path); a marker containing "#" is matched as a
-# substring of the whole destination; anything else matches the target's
-# basename exactly.
-DESIGNISH_MARKERS=()
-while IFS= read -r m; do DESIGNISH_MARKERS+=("$m"); done < <(
-  python3 -c 'import json,sys; [print(m) for m in json.load(open(sys.argv[1]))["layer_layout"]["design_ish_markers"]]' "$SCHEMA" 2>/dev/null
+
+# --- Schema: the declared contracts, parsed once ------------------------------
+
+
+@dataclass(frozen=True)
+class DesignIshMarkers:
+    """The schema's design_ish_markers, split by how each one matches.
+
+    A marker starting with "re:" is a regex matched against the whole
+    destination; a marker ending in "/" is a directory (matched against the
+    link's resolved target path); a marker containing "#" is matched as a
+    substring of the whole destination; anything else matches the target's
+    basename exactly.
+    """
+
+    regexes: tuple = ()
+    dirs: tuple = ()
+    substrings: tuple = ()
+    basenames: tuple = ()
+
+    @staticmethod
+    def parse(markers) -> "DesignIshMarkers":
+        regexes, dirs, substrings, basenames = [], [], [], []
+        for m in markers:
+            if m.startswith("re:"):
+                regexes.append(re.compile(m[3:]))
+            elif m.endswith("/"):
+                dirs.append(m[:-1])
+            elif "#" in m:
+                substrings.append(m)
+            else:
+                basenames.append(m)
+        return DesignIshMarkers(
+            tuple(regexes), tuple(dirs), tuple(substrings), tuple(basenames)
+        )
+
+
+@dataclass(frozen=True)
+class Schema:
+    """Every layer contract this gate reads, resolved once at startup."""
+
+    term_id_re: "re.Pattern"
+    term_heading_re: "re.Pattern"
+    adr_id_re: "re.Pattern"
+    adr_id_src: str
+    adr_file_re: "re.Pattern"
+    adr_file_src: str
+    adr_element_re: "re.Pattern"
+    adr_element_src: str
+    term_id_src: str
+    adr_dir_rel: str
+    root_design_rel: str
+    map_rel: str
+    markers: DesignIshMarkers
+    debris: tuple  # (compiled, source) pairs — the source names the pattern
+    homes: dict
+    context_segment_re: "re.Pattern"
+    staleness_threshold: Optional[int]
+
+
+def locate_schema(argv0: str) -> str:
+    """The lookup chain: $DESIGN_SCHEMA, then the script-sibling copy (the
+    copy-installed layout), then ../schema/ (the framework layout)."""
+    override = os.environ.get("DESIGN_SCHEMA")
+    if override:
+        return override
+    self_dir = os.path.dirname(os.path.realpath(argv0))
+    sibling = os.path.join(self_dir, "design-schema.json")
+    if os.path.isfile(sibling):
+        return sibling
+    return os.path.join(self_dir, "..", "schema", "design-schema.json")
+
+
+CONTRACT_ERROR = (
+    "requires anchors.term.{id_pattern,heading_regex}, "
+    "anchors.adr.{id_pattern,filename_pattern,element_regex}, "
+    "layer_layout.{adr_dir,entry_points}"
 )
-if [ "${#DESIGNISH_MARKERS[@]}" -eq 0 ]; then
-  echo "error: cannot read layer contracts from schema: $SCHEMA (requires a non-empty layer_layout.design_ish_markers)" >&2
-  exit 2
-fi
 
-# Generation-wrapper line patterns (python-re, matched per line) — declared by
-# the schema (layer_layout.generation_debris_patterns), never hardcoded here.
-DEBRIS_PATTERNS=()
-while IFS= read -r m; do DEBRIS_PATTERNS+=("$m"); done < <(
-  python3 -c 'import json,sys; [print(m) for m in json.load(open(sys.argv[1]))["layer_layout"]["generation_debris_patterns"]]' "$SCHEMA" 2>/dev/null
-)
-if [ "${#DEBRIS_PATTERNS[@]}" -eq 0 ]; then
-  echo "error: cannot read layer contracts from schema: $SCHEMA (requires a non-empty layer_layout.generation_debris_patterns)" >&2
-  exit 2
-fi
 
-# Layer homing contract — required, checked up front so a pre-homing schema
-# copy fails loudly (exit 2) instead of silently skipping check 8.
-if ! schema_get layer_layout homing homes >/dev/null 2>&1 ||
-  ! CONTEXT_SEGMENT_RE="$(schema_get layer_layout homing context_segment)"; then
-  echo "error: cannot read layer contracts from schema: $SCHEMA (requires layer_layout.homing.{homes,context_segment})" >&2
-  exit 2
-fi
+def load_schema(path: str) -> Schema:
+    """Parse the schema at the boundary into typed contracts. Any missing or
+    unusable contract is an exit-2 error here, never a silently skipped
+    check downstream."""
+    if not os.path.isfile(path):
+        die(
+            f"error: design schema not found: {path} "
+            "(set DESIGN_SCHEMA to the framework's schema/design-schema.json)"
+        )
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError):
+        die(
+            f"error: cannot read layer contracts from schema: {path} ({CONTRACT_ERROR})"
+        )
 
-ROOT_DESIGN="$REPO/$ROOT_DESIGN_REL"
-MAP="$REPO/$MAP_REL"
-ADR_DIR="$REPO/$ADR_DIR_REL"
+    def entry_point_matching(suffix: str) -> str:
+        return [p for p in raw["layer_layout"]["entry_points"] if p.endswith(suffix)][0]
 
-# --- Helpers -----------------------------------------------------------------
+    try:
+        anchors = raw["anchors"]
+        layout = raw["layer_layout"]
+        term_id_src = anchors["term"]["id_pattern"]
+        term_heading_src = anchors["term"]["heading_regex"]
+        adr_id_src = anchors["adr"]["id_pattern"]
+        adr_file_src = anchors["adr"]["filename_pattern"]
+        adr_element_src = anchors["adr"]["element_regex"]
+        adr_dir_rel = layout["adr_dir"]
+        root_design_rel = entry_point_matching("design.md")
+        map_rel = entry_point_matching("CONTEXT-MAP.md")
+    except (KeyError, IndexError, TypeError):
+        die(
+            f"error: cannot read layer contracts from schema: {path} ({CONTRACT_ERROR})"
+        )
 
-found=0
-violation() { # <file> <what> <why>
-  printf 'violation: %s: %s: %s\n' "$1" "$2" "$3"
-  found=1
-}
+    markers_raw = layout.get("design_ish_markers") or []
+    if not markers_raw:
+        die(
+            f"error: cannot read layer contracts from schema: {path} "
+            "(requires a non-empty layer_layout.design_ish_markers)"
+        )
 
-# matches <string> <regex> — test a string against a schema regex. Schema
-# regexes are python-re flavored (\s etc.), so python is the matching engine.
-matches() {
-  python3 -c 'import re,sys; sys.exit(0 if re.search(sys.argv[2], sys.argv[1]) else 1)' "$1" "$2"
-}
+    debris_raw = layout.get("generation_debris_patterns") or []
+    if not debris_raw:
+        die(
+            f"error: cannot read layer contracts from schema: {path} "
+            "(requires a non-empty layer_layout.generation_debris_patterns)"
+        )
 
-# count_lines_matching <regex> <must-contain> — count stdin lines that match
-# the schema regex AND contain the literal substring.
-count_lines_matching() {
-  python3 -c 'import re,sys; pat=re.compile(sys.argv[1]); print(sum(1 for l in sys.stdin.read().splitlines() if pat.search(l) and sys.argv[2] in l))' "$1" "$2"
-}
+    # The homing contract is required, checked up front so a pre-homing schema
+    # copy fails loudly (exit 2) instead of silently skipping check 8.
+    homing = layout.get("homing")
+    if (
+        not isinstance(homing, dict)
+        or "homes" not in homing
+        or "context_segment" not in homing
+    ):
+        die(
+            f"error: cannot read layer contracts from schema: {path} "
+            "(requires layer_layout.homing.{homes,context_segment})"
+        )
 
-# lines_matching <regex> — print the stdin lines that match the schema regex.
-lines_matching() {
-  python3 -c 'import re,sys; pat=re.compile(sys.argv[1]); print("\n".join(l for l in sys.stdin.read().splitlines() if pat.search(l)))' "$1"
-}
+    # The staleness advisory is tolerate-absent: an older schema copy without
+    # the key simply skips the advisory.
+    threshold = None
+    advisory = layout.get("staleness_advisory")
+    if isinstance(advisory, dict) and "threshold_commits" in advisory:
+        threshold = advisory["threshold_commits"]
 
-# extract_by_pattern <anchored-regex> — print the first substring of stdin
-# matching the de-anchored pattern; exit 1 when there is none.
-extract_by_pattern() {
-  python3 -c 'import re,sys; m=re.search(sys.argv[1].lstrip("^").rstrip("$"), sys.stdin.read()); print(m.group(0)) if m else sys.exit(1)' "$1"
-}
+    return Schema(
+        term_id_re=re.compile(term_id_src),
+        term_heading_re=re.compile(term_heading_src),
+        adr_id_re=re.compile(adr_id_src),
+        adr_id_src=adr_id_src,
+        adr_file_re=re.compile(adr_file_src),
+        adr_file_src=adr_file_src,
+        adr_element_re=re.compile(adr_element_src),
+        adr_element_src=adr_element_src,
+        term_id_src=term_id_src,
+        adr_dir_rel=adr_dir_rel,
+        root_design_rel=root_design_rel,
+        map_rel=map_rel,
+        markers=DesignIshMarkers.parse(markers_raw),
+        debris=tuple((re.compile(p), p) for p in debris_raw),
+        homes=homing["homes"],
+        context_segment_re=re.compile(homing["context_segment"]),
+        staleness_threshold=threshold,
+    )
 
-# strip_fences <file> — file content with fenced code blocks removed, so an
-# example link or anchor inside a code fence never counts.
-strip_fences() {
-  awk '/^[[:space:]]*(```|~~~)/ { f = !f; next } !f' "$1"
-}
 
-# extract_links <file> — every inline markdown link destination, one per line.
-extract_links() {
-  strip_fences "$1" | grep -oE '\]\([^)]*\)' | sed -E 's/^\]\(//; s/\)$//' || true
-}
+# --- The file index: every layer file is read exactly once --------------------
 
-# extract_click_targets <file> — every mermaid `click <node> "<dest>"` target,
-# one per line. Diagram navigation targets are design-ish links too: a click on
-# a node pointing at a design.md must resolve like any inline link. They live
-# inside fenced ```mermaid blocks, which strip_fences (and thus extract_links)
-# drops — so they are collected here and fed through the same resolution.
-extract_click_targets() {
-  # In a mermaid click line — `click NODE "target" "optional tooltip"` — the
-  # first quoted string is the navigation destination; a bare `click NODE href`
-  # form uses the first whitespace token after the node. Emit that destination.
-  awk '
-    /^[[:space:]]*(```|~~~)[[:space:]]*mermaid/ { m = 1; next }
-    /^[[:space:]]*(```|~~~)/ { m = 0; next }
-    m && /^[[:space:]]*click[[:space:]]/ {
-      if (match($0, /"[^"]*"/)) {
-        d = substr($0, RSTART + 1, RLENGTH - 2)
-      } else {
-        d = $3
-      }
-      if (d != "") print d
+FENCE_RE = re.compile(r"^[ \t]*(```|~~~)")
+MERMAID_FENCE_RE = re.compile(r"^[ \t]*(```|~~~)[ \t]*mermaid")
+CLICK_RE = re.compile(r"^[ \t]*click[ \t]")
+QUOTED_RE = re.compile(r'"[^"]*"')
+LINK_DEST_RE = re.compile(r"\]\(([^)]*)\)")
+HEADING_RE = re.compile(r"^#{1,6}[ \t]")
+ANCHOR_BRACE_RE = re.compile(r"\{#([^}]*)\}")
+LOOSE_ANCHOR_RE = re.compile(r"<a[^>]*id=")
+
+
+@dataclass
+class FileIndex:
+    """Everything the checks need to know about one layer file, derived from a
+    single read. No check reopens the file."""
+
+    path: str
+    rel: str
+    base: str
+    lines: list = field(default_factory=list)  # every line, fences included
+    stripped: list = field(default_factory=list)  # fenced code blocks removed
+    link_dests: list = field(default_factory=list)  # raw destinations, stripped text
+    click_dests: list = field(default_factory=list)  # mermaid `click` targets
+    term_anchor_ids: list = field(default_factory=list)  # {#...} ids on headings
+    adr_elements: list = field(default_factory=list)  # lines matching element_regex
+    loose_anchor_count: int = 0  # anchor-ish lines, matched or not
+    term_headings: set = field(default_factory=set)  # heading anchor ids present
+    adr_anchor_frags: set = field(default_factory=set)  # ids inside anchor elements
+    html_ids: set = field(default_factory=set)  # id="..." in an .html file
+
+
+def read_lines(path: str) -> list:
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        return fh.read().splitlines()
+
+
+def index_markdown(path: str, rel: str, schema: Schema) -> FileIndex:
+    """Read one markdown layer file and build every index a check needs.
+
+    This is the single place a layer file is opened. Fence stripping, link and
+    click-target extraction, term anchors, and ADR anchor elements all come out
+    of the one pass; the checks then look up, never re-scan.
+    """
+    idx = FileIndex(path=path, rel=rel, base=os.path.basename(path))
+    idx.lines = read_lines(path)
+
+    in_fence = False
+    in_mermaid = False
+    for line in idx.lines:
+        if FENCE_RE.match(line):
+            # A fence line toggles the block. A mermaid opener additionally
+            # arms click-target extraction for the block it opens.
+            if not in_fence and MERMAID_FENCE_RE.match(line):
+                in_mermaid = True
+            else:
+                in_mermaid = False
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            if in_mermaid and CLICK_RE.match(line):
+                # `click NODE "target" "optional tooltip"` — the first quoted
+                # string is the destination; a bare `click NODE href` form uses
+                # the first whitespace token after the node.
+                quoted = QUOTED_RE.search(line)
+                if quoted:
+                    dest = quoted.group(0)[1:-1]
+                else:
+                    fields = line.split()
+                    dest = fields[2] if len(fields) > 2 else ""
+                if dest:
+                    idx.click_dests.append(dest)
+            continue
+
+        idx.stripped.append(line)
+
+        for m in LINK_DEST_RE.finditer(line):
+            idx.link_dests.append(m.group(1))
+
+        if HEADING_RE.match(line):
+            for m in ANCHOR_BRACE_RE.finditer(line):
+                idx.term_anchor_ids.append(m.group(1))
+            if schema.term_heading_re.search(line):
+                for m in ANCHOR_BRACE_RE.finditer(line):
+                    idx.term_headings.add(m.group(1))
+
+        if schema.adr_element_re.search(line):
+            idx.adr_elements.append(line)
+        if LOOSE_ANCHOR_RE.search(line):
+            idx.loose_anchor_count += 1
+
+    return idx
+
+
+def strip_anchors(pattern: str) -> str:
+    """A schema id pattern is anchored (^...$); de-anchor it to search inside
+    a longer string, exactly as the previous extract_by_pattern helper did."""
+    return pattern.lstrip("^").rstrip("$")
+
+
+def index_html(path: str, rel: str) -> FileIndex:
+    """An .html target is indexed for its id="..." attributes only — that is
+    the sole question check 1 asks of one."""
+    idx = FileIndex(path=path, rel=rel, base=os.path.basename(path))
+    text = ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        pass
+    idx.html_ids = set(re.findall(r'id="([^"]*)"', text))
+    return idx
+
+
+# --- Path helpers -------------------------------------------------------------
+
+
+def clean_dest(raw: str) -> str:
+    """Strip <>-wrapping, a trailing "title", and surrounding whitespace."""
+    d = raw.strip()
+    if d.startswith("<"):
+        d = d[1:]
+    if d.endswith(">"):
+        d = d[:-1]
+    marker = ' "'
+    if marker in d:
+        d = d.split(marker, 1)[0]
+    return d
+
+
+IGNORED_PREFIXES = ("#", "http://", "https://", "mailto:")
+
+
+def is_ignorable(dest: str) -> bool:
+    return dest == "" or dest.startswith(IGNORED_PREFIXES)
+
+
+# --- Discovery ----------------------------------------------------------------
+
+
+@dataclass
+class Discovery:
+    """Every layer file the gate found, already indexed."""
+
+    design_docs: list
+    contexts: list
+    design_htmls: list
+    map_files: list
+    coverage_files: list
+    adr_files: list
+    map_present: bool
+    adr_dir_present: bool
+
+
+class Repo:
+    """The target repo: its root, its git-awareness, and gitignore pruning."""
+
+    def __init__(self, root: str) -> None:
+        self.root = root
+        self.is_git = (
+            subprocess.run(
+                ["git", "-C", root, "rev-parse", "--git-dir"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+
+    def rel_of(self, path: str) -> str:
+        prefix = self.root + "/"
+        return path[len(prefix) :] if path.startswith(prefix) else path
+
+    def prune_ignored(self, paths: list) -> list:
+        """Drop gitignored paths. One batch `git check-ignore --stdin` per
+        call; a non-git root is never pruned."""
+        if not paths or not self.is_git:
+            return paths
+        proc = subprocess.run(
+            ["git", "-C", self.root, "check-ignore", "--stdin"],
+            input="\n".join(paths) + "\n",
+            capture_output=True,
+            text=True,
+        )
+        ignored = set(proc.stdout.splitlines())
+        if not ignored:
+            return paths
+        return [p for p in paths if p not in ignored]
+
+    def is_ignored(self, path: str) -> bool:
+        if not self.is_git:
+            return False
+        return (
+            subprocess.run(
+                ["git", "-C", self.root, "check-ignore", "-q", path],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            == 0
+        )
+
+
+def walk_layer_files(repo: Repo, names: set) -> dict:
+    """One filesystem walk collecting every wanted basename. Dot-dirs and
+    node_modules are pruned; gitignored paths are pruned in one batch."""
+    found = {name: [] for name in names}
+    for dirpath, dirnames, filenames in os.walk(repo.root):
+        dirnames[:] = [
+            d for d in dirnames if not d.startswith(".") and d != "node_modules"
+        ]
+        for fname in filenames:
+            if fname in found:
+                found[fname].append(os.path.join(dirpath, fname))
+    everything = sorted({p for group in found.values() for p in group})
+    kept = set(repo.prune_ignored(everything))
+    return {
+        name: sorted(p for p in paths if p in kept) for name, paths in found.items()
     }
-  ' "$1" || true
-}
 
-# resolve_lexical <base-dir> <relpath> — lexically-normalized absolute path.
-resolve_lexical() {
-  python3 -c 'import os,sys; print(os.path.normpath(os.path.join(sys.argv[1], sys.argv[2])))' "$1" "$2"
-}
 
-rel_of() {
-  printf '%s\n' "${1#"$REPO"/}"
-}
-
-# clean_dest <raw-dest> — strip <>-wrapping, a trailing "title", whitespace.
-clean_dest() {
-  local d="$1"
-  d="${d#"${d%%[![:space:]]*}"}"
-  d="${d%"${d##*[![:space:]]}"}"
-  d="${d#<}"
-  d="${d%>}"
-  if [[ $d == *' "'* ]]; then
-    d="${d%% \"*}"
-  fi
-  printf '%s\n' "$d"
-}
-
-# --- Layer discovery ---------------------------------------------------------
-
-# The framework assumes every system under design lives in a git repo. When
-# the target root is one, gitignored paths are not part of the system and are
-# pruned from discovery (scratch trees, generated output). A non-git root
-# behaves as before: no pruning.
-IS_GIT_REPO=0
-if git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1; then
-  IS_GIT_REPO=1
-fi
-
-# prune_ignored — stdin: paths, one per line; stdout: those NOT gitignored.
-# One batch `git check-ignore --stdin` per call (exit 1 = nothing ignored).
-prune_ignored() {
-  local all ignored line
-  all="$(cat)"
-  if [ -z "$all" ]; then
-    return 0
-  fi
-  if [ "$IS_GIT_REPO" -eq 0 ]; then
-    printf '%s\n' "$all"
-    return 0
-  fi
-  ignored="$(printf '%s\n' "$all" | git -C "$REPO" check-ignore --stdin 2>/dev/null || true)"
-  if [ -z "$ignored" ]; then
-    printf '%s\n' "$all"
-    return 0
-  fi
-  declare -A ig=()
-  while IFS= read -r line; do ig["$line"]=1; done <<<"$ignored"
-  while IFS= read -r line; do
-    if [ -z "${ig[$line]+x}" ]; then
-      printf '%s\n' "$line"
-    fi
-  done <<<"$all"
-}
-
-# is_ignored <path> — true when the target is a git repo and <path> is ignored.
-is_ignored() {
-  [ "$IS_GIT_REPO" -eq 1 ] && git -C "$REPO" check-ignore -q "$1" 2>/dev/null
-}
-
-# find_layer_files <name> — every <name> in the repo; dot-dirs, node_modules
-# and gitignored paths pruned, sorted.
-find_layer_files() {
-  find "$REPO" -mindepth 1 \( -name '.*' -o -name node_modules \) -prune -o -type f -name "$1" -print 2>/dev/null | prune_ignored | sort
-}
-
-design_docs=()
-while IFS= read -r f; do design_docs+=("$f"); done < <(find_layer_files design.md)
-
-contexts=()
-while IFS= read -r f; do contexts+=("$f"); done < <(find_layer_files CONTEXT.md)
-
-design_htmls=()
-while IFS= read -r f; do design_htmls+=("$f"); done < <(find_layer_files design.html)
-
-domain_design=()
-ROOT_DESIGN_PRESENT=0
-for f in ${design_docs[@]+"${design_docs[@]}"}; do
-  if [ "$f" = "$ROOT_DESIGN" ]; then
-    ROOT_DESIGN_PRESENT=1
-  else
-    domain_design+=("$f")
-  fi
-done
-
-MAP_PRESENT=0
-if [ -f "$MAP" ] && ! is_ignored "$MAP"; then
-  MAP_PRESENT=1
-fi
-
-ADR_DIR_PRESENT=0
-if [ -d "$ADR_DIR" ] && ! is_ignored "$ADR_DIR"; then
-  ADR_DIR_PRESENT=1
-fi
-
-adr_files=()
-if [ "$ADR_DIR_PRESENT" -eq 1 ]; then
-  while IFS= read -r f; do adr_files+=("$f"); done < <(
-    find "$ADR_DIR" -mindepth 1 -maxdepth 1 -type f ! -name '.*' -print | prune_ignored | sort
-  )
-fi
-
-if [ "${#design_docs[@]}" -eq 0 ] && [ "${#contexts[@]}" -eq 0 ] &&
-  [ "${#design_htmls[@]}" -eq 0 ] && [ "$MAP_PRESENT" -eq 0 ] && [ "$ADR_DIR_PRESENT" -eq 0 ]; then
-  echo "error: no design layer in $REPO (no design.md, CONTEXT.md, $MAP_REL, $ADR_DIR_REL/, or design.html)" >&2
-  exit 2
-fi
-
-# --- Check 1: link resolution, fail-closed -----------------------------------
+# --- Check 1: link resolution, fail-closed ------------------------------------
 #
 # A link is design-ish when it matches any schema design_ish_marker (e.g.
 # CONTEXT.md / design.md / design.html by basename, #term- / .md#adr- by
@@ -351,488 +501,650 @@ fi
 # anchor — anything else (missing slug, #trem- typo, malformed adr id) is a
 # violation, never a skip.
 
-check_links() { # <source file>
-  local src="$1" rel src_dir dest filepart frag base abs designish designish_re in_marker_dir m kind hits
-  rel="$(rel_of "$src")"
-  src_dir="$(dirname "$src")"
-  while IFS= read -r dest; do
-    dest="$(clean_dest "$dest")"
-    case "$dest" in
-    '' | '#'* | http://* | https://* | mailto:*) continue ;;
-    esac
-    filepart="${dest%%#*}"
-    frag=""
-    case "$dest" in
-    *'#'*) frag="${dest#*#}" ;;
-    esac
-    if [ -z "$filepart" ]; then
-      continue # pure fragment
-    fi
-    base="${filepart##*/}"
 
-    designish=0
-    designish_re=0
-    for m in "${DESIGNISH_MARKERS[@]}"; do
-      case "$m" in
-      re:*)
-        if matches "$dest" "${m#re:}"; then
-          designish_re=1
-        fi
-        ;;
-      */) ;; # directory marker — needs the resolved path, tested below
-      *'#'*)
-        case "$dest" in
-        *"$m"*) designish=1 ;;
-        esac
-        ;;
-      *)
-        if [ "$base" = "$m" ]; then
-          designish=1
-        fi
-        ;;
-      esac
-    done
+class TargetIndexes:
+    """Lazily-built indexes of link TARGETS, keyed by absolute path.
 
-    case "$filepart" in
-    /*) abs="$(resolve_lexical "$REPO" "${filepart#/}")" ;;
-    *) abs="$(resolve_lexical "$src_dir" "$filepart")" ;;
-    esac
-    in_marker_dir=0
-    for m in "${DESIGNISH_MARKERS[@]}"; do
-      case "$m" in
-      re:*) ;;
-      */)
-        case "$abs" in
-        "$REPO/${m%/}"/*) in_marker_dir=1 ;; # points into the marker dir
-        esac
-        ;;
-      esac
-    done
-    if [ "$designish" -eq 0 ] && [ "$designish_re" -eq 0 ] && [ "$in_marker_dir" -eq 0 ]; then
-      continue # matches no schema marker — not design-ish
-    fi
+    A target is read at most once no matter how many links point into it, so
+    the cost grows with the layer, not with the square of the link graph.
+    """
 
-    if [ -z "$frag" ]; then
-      if [ ! -e "$abs" ]; then
-        violation "$rel" "dangling link" "target not found: $dest"
-      elif [ "$designish_re" -eq 1 ] && [ "$designish" -eq 0 ] && [ "$in_marker_dir" -eq 0 ]; then
-        # Classified adr-ish by filename shape alone, yet the target lives
-        # outside every schema directory marker: a stray adr-ish file, not a
-        # canonical ADR. (Inside the ADR dir, check 2 owns lockstep.)
-        violation "$rel" "stray adr-ish file" "$dest matches an adr-ish schema marker but resolves outside $ADR_DIR_REL/"
-      fi
-      continue
-    fi
-    if [ ! -f "$abs" ]; then
-      violation "$rel" "dangling link" "target file not found: $dest"
-      continue
-    fi
+    def __init__(self, repo: Repo, schema: Schema, prebuilt: dict) -> None:
+        self.repo = repo
+        self.schema = schema
+        self.cache = dict(prebuilt)
 
-    if matches "$frag" "$TERM_ID_RE"; then
-      kind="term"
-    elif matches "$frag" "$ADR_ID_RE"; then
-      kind="adr"
-    else
-      violation "$rel" "malformed anchor" "design-ish fragment '#$frag' in $dest matches neither the term nor the adr id pattern"
-      continue
-    fi
-    case "$abs" in
-    *.html)
-      if ! grep -qF "id=\"$frag\"" "$abs"; then
-        violation "$rel" "dangling $kind anchor" "no id \"$frag\" in $filepart"
-      fi
-      ;;
-    *)
-      if [ "$kind" = "term" ]; then
-        hits="$(strip_fences "$abs" | count_lines_matching "$TERM_HEADING_RE" "{#$frag}")"
-        if [ "${hits:-0}" -eq 0 ]; then
-          violation "$rel" "dangling term anchor" "no heading {#$frag} in $filepart"
-        fi
-      else
-        hits="$(strip_fences "$abs" | count_lines_matching "$ADR_ELEMENT_RE" "$frag")"
-        if [ "${hits:-0}" -eq 0 ]; then
-          violation "$rel" "dangling adr anchor" "no <a id=\"$frag\"></a> in $filepart"
-        fi
-      fi
-      ;;
-    esac
-  done < <(
-    extract_links "$src"
-    extract_click_targets "$src"
-  )
-}
+    def get(self, abspath: str) -> FileIndex:
+        hit = self.cache.get(abspath)
+        if hit is not None:
+            return hit
+        rel = self.repo.rel_of(abspath)
+        if abspath.endswith(".html"):
+            built = index_html(abspath, rel)
+        else:
+            built = index_markdown(abspath, rel, self.schema)
+        self.cache[abspath] = built
+        return built
 
-for src in ${design_docs[@]+"${design_docs[@]}"}; do
-  check_links "$src"
-done
-if [ "$MAP_PRESENT" -eq 1 ]; then
-  check_links "$MAP"
-fi
 
-# --- Check 2: ADR lockstep -----------------------------------------------------
+def classify_designish(
+    dest: str, base: str, abspath: str, repo: Repo, m: DesignIshMarkers
+):
+    """Return (designish, designish_re, in_marker_dir) for one destination."""
+    designish = base in m.basenames or any(s in dest for s in m.substrings)
+    designish_re = any(r.search(dest) for r in m.regexes)
+    in_marker_dir = any(
+        abspath.startswith(os.path.join(repo.root, d) + "/") for d in m.dirs
+    )
+    return designish, designish_re, in_marker_dir
 
-check_adrs() {
-  local f base relf fname_ok elements ecount loose id nnnn_file nnnn_anchor
-  for f in ${adr_files[@]+"${adr_files[@]}"}; do
-    base="${f##*/}"
-    relf="$(rel_of "$f")"
-    fname_ok=1
-    if ! matches "$base" "$ADR_FILE_RE"; then
-      violation "$relf" "bad adr filename" "does not match schema filename pattern $ADR_FILE_RE"
-      fname_ok=0
-    fi
-    # Anchor elements are exactly the lines matching the schema element regex.
-    # Anchor-ish lines that do NOT match it are near-misses — fail closed.
-    elements="$(strip_fences "$f" | lines_matching "$ADR_ELEMENT_RE" || true)"
-    if [ -z "$elements" ]; then
-      ecount=0
-    else
-      ecount="$(printf '%s\n' "$elements" | wc -l | tr -d '[:space:]')"
-    fi
-    loose="$(strip_fences "$f" | grep -cE '<a[^>]*id=' || true)"
-    if [ "${loose:-0}" -gt "$ecount" ]; then
-      violation "$relf" "malformed adr anchor" "$((loose - ecount)) anchor-ish line(s) do not match the schema element regex $ADR_ELEMENT_RE"
-      continue
-    fi
-    if [ "$ecount" -eq 0 ]; then
-      violation "$relf" "missing adr anchor" "no anchor element matching the schema element regex $ADR_ELEMENT_RE"
-      continue
-    fi
-    if [ "$ecount" -ne 1 ]; then
-      violation "$relf" "multiple adr anchors" "expected exactly one anchor element, found $ecount"
-      continue
-    fi
-    if ! id="$(printf '%s' "$elements" | extract_by_pattern "$ADR_ID_RE")"; then
-      violation "$relf" "malformed adr anchor" "cannot extract an id matching $ADR_ID_RE from anchor element: $elements"
-      continue
-    fi
-    if [ "$fname_ok" -eq 1 ]; then
-      nnnn_file="${base%%-*}"
-      nnnn_anchor="${id#adr-}"
-      if [ "$nnnn_file" != "$nnnn_anchor" ]; then
-        violation "$relf" "adr lockstep mismatch" "filename NNNN '$nnnn_file' != anchor NNNN '$nnnn_anchor'"
-      fi
-    fi
-  done
-}
-check_adrs
 
-# --- Check 3: term anchor validity in CONTEXT.md -------------------------------
+def check_links(
+    src: FileIndex, repo: Repo, schema: Schema, targets: TargetIndexes, report: Report
+) -> None:
+    rel = src.rel
+    src_dir = os.path.dirname(src.path)
+    for raw in src.link_dests + src.click_dests:
+        dest = clean_dest(raw)
+        if is_ignorable(dest):
+            continue
+        filepart, _, frag = dest.partition("#")
+        if not filepart:
+            continue  # pure fragment
+        base = filepart.rsplit("/", 1)[-1]
 
-check_terms() {
-  local ctx relc raw id
-  for ctx in ${contexts[@]+"${contexts[@]}"}; do
-    relc="$(rel_of "$ctx")"
-    declare -A seen=()
-    while IFS= read -r raw; do
-      if [ -z "$raw" ]; then
-        continue
-      fi
-      id="${raw#"{#"}"
-      id="${id%\}}"
-      if [ -z "$id" ]; then
-        violation "$relc" "invalid term anchor" "{#} has no id at all"
-        continue
-      fi
-      if ! matches "$id" "$TERM_ID_RE"; then
-        violation "$relc" "invalid term anchor" "{#$id} does not match schema term id pattern $TERM_ID_RE"
-      fi
-      if [ -n "${seen[$id]+x}" ]; then
-        violation "$relc" "duplicate term id" "{#$id} declared more than once"
-      else
-        seen[$id]=1
-      fi
-    done < <(strip_fences "$ctx" | grep -E '^#{1,6}[[:space:]]' | grep -oE '\{#[^}]*\}' || true)
-    unset seen
-  done
-}
-check_terms
+        if filepart.startswith("/"):
+            abspath = os.path.normpath(os.path.join(repo.root, filepart[1:]))
+        else:
+            abspath = os.path.normpath(os.path.join(src_dir, filepart))
 
-# --- Check 4: map totality (multi-context) -------------------------------------
+        designish, designish_re, in_marker_dir = classify_designish(
+            dest, base, abspath, repo, schema.markers
+        )
+        if not (designish or designish_re or in_marker_dir):
+            continue  # matches no schema marker — not design-ish
 
-check_map_totality() {
-  local n dest abs ctx d rd_dir
-  n="${#contexts[@]}"
-  if [ "$n" -lt 2 ]; then
-    return 0 # single-context: CONTEXT-MAP.md is not required
-  fi
+        if not frag:
+            if not os.path.exists(abspath):
+                report.violation(rel, "dangling link", f"target not found: {dest}")
+            elif designish_re and not designish and not in_marker_dir:
+                # Classified adr-ish by filename shape alone, yet the target
+                # lives outside every schema directory marker: a stray adr-ish
+                # file, not a canonical ADR. (Inside the ADR dir, check 2 owns
+                # lockstep.)
+                report.violation(
+                    rel,
+                    "stray adr-ish file",
+                    f"{dest} matches an adr-ish schema marker but resolves "
+                    f"outside {schema.adr_dir_rel}/",
+                )
+            continue
 
-  if [ "$MAP_PRESENT" -eq 0 ]; then
-    violation "$MAP_REL" "missing context map" "$n CONTEXT.md files exist but $MAP_REL is absent at its declared home"
-  else
-    declare -A map_refs=()
-    local map_dir
-    map_dir="$(dirname "$MAP")"
-    while IFS= read -r dest; do
-      dest="$(clean_dest "$dest")"
-      case "$dest" in
-      '' | '#'* | http://* | https://* | mailto:*) continue ;;
-      esac
-      dest="${dest%%#*}"
-      if [ -z "$dest" ]; then
-        continue
-      fi
-      case "${dest##*/}" in
-      CONTEXT.md) ;;
-      *) continue ;;
-      esac
-      case "$dest" in
-      /*) abs="$(resolve_lexical "$REPO" "${dest#/}")" ;;
-      *) abs="$(resolve_lexical "$map_dir" "$dest")" ;;
-      esac
-      map_refs["$abs"]=1
-    done < <(extract_links "$MAP")
-    for ctx in "${contexts[@]}"; do
-      if [ -z "${map_refs[$ctx]+x}" ]; then
-        violation "$MAP_REL" "unmapped CONTEXT.md" "$(rel_of "$ctx") has no exact link in the map"
-      fi
-    done
-    unset map_refs
-  fi
+        if not os.path.isfile(abspath):
+            report.violation(rel, "dangling link", f"target file not found: {dest}")
+            continue
 
-  if [ "${#domain_design[@]}" -eq 0 ]; then
-    return 0
-  fi
-  if [ "$ROOT_DESIGN_PRESENT" -eq 0 ]; then
-    violation "$ROOT_DESIGN_REL" "missing root design doc" "domain design docs exist but the root design doc is absent"
-    return 0
-  fi
-  declare -A root_refs=()
-  rd_dir="$(dirname "$ROOT_DESIGN")"
-  while IFS= read -r dest; do
-    dest="$(clean_dest "$dest")"
-    case "$dest" in
-    '' | '#'* | http://* | https://* | mailto:*) continue ;;
-    esac
-    dest="${dest%%#*}"
-    if [ -z "$dest" ]; then
-      continue
-    fi
-    case "${dest##*/}" in
-    design.md | design.html) ;;
-    *) continue ;;
-    esac
-    case "$dest" in
-    /*) abs="$(resolve_lexical "$REPO" "${dest#/}")" ;;
-    *) abs="$(resolve_lexical "$rd_dir" "$dest")" ;;
-    esac
+        if schema.term_id_re.search(frag):
+            kind = "term"
+        elif schema.adr_id_re.search(frag):
+            kind = "adr"
+        else:
+            report.violation(
+                rel,
+                "malformed anchor",
+                f"design-ish fragment '#{frag}' in {dest} matches neither the "
+                "term nor the adr id pattern",
+            )
+            continue
+
+        target = targets.get(abspath)
+        if abspath.endswith(".html"):
+            if frag not in target.html_ids:
+                report.violation(
+                    rel, f"dangling {kind} anchor", f'no id "{frag}" in {filepart}'
+                )
+        elif kind == "term":
+            if frag not in target.term_headings:
+                report.violation(
+                    rel,
+                    "dangling term anchor",
+                    f"no heading {{#{frag}}} in {filepart}",
+                )
+        else:
+            if frag not in target.adr_anchor_frags:
+                report.violation(
+                    rel,
+                    "dangling adr anchor",
+                    f'no <a id="{frag}"></a> in {filepart}',
+                )
+
+
+# --- Check 2: ADR lockstep ----------------------------------------------------
+
+
+def check_adrs(adr_files: list, schema: Schema, report: Report) -> None:
+    for idx in adr_files:
+        fname_ok = True
+        if not schema.adr_file_re.search(idx.base):
+            report.violation(
+                idx.rel,
+                "bad adr filename",
+                f"does not match schema filename pattern {schema.adr_file_src}",
+            )
+            fname_ok = False
+
+        # Anchor elements are exactly the lines matching the schema element
+        # regex. Anchor-ish lines that do NOT match it are near-misses — fail
+        # closed.
+        elements = idx.adr_elements
+        ecount = len(elements)
+        if idx.loose_anchor_count > ecount:
+            report.violation(
+                idx.rel,
+                "malformed adr anchor",
+                f"{idx.loose_anchor_count - ecount} anchor-ish line(s) do not "
+                f"match the schema element regex {schema.adr_element_src}",
+            )
+            continue
+        if ecount == 0:
+            report.violation(
+                idx.rel,
+                "missing adr anchor",
+                "no anchor element matching the schema element regex "
+                f"{schema.adr_element_src}",
+            )
+            continue
+        if ecount != 1:
+            report.violation(
+                idx.rel,
+                "multiple adr anchors",
+                f"expected exactly one anchor element, found {ecount}",
+            )
+            continue
+
+        joined = "\n".join(elements)
+        m = re.search(strip_anchors(schema.adr_id_src), joined)
+        if not m:
+            report.violation(
+                idx.rel,
+                "malformed adr anchor",
+                f"cannot extract an id matching {schema.adr_id_src} from "
+                f"anchor element: {joined}",
+            )
+            continue
+        if fname_ok:
+            nnnn_file = idx.base.split("-", 1)[0]
+            nnnn_anchor = (
+                m.group(0)[len("adr-") :]
+                if m.group(0).startswith("adr-")
+                else m.group(0)
+            )
+            if nnnn_file != nnnn_anchor:
+                report.violation(
+                    idx.rel,
+                    "adr lockstep mismatch",
+                    f"filename NNNN '{nnnn_file}' != anchor NNNN '{nnnn_anchor}'",
+                )
+
+
+# --- Check 3: term anchor validity in CONTEXT.md ------------------------------
+
+
+def check_terms(contexts: list, schema: Schema, report: Report) -> None:
+    for idx in contexts:
+        seen = set()
+        for term_id in idx.term_anchor_ids:
+            if not term_id:
+                report.violation(idx.rel, "invalid term anchor", "{#} has no id at all")
+                continue
+            if not schema.term_id_re.search(term_id):
+                report.violation(
+                    idx.rel,
+                    "invalid term anchor",
+                    f"{{#{term_id}}} does not match schema term id pattern "
+                    f"{schema.term_id_src}",
+                )
+            if term_id in seen:
+                report.violation(
+                    idx.rel,
+                    "duplicate term id",
+                    f"{{#{term_id}}} declared more than once",
+                )
+            else:
+                seen.add(term_id)
+
+
+# --- Check 4: map totality (multi-context) ------------------------------------
+
+
+def linked_paths(src: FileIndex, base_dir: str, repo: Repo, wanted: set) -> set:
+    """The set of absolute paths this file links, restricted to the wanted
+    basenames. Fragments are dropped — the map's contract is the exact path."""
+    out = set()
+    for raw in src.link_dests:
+        dest = clean_dest(raw)
+        if is_ignorable(dest):
+            continue
+        dest = dest.split("#", 1)[0]
+        if not dest:
+            continue
+        if dest.rsplit("/", 1)[-1] not in wanted:
+            continue
+        if dest.startswith("/"):
+            out.add(os.path.normpath(os.path.join(repo.root, dest[1:])))
+        else:
+            out.add(os.path.normpath(os.path.join(base_dir, dest)))
+    return out
+
+
+def check_map_totality(
+    disc: Discovery,
+    repo: Repo,
+    schema: Schema,
+    map_index: Optional[FileIndex],
+    root_design_index: Optional[FileIndex],
+    domain_design: list,
+    report: Report,
+) -> None:
+    n = len(disc.contexts)
+    if n < 2:
+        return  # single-context: CONTEXT-MAP.md is not required
+
+    if not disc.map_present:
+        report.violation(
+            schema.map_rel,
+            "missing context map",
+            f"{n} CONTEXT.md files exist but {schema.map_rel} is absent at its "
+            "declared home",
+        )
+    else:
+        map_refs = linked_paths(
+            map_index, os.path.dirname(map_index.path), repo, {"CONTEXT.md"}
+        )
+        for ctx in disc.contexts:
+            if ctx.path not in map_refs:
+                report.violation(
+                    schema.map_rel,
+                    "unmapped CONTEXT.md",
+                    f"{ctx.rel} has no exact link in the map",
+                )
+
+    if not domain_design:
+        return
+    if root_design_index is None:
+        report.violation(
+            schema.root_design_rel,
+            "missing root design doc",
+            "domain design docs exist but the root design doc is absent",
+        )
+        return
+
+    raw_refs = linked_paths(
+        root_design_index,
+        os.path.dirname(root_design_index.path),
+        repo,
+        {"design.md", "design.html"},
+    )
     # A link to the generated design.html counts as linking its design.md.
-    case "$abs" in
-    *.html) root_refs["${abs%.html}.md"]=1 ;;
-    *) root_refs["$abs"]=1 ;;
-    esac
-  done < <(extract_links "$ROOT_DESIGN")
-  for d in "${domain_design[@]}"; do
-    if [ -z "${root_refs[$d]+x}" ]; then
-      violation "$(rel_of "$d")" "unlinked domain design doc" "not linked from $ROOT_DESIGN_REL"
-    fi
-  done
-  unset root_refs
-}
-check_map_totality
+    root_refs = {
+        (p[: -len(".html")] + ".md") if p.endswith(".html") else p for p in raw_refs
+    }
+    for doc in domain_design:
+        if doc.path not in root_refs:
+            report.violation(
+                doc.rel,
+                "unlinked domain design doc",
+                f"not linked from {schema.root_design_rel}",
+            )
 
-# --- Check 5: no orphan design.html --------------------------------------------
 
-check_orphan_html() {
-  local h
-  for h in ${design_htmls[@]+"${design_htmls[@]}"}; do
-    if [ ! -f "${h%.html}.md" ]; then
-      violation "$(rel_of "$h")" "orphan design.html" "no sibling design.md (generated file without its source)"
-    fi
-  done
-}
-check_orphan_html
+# --- Check 5: no orphan design.html -------------------------------------------
 
-# --- Check 6: no verbatim-duplicate non-trivial lines ---------------------------
+
+def check_orphan_html(design_htmls: list, report: Report) -> None:
+    for html in design_htmls:
+        if not os.path.isfile(html.path[: -len(".html")] + ".md"):
+            report.violation(
+                html.rel,
+                "orphan design.html",
+                "no sibling design.md (generated file without its source)",
+            )
+
+
+# --- Check 6: no verbatim-duplicate non-trivial lines -------------------------
 #
 # Within one design.md or CONTEXT.md, a non-trivial prose line appearing
 # verbatim more than once means a fact lives in two places (restatement
 # instead of a cross-link). Scope is within one file, never across files.
-# Lines inside fenced code blocks are exempt (strip_fences), as are trivial
-# lines per is_trivial below.
+# Lines inside fenced code blocks are exempt, as are trivial lines per
+# is_trivial below.
 
-# A line is "trivial" (exempt from the dup check) when, after trimming, it is:
-#   - blank
-#   - a code fence (```), a horizontal rule / setext underline (---, ===)
-#   - a table separator row (| --- | --- |)
-#   - only punctuation/brackets/markup (no alphanumeric word of >=2 letters)
-#   - too short to be a real copy-pasted sentence (< 24 visible chars)
-# A non-trivial line carries actual prose; a verbatim repeat of one is the bug.
-is_trivial() {
-  local line="$1"
-  # Trim leading/trailing whitespace.
-  local t="${line#"${line%%[![:space:]]*}"}"
-  t="${t%"${t##*[![:space:]]}"}"
+TABLE_SEP_RE = re.compile(r"^[|:\s-]+$")
+WORD_RE = re.compile(r"[^\W\d_]{2,}", re.ASCII)
+MD_LINK_RE = re.compile(r"!?\[[^\]]*\]\([^)]*\)")
 
-  [ -z "$t" ] && return 0 # blank
-  case "$t" in
-  '```'*) return 0 ;; # code fence
-  # v3 adaptation of the v1 fence exemption: ::: block-directive markers
-  # (e.g. ":::invariant {enforcement=mechanism}") are structural markup the
-  # schema mandates — they repeat by design, exactly like fence openers.
-  ':::'*) return 0 ;;                            # block directive marker
-  '---' | '----'* | '===' | '===='*) return 0 ;; # rule / underline
-  esac
-  # Pure table separator: only | - : and spaces.
-  if printf '%s' "$t" | grep -Eq '^[|:[:space:]-]+$'; then
-    return 0
-  fi
-  # No "word" of two or more letters → pure markup/punctuation.
-  if ! printf '%s' "$t" | grep -Eq '[[:alpha:]]{2,}'; then
-    return 0
-  fi
-  # v3 doctrine adaptation ("cited, never restated"): a line whose content is
-  # entirely markdown links — with optional list markers/punctuation around
-  # them — is a citation, the legal form of repetition, not a restatement.
-  # Strip the links; if no prose word remains, the line is trivial.
-  local delinked
-  delinked="$(printf '%s' "$t" | sed -E 's/!?\[[^]]*\]\([^)]*\)//g')"
-  if ! printf '%s' "$delinked" | grep -Eq '[[:alpha:]]{2,}'; then
-    return 0
-  fi
-  # Too short to be a real sentence/bullet (< 24 visible chars).
-  if [ "${#t}" -lt 24 ]; then
-    return 0
-  fi
-  return 1
-}
 
-check_duplicate_lines() {
-  local doc rel line disp
-  for doc in ${design_docs[@]+"${design_docs[@]}"} ${contexts[@]+"${contexts[@]}"}; do
-    rel="$(rel_of "$doc")"
-    declare -A seen_count=()
-    while IFS= read -r line || [ -n "$line" ]; do
-      if is_trivial "$line"; then
-        continue
-      fi
-      if [ -n "${seen_count[$line]+x}" ]; then
-        seen_count[$line]=$((seen_count[$line] + 1))
-      else
-        seen_count[$line]=1
-      fi
-    done < <(strip_fences "$doc")
-    for line in "${!seen_count[@]}"; do
-      if [ "${seen_count[$line]}" -gt 1 ]; then
-        # Trim for display.
-        disp="${line#"${line%%[![:space:]]*}"}"
-        violation "$rel" "duplicate line" "'$disp' appears ${seen_count[$line]}x"
-      fi
-    done
-    unset seen_count
-  done
-}
-check_duplicate_lines
+def is_trivial(line: str) -> bool:
+    """A line is "trivial" (exempt from the dup check) when, after trimming,
+    it is:
+      - blank
+      - a code fence (```), a ::: block-directive marker
+      - a horizontal rule / setext underline (---, ===)
+      - a table separator row (| --- | --- |)
+      - only punctuation/brackets/markup (no alphanumeric word of >=2 letters)
+      - a citation: entirely markdown links, the legal form of repetition
+      - too short to be a real copy-pasted sentence (< 24 visible chars)
+    A non-trivial line carries actual prose; a verbatim repeat of one is the
+    bug."""
+    t = line.strip()
+    if not t:
+        return True
+    if t.startswith("```"):
+        return True
+    # ::: block-directive markers (e.g. ":::invariant {enforcement=mechanism}")
+    # are structural markup the schema mandates — they repeat by design,
+    # exactly like fence openers.
+    if t.startswith(":::"):
+        return True
+    if t == "---" or t.startswith("----") or t == "===" or t.startswith("===="):
+        return True
+    if TABLE_SEP_RE.match(t):
+        return True
+    if not WORD_RE.search(t):
+        return True
+    # "Cited, never restated": a line whose content is entirely markdown links
+    # — with optional list markers/punctuation around them — is a citation, the
+    # legal form of repetition, not a restatement. Strip the links; if no prose
+    # word remains, the line is trivial.
+    if not WORD_RE.search(MD_LINK_RE.sub("", t)):
+        return True
+    if len(t) < 24:
+        return True
+    return False
 
-# --- Check 7: no generation debris ----------------------------------------------
+
+def check_duplicate_lines(docs: list, report: Report) -> None:
+    for idx in docs:
+        counts = {}
+        order = []
+        in_clause = False
+        for line in idx.stripped:
+            # Behavior-block adaptation: a given/when/then clause body states
+            # its context in the schema's fixed clause form, and two sibling
+            # rules about one context state that context identically by design
+            # — the repetition is the format, not a restatement. Clause bodies
+            # are therefore exempt; everything outside a clause keeps the full
+            # check.
+            t = line.lstrip(" \t")
+            if t.startswith((":::given", ":::when", ":::then")):
+                in_clause = True
+            elif t == ":::" or t.startswith(":::\t") or t.rstrip() == ":::":
+                in_clause = False
+            if in_clause:
+                continue
+            if is_trivial(line):
+                continue
+            if line in counts:
+                counts[line] += 1
+            else:
+                counts[line] = 1
+                order.append(line)
+        for line in order:
+            if counts[line] > 1:
+                report.violation(
+                    idx.rel,
+                    "duplicate line",
+                    f"'{line.lstrip()}' appears {counts[line]}x",
+                )
+
+
+# --- Check 7: no generation debris --------------------------------------------
 #
 # A generation-wrapper artifact line inside a layer artifact means the writer
 # leaked its transport envelope into durable content. The line shapes are the
 # schema's layer_layout.generation_debris_patterns; the artifact set is every
-# design.md, CONTEXT.md, CONTEXT-MAP.md, COVERAGE.md, and ADR file. Fenced
-# code blocks are exempt (strip_fences): an example of the wrapper is
-# documentation, not leakage.
+# design.md, CONTEXT.md, CONTEXT-MAP.md, COVERAGE.md, and ADR file. Fenced code
+# blocks are exempt: an example of the wrapper is documentation, not leakage.
 
-map_files=()
-while IFS= read -r f; do map_files+=("$f"); done < <(find_layer_files CONTEXT-MAP.md)
 
-coverage_files=()
-while IFS= read -r f; do coverage_files+=("$f"); done < <(find_layer_files COVERAGE.md)
+def check_debris(files: list, schema: Schema, report: Report) -> None:
+    for idx in files:
+        for pattern, src in schema.debris:
+            for line in idx.stripped:
+                if not pattern.search(line):
+                    continue
+                if not line:
+                    continue
+                report.violation(
+                    idx.rel,
+                    "generation debris",
+                    f"'{line.strip()}' is a generation-wrapper artifact line "
+                    f"(schema pattern {src}) — writer leakage, not layer content",
+                )
 
-check_debris() {
-  local f rel pat line disp
-  for f in ${design_docs[@]+"${design_docs[@]}"} ${contexts[@]+"${contexts[@]}"} \
-    ${map_files[@]+"${map_files[@]}"} ${coverage_files[@]+"${coverage_files[@]}"} \
-    ${adr_files[@]+"${adr_files[@]}"}; do
-    rel="$(rel_of "$f")"
-    for pat in "${DEBRIS_PATTERNS[@]}"; do
-      while IFS= read -r line; do
-        if [ -z "$line" ]; then
-          continue
-        fi
-        disp="${line#"${line%%[![:space:]]*}"}"
-        disp="${disp%"${disp##*[![:space:]]}"}"
-        violation "$rel" "generation debris" "'$disp' is a generation-wrapper artifact line (schema pattern $pat) — writer leakage, not layer content"
-      done < <(strip_fences "$f" | lines_matching "$pat")
-    done
-  done
-}
-check_debris
 
-# --- Check 8: layer homing -------------------------------------------------------
+# --- Check 8: layer homing ----------------------------------------------------
 #
 # The design layer lives entirely under docs/ (schema layer_layout.homing):
 # every layer basename has one or more declared homes, and a layer file found
-# anywhere else is a mishomed stray — the layout contract is validated on
-# every run, never assumed. A '<context>' placeholder in a home matches
-# exactly one path segment shaped by homing.context_segment.
+# anywhere else is a mishomed stray — the layout contract is validated on every
+# run, never assumed. A '<context>' placeholder in a home matches exactly one
+# path segment shaped by homing.context_segment.
 
-# is_homed <relpath> <basename> — true when relpath is a declared home.
-is_homed() {
-  python3 -c '
-import json, re, sys
-schema, rel, base = sys.argv[1], sys.argv[2], sys.argv[3]
-h = json.load(open(schema))["layer_layout"]["homing"]
-seg = re.compile(h["context_segment"])
-for home in h["homes"].get(base, []):
-    if "<context>" in home:
-        pre, post = home.split("<context>")
-        if rel.startswith(pre) and rel.endswith(post) and len(rel) > len(pre) + len(post):
-            mid = rel[len(pre):len(rel) - len(post)]
-            if "/" not in mid and seg.search(mid):
-                sys.exit(0)
-    elif rel == home:
-        sys.exit(0)
-sys.exit(1)' "$SCHEMA" "$1" "$2"
-}
 
-# homes_of <basename> — the declared homes, for the violation message.
-homes_of() {
-  python3 -c 'import json,sys; print(" or ".join(json.load(open(sys.argv[1]))["layer_layout"]["homing"]["homes"].get(sys.argv[2], [])))' "$SCHEMA" "$1"
-}
+def is_homed(rel: str, base: str, schema: Schema) -> bool:
+    for home in schema.homes.get(base, []):
+        if "<context>" in home:
+            pre, post = home.split("<context>")
+            if (
+                rel.startswith(pre)
+                and rel.endswith(post)
+                and len(rel) > len(pre) + len(post)
+            ):
+                mid = rel[len(pre) : len(rel) - len(post)]
+                if "/" not in mid and schema.context_segment_re.search(mid):
+                    return True
+        elif rel == home:
+            return True
+    return False
 
-check_homing() {
-  local f rel base
-  for f in ${design_docs[@]+"${design_docs[@]}"} ${design_htmls[@]+"${design_htmls[@]}"} \
-    ${contexts[@]+"${contexts[@]}"} ${map_files[@]+"${map_files[@]}"} \
-    ${coverage_files[@]+"${coverage_files[@]}"}; do
-    rel="$(rel_of "$f")"
-    base="${f##*/}"
-    if ! is_homed "$rel" "$base"; then
-      violation "$rel" "mishomed layer artifact" "$base must live at $(homes_of "$base") (schema layer_layout.homing)"
-    fi
-  done
-}
-check_homing
 
-# --- Staleness advisory (schema layer_layout.staleness_advisory) ----------------
+def check_homing(files: list, schema: Schema, report: Report) -> None:
+    for idx in files:
+        if not is_homed(idx.rel, idx.base, schema):
+            homes = " or ".join(schema.homes.get(idx.base, []))
+            report.violation(
+                idx.rel,
+                "mishomed layer artifact",
+                f"{idx.base} must live at {homes} (schema layer_layout.homing)",
+            )
+
+
+# --- Staleness advisory (schema layer_layout.staleness_advisory) --------------
 #
 # Advisory only — exit codes untouched. When the repo has moved threshold+
 # commits since any layer artifact last changed, print one line recommending
-# reconcile (sync). Skipped outside git, when the layer was never committed,
-# or when the schema copy predates the key (tolerate-absent).
+# reconcile (sync). Skipped outside git, when the layer was never committed, or
+# when the schema copy predates the key (tolerate-absent).
 
-staleness_advisory() {
-  local threshold last count files
-  threshold="$(schema_get layer_layout staleness_advisory threshold_commits 2>/dev/null)" || return 0
-  [ "$IS_GIT_REPO" -eq 1 ] || return 0
-  files=(${design_docs[@]+"${design_docs[@]}"} ${contexts[@]+"${contexts[@]}"}
-    ${map_files[@]+"${map_files[@]}"} ${coverage_files[@]+"${coverage_files[@]}"}
-    ${adr_files[@]+"${adr_files[@]}"})
-  [ "${#files[@]}" -gt 0 ] || return 0
-  last="$(git -C "$REPO" log -1 --format=%H -- "${files[@]}" 2>/dev/null || true)"
-  [ -n "$last" ] || return 0
-  count="$(git -C "$REPO" rev-list --count "$last..HEAD" 2>/dev/null || echo 0)"
-  if [ "${count:-0}" -ge "$threshold" ]; then
-    echo "advisory: $count commit(s) since the design layer last changed (threshold $threshold) — reconcile (sync) before relying on the layer"
-  fi
-}
-staleness_advisory
 
-# --- Verdict -------------------------------------------------------------------
+def staleness_advisory(repo: Repo, schema: Schema, files: list) -> None:
+    if schema.staleness_threshold is None:
+        return
+    if not repo.is_git or not files:
+        return
+    paths = [idx.path for idx in files]
+    last = subprocess.run(
+        ["git", "-C", repo.root, "log", "-1", "--format=%H", "--"] + paths,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if not last:
+        return
+    proc = subprocess.run(
+        ["git", "-C", repo.root, "rev-list", "--count", f"{last}..HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        count = int(proc.stdout.strip()) if proc.returncode == 0 else 0
+    except ValueError:
+        count = 0
+    if count >= schema.staleness_threshold:
+        print(
+            f"advisory: {count} commit(s) since the design layer last changed "
+            f"(threshold {schema.staleness_threshold}) — reconcile (sync) "
+            "before relying on the layer"
+        )
 
-if [ "$found" -ne 0 ]; then
-  exit 1
-fi
-echo "layer-integrity OK: ${#design_docs[@]} design doc(s), ${#contexts[@]} CONTEXT.md, ${#adr_files[@]} ADR(s) in $REPO"
-exit 0
+
+# --- Main ---------------------------------------------------------------------
+
+
+def main(argv: list) -> int:
+    args = argv[1:]
+    if len(args) > 1:
+        print(f"usage: {os.path.basename(argv[0])} [repo-root]", file=sys.stderr)
+        return 2
+    repo_arg = args[0] if args else "."
+    if not os.path.isdir(repo_arg):
+        print(f"error: repo root not found: {repo_arg}", file=sys.stderr)
+        return 2
+    root = os.path.realpath(repo_arg)
+
+    schema = load_schema(locate_schema(argv[0]))
+    repo = Repo(root)
+    report = Report()
+
+    # --- Discovery: one walk, one batch gitignore prune.
+    layer_names = {
+        "design.md",
+        "CONTEXT.md",
+        "design.html",
+        "CONTEXT-MAP.md",
+        "COVERAGE.md",
+    }
+    walked = walk_layer_files(repo, layer_names)
+
+    map_abs = os.path.join(root, schema.map_rel)
+    adr_dir = os.path.join(root, schema.adr_dir_rel)
+    root_design_abs = os.path.join(root, schema.root_design_rel)
+
+    map_present = os.path.isfile(map_abs) and not repo.is_ignored(map_abs)
+    adr_dir_present = os.path.isdir(adr_dir) and not repo.is_ignored(adr_dir)
+
+    adr_paths = []
+    if adr_dir_present:
+        entries = [
+            os.path.join(adr_dir, name)
+            for name in os.listdir(adr_dir)
+            if not name.startswith(".") and os.path.isfile(os.path.join(adr_dir, name))
+        ]
+        adr_paths = sorted(repo.prune_ignored(sorted(entries)))
+
+    if (
+        not walked["design.md"]
+        and not walked["CONTEXT.md"]
+        and not walked["design.html"]
+        and not map_present
+        and not adr_dir_present
+    ):
+        print(
+            f"error: no design layer in {root} (no design.md, CONTEXT.md, "
+            f"{schema.map_rel}, {schema.adr_dir_rel}/, or design.html)",
+            file=sys.stderr,
+        )
+        return 2
+
+    # --- The one read: every discovered layer file is indexed exactly once.
+    def index_all(paths: list, html: bool = False) -> list:
+        out = []
+        for p in paths:
+            rel = repo.rel_of(p)
+            out.append(index_html(p, rel) if html else index_markdown(p, rel, schema))
+        return out
+
+    design_docs = index_all(walked["design.md"])
+    contexts = index_all(walked["CONTEXT.md"])
+    design_htmls = index_all(walked["design.html"], html=True)
+    map_files = index_all(walked["CONTEXT-MAP.md"])
+    coverage_files = index_all(walked["COVERAGE.md"])
+    adr_files = index_all(adr_paths)
+
+    # An ADR's anchor fragments come from its already-parsed anchor elements;
+    # a link into it is answered from this set, never by rereading the file.
+    for idx in adr_files + design_docs + contexts + map_files + coverage_files:
+        for line in idx.adr_elements:
+            m = re.search(strip_anchors(schema.adr_id_src), line)
+            if m:
+                idx.adr_anchor_frags.add(m.group(0))
+
+    by_path = {
+        idx.path: idx
+        for idx in design_docs
+        + contexts
+        + design_htmls
+        + map_files
+        + coverage_files
+        + adr_files
+    }
+    targets = TargetIndexes(repo, schema, by_path)
+
+    root_design_index = by_path.get(root_design_abs)
+    domain_design = [d for d in design_docs if d.path != root_design_abs]
+    map_index = by_path.get(map_abs) if map_present else None
+    if map_present and map_index is None:
+        map_index = index_markdown(map_abs, repo.rel_of(map_abs), schema)
+        by_path[map_abs] = map_index
+        targets.cache[map_abs] = map_index
+
+    # --- The eight checks, each a lookup against the indexes above.
+    for src in design_docs:
+        check_links(src, repo, schema, targets, report)
+    if map_index is not None:
+        check_links(map_index, repo, schema, targets, report)
+
+    check_adrs(adr_files, schema, report)
+    check_terms(contexts, schema, report)
+
+    disc = Discovery(
+        design_docs=design_docs,
+        contexts=contexts,
+        design_htmls=design_htmls,
+        map_files=map_files,
+        coverage_files=coverage_files,
+        adr_files=adr_files,
+        map_present=map_present,
+        adr_dir_present=adr_dir_present,
+    )
+    check_map_totality(
+        disc, repo, schema, map_index, root_design_index, domain_design, report
+    )
+    check_orphan_html(design_htmls, report)
+    check_duplicate_lines(design_docs + contexts, report)
+    check_debris(
+        design_docs + contexts + map_files + coverage_files + adr_files, schema, report
+    )
+    check_homing(
+        design_docs + design_htmls + contexts + map_files + coverage_files,
+        schema,
+        report,
+    )
+
+    staleness_advisory(
+        repo,
+        schema,
+        design_docs + contexts + map_files + coverage_files + adr_files,
+    )
+
+    if report.found:
+        return 1
+    print(
+        f"layer-integrity OK: {len(design_docs)} design doc(s), "
+        f"{len(contexts)} CONTEXT.md, {len(adr_files)} ADR(s) in {root}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

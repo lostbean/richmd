@@ -1,0 +1,23 @@
+{
+  "attrs": {
+    "enforcement": {
+      "enum_values": ["mechanism", "partial", "convention"],
+      "required": true,
+      "type": "enum"
+    },
+    "lens": {
+      "required": false,
+      "type": "string"
+    },
+    "script": {
+      "required": false,
+      "type": "string"
+    },
+    "title": {
+      "required": true,
+      "type": "string"
+    }
+  },
+  "body": "required",
+  "kind": "invariant"
+}

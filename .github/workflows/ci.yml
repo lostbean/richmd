@@ -35,14 +35,27 @@ jobs:
       - name: test (npm test)
         run: nix develop -c npm test
 
-      - name: design-gate (design-render --check, layer-integrity)
+      - name: design-gate (richmd render --check, layer-integrity)
+        # Renders with the working-tree richmd, not a pinned release: this repo
+        # IS richmd, so a pinned binary could not catch a rendering regression
+        # in the very tree it is gating.
         run: |
           nix develop -c bash -c '
             set -e
             git ls-files "*design.md" | while read -r f; do
-              scripts/design-render --check "$f"
+              node bin/richmd.js render "$f" --check
             done
             scripts/layer-integrity .
+          '
+
+      - name: richmd projection freshness (.richmd/ reproduces from the schema)
+        run: |
+          nix develop -c bash -c '
+            set -e
+            tmp=$(mktemp -d)
+            trap "rm -rf $tmp" EXIT
+            scripts/richmd-project scripts/design-schema.json "$tmp" >/dev/null
+            diff -r docs/design/.richmd "$tmp"
           '
 
       - name: example-doc regression check (examples/ golden hash)

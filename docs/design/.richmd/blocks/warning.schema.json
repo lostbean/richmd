@@ -1,0 +1,15 @@
+{
+  "attrs": {
+    "tint": {
+      "enum_values": ["teal", "violet", "amber", "blue", "rose", "slate"],
+      "required": false,
+      "type": "enum"
+    },
+    "title": {
+      "required": false,
+      "type": "string"
+    }
+  },
+  "body": "required",
+  "kind": "warning"
+}

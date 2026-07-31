@@ -1,0 +1,2811 @@
+#!/usr/bin/env bash
+#
+# richmd-project — project the framework's ONE declared schema
+# (schema/design-schema.json) into richmd's block-contract config: one
+# .richmd/blocks/<kind>.schema.json per block kind the schema declares under
+# design_doc.blocks. The generated block schemas make the external `richmd`
+# binary accept this repo's real design documents.
+#
+# richmd discovers its config directory by walking UPWARD from the target
+# document toward the repo root (.git-bounded, nearest-wins) — so generating
+# into docs/design/.richmd/ covers the root design.md and every context doc
+# beneath it.
+#
+# Usage:
+#   richmd-project <path/to/design-schema.json> <out-dir>
+#
+# Writes <out-dir>/blocks/<kind>.schema.json (creating <out-dir>/blocks as
+# needed). Output is DETERMINISTIC — stable key order, one blank-line-terminated
+# file per kind — so a later freshness check can byte-compare.
+#
+# SCOPE: block CONTRACTS plus the document-wide contracts richmd can express as
+# a token vocabulary (.richmd/tokens/<name>.json) and cross-block RULES
+# (.richmd/rules/*.lua). A block schema expresses attr presence/type/enum and
+# body presence — nothing more. Contracts that span blocks or depend on block
+# CONTENT are projected as tokens + rules:
+#
+#   - tokens/lens.json — the lens vocabulary. richmd validates every inline
+#     `lens:<member>` code span fail-closed against this closed set, with no
+#     rule needed (richmd#0011). Each member carries its fixed `order` property.
+#   - rules/foundation-order-and-cardinality.lua — foundation blocks appear in
+#     the fixed order and meet their per-kind minimum.
+#   - rules/pending-entry-validity.lua — each pending block's kind/since, and
+#     the ADR citation a build entry must carry as a link whose target fragment
+#     is #adr-NNNN (richmd#21 exposes link targets on the projection).
+#   - rules/invariant-enforcement.lua — the enforcement enum, and the script a
+#     mechanism/partial invariant must name.
+#   - rules/lens-combo.lua — a `lens=` block attr may carry a `+` combo of
+#     members (richmd resolves single inline spans only, never a `+` combo —
+#     richmd#0011 rejected combinators); this rule splits the attr and checks
+#     each part against the same lens vocabulary, with a no-duplicate rule.
+#
+# The bold-label rule and svg-file-content checks are NOT reproduced here: the
+# label rule inspects intra-block markdown structure the projection flattens
+# away, and svg reads a sibling file — both out of this slice's reach. Every
+# vocabulary a token/rule uses is DERIVED FROM schema/design-schema.json (lens
+# members, enforcement values, pending kinds, foundation order); the schema
+# stays the single source of truth, so a schema change re-projects to match.
+#
+# A richmd block contract is a schema+renderer PAIR: richmd fatally requires a
+# sibling <kind>.lua render function for every <kind>.schema.json (loaded at
+# startup for BOTH validate and render). So the projector emits both halves —
+# the .lua reproduces the block's rendered slot anatomy
+# (design_doc.block_fields.rendered_slots / statement_blocks) with richmd's own
+# shipped theme classes (ADR-0021), not a rule.
+#
+# mermaid and vega-lite are declared blocks in the framework schema, but they
+# are richmd BUILT-INS whose contract (grammar / JSON-schema validation +
+# client-side diagram rendering) is richer than a schema+lua pair can express.
+# Re-declaring them here would OVERRIDE and downgrade the built-in — an
+# unfaithful projection — so the projector deliberately DELEGATES them to
+# richmd's built-in kinds and does not emit a pair for them. The framework's
+# mermaid/vega-lite contract IS the built-in.
+#
+# Exit codes (schema scripts_contract.exit_codes): 0 clean · 2 usage/IO error.
+
+set -euo pipefail
+
+if [ "$#" -ne 2 ]; then
+  echo "usage: richmd-project <path/to/design-schema.json> <out-dir>" >&2
+  exit 2
+fi
+
+SCHEMA_PATH="$1"
+OUT_DIR="$2"
+
+if [ ! -f "$SCHEMA_PATH" ]; then
+  echo "richmd-project: error: schema not found: $SCHEMA_PATH" >&2
+  exit 2
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "richmd-project: error: python3 is required (schema parsing + stable JSON emit)" >&2
+  exit 2
+fi
+
+python3 - "$SCHEMA_PATH" "$OUT_DIR" <<'PY'
+import json
+import os
+import sys
+
+schema_path, out_dir = sys.argv[1], sys.argv[2]
+
+try:
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+except (OSError, ValueError) as e:
+    sys.stderr.write("richmd-project: error: cannot read schema: %s\n" % e)
+    sys.exit(2)
+
+# ---- read the vocabularies from the ONE declared schema (never local copies).
+try:
+    enforcement_values = schema["enums"]["enforcement"]["values"]
+    pending_kinds = list(schema["pending_ledger"]["kinds"].keys())
+    lens_values = schema["enums"]["lens"]["values"]
+    tint_values = schema["design_doc"]["accents"]["values"]
+    declared_blocks = list(schema["design_doc"]["blocks"].keys())
+    # foundation kinds (the four statement blocks) and their fixed order are
+    # both DECLARED in the schema — never hardcoded here. The four kinds are the
+    # subjects of block_fields.statement_blocks ("goal, no-goal, principle,
+    # invariant share one anatomy"); their FOUNDATION order is stated, in words,
+    # in design_doc.foundation_cardinality AND redundantly in spine[0] ("goals,
+    # no-goals, invariants, principles ... in that order"). We derive the order
+    # by reading which kind-word appears first in that prose, and cross-check the
+    # two independent statements agree — so a schema edit to either re-projects.
+    statement_blocks_prose = schema["design_doc"]["block_fields"]["statement_blocks"]
+    foundation_cardinality_prose = schema["design_doc"]["foundation_cardinality"]
+    spine_first = schema["design_doc"]["spine"][0]
+    # the page-identity frontmatter keys the document-shell hook renders — the
+    # masthead (eyebrow, lede) and colophon (footer). The KEY SET is read from
+    # the schema (design_doc.frontmatter_keys), never hardcoded here, exactly as
+    # the block/lens/enforcement vocabularies are read above. A schema edit to
+    # the key set re-projects the hook.
+    frontmatter_keys = list(schema["design_doc"]["frontmatter_keys"].keys())
+    # the behavior block's level enum and its per-level mechanism fence — both
+    # DECLARED in design_doc.behavior_contract, read here like every other
+    # vocabulary above so a schema edit re-projects the block and its rule.
+    _behavior_contract = schema["design_doc"]["behavior_contract"]
+    behavior_levels = list(_behavior_contract["levels"].keys())
+    # levels carries a prose no_pairing entry alongside the two real levels;
+    # keep only the keys that name a level (those with a fence entry below).
+    behavior_levels = [lv for lv in behavior_levels if lv + "_forbids"
+                       in _behavior_contract["fence"]]
+    # the fence's machine-checkable halves: literal substrings and Lua patterns
+    # (id/selector SHAPES a substring cannot express). Both are declared as
+    # arrays in the schema and READ here — the projected rule never carries its
+    # own copy, so a schema fence edit re-projects the rule.
+    behavior_fence = {
+        lv: {
+            "terms": list(_behavior_contract["fence"][lv + "_forbids"]["terms"]),
+            "patterns": list(_behavior_contract["fence"][lv + "_forbids"]["patterns"]),
+        }
+        for lv in behavior_levels
+    }
+except (KeyError, TypeError, IndexError) as e:
+    sys.stderr.write("richmd-project: error: schema missing a required key: %s\n" % e)
+    sys.exit(2)
+
+# fail-closed on shell drift: the hook renders a masthead (eyebrow, lede) and a
+# colophon (footer), so the schema must still declare those three page-identity
+# keys. A schema that drops or renames one is a projector-visible break, never a
+# silent omission — same spirit as the block-set drift check below.
+_EXPECTED_FRONTMATTER = {"eyebrow", "lede", "footer"}
+_missing_fm = _EXPECTED_FRONTMATTER - set(frontmatter_keys)
+if _missing_fm:
+    sys.stderr.write(
+        "richmd-project: error: schema design_doc.frontmatter_keys no longer "
+        "declares the page-identity key(s) the shell hook renders: %s\n"
+        % ", ".join(sorted(_missing_fm)))
+    sys.exit(2)
+
+# The four statement-block kinds are the words the statement_blocks anatomy
+# opens with; we take them from the declared block set filtered to those the
+# prose names, so the set itself is schema-sourced, not a literal list here.
+import re as _re
+
+_STATEMENT_KINDS = ["goal", "no-goal", "invariant", "principle"]
+foundation_kinds = [k for k in _STATEMENT_KINDS if k in declared_blocks]
+missing_stmt = [k for k in _STATEMENT_KINDS if k not in declared_blocks]
+if missing_stmt:
+    sys.stderr.write("richmd-project: error: schema no longer declares statement "
+                     "block kind(s): %s\n" % ", ".join(missing_stmt))
+    sys.exit(2)
+
+
+def _order_from_prose(text):
+    # position of each foundation kind's first mention (kind or its plural),
+    # longest-name-first so 'no-goal' is not shadowed by 'goal'
+    pos = {}
+    for k in sorted(foundation_kinds, key=len, reverse=True):
+        m = _re.search(_re.escape(k) + r"s?\b", text)
+        pos[k] = m.start() if m else None
+    if any(v is None for v in pos.values()):
+        return None
+    return sorted(foundation_kinds, key=lambda k: pos[k])
+
+
+_order_a = _order_from_prose(foundation_cardinality_prose)
+_order_b = _order_from_prose(spine_first)
+if _order_a is None or _order_b is None or _order_a != _order_b:
+    sys.stderr.write(
+        "richmd-project: error: cannot derive a single foundation order from the "
+        "schema — foundation_cardinality and spine[0] must each name all four "
+        "foundation kinds in one agreed order (got %s vs %s)\n"
+        % (_order_a, _order_b))
+    sys.exit(2)
+foundation_order = _order_a
+
+# card grid geometry — declared in the blocks.cards prose (cols=2|3|4, size=md|sm)
+# and mirrored by the renderer. These are a fixed, small vocabulary the schema
+# states in design_doc.blocks.cards; kept in lockstep with that entry.
+card_cols = ["2", "3", "4"]
+card_sizes = ["md", "sm"]
+
+
+def attr_string(required):
+    return {"required": required, "type": "string"}
+
+
+def attr_enum(required, values):
+    # richmd's enum contract (filter/registry.lua): { required, type:"enum",
+    # enum_values:[...] }. Values in the schema's own declared order.
+    return {"required": required, "type": "enum", "enum_values": list(values)}
+
+
+# ---- per-kind block contracts.
+#
+# Each maps to richmd's block-schema fragment { kind, attrs, body }. The attrs
+# and body-presence mirror design_doc.blocks / block_fields as the schema
+# declares them:
+#
+#   - `lens` is a STRING, never an enum: the design language allows combo values
+#     (lens=state+composition), which are not single enum members. Combo-name
+#     legality is a content rule, not a per-attr enum — deferred to the rules
+#     slice.
+#   - statement-block BODY is required for goal/principle/invariant; only
+#     no-goal may omit it (block_fields.statement_blocks).
+#   - svg/mermaid/vega-lite body: svg embeds a sibling file and carries no body
+#     (optional so an empty block is legal); mermaid/vega-lite bodies ARE the
+#     diagram source (required).
+#   - the required-bold-label rule, and "enforcement=mechanism|partial names a
+#     script", cannot be expressed as an attr/body contract — they are rules.
+
+blocks = {
+    "goal": {
+        "attrs": {"title": attr_string(True), "lens": attr_string(False)},
+        "body": "required",
+    },
+    "no-goal": {
+        "attrs": {"title": attr_string(True), "lens": attr_string(False)},
+        "body": "optional",
+    },
+    "principle": {
+        "attrs": {
+            "title": attr_string(True),
+            "id": attr_string(False),
+            "lens": attr_string(False),
+        },
+        "body": "required",
+    },
+    "invariant": {
+        "attrs": {
+            "title": attr_string(True),
+            "enforcement": attr_enum(True, enforcement_values),
+            "script": attr_string(False),
+            "lens": attr_string(False),
+        },
+        "body": "required",
+    },
+    "pending": {
+        "attrs": {
+            "title": attr_string(True),
+            "kind": attr_enum(True, pending_kinds),
+            "since": attr_string(True),
+        },
+        # body optional: a pending entry may be title-only (title + kind + since,
+        # no description) now that the title is an attr, not a first-line label.
+        "body": "optional",
+    },
+    # A behavior rule: title + level, body carrying the nested clause blocks.
+    # The level enum is read from the schema's behavior_contract.levels, never
+    # a literal list here.
+    "behavior": {
+        "attrs": {
+            "title": attr_string(True),
+            "level": attr_enum(True, behavior_levels),
+            "lens": attr_string(False),
+        },
+        "body": "required",
+    },
+    # The clause blocks. Each carries no attrs — the clause IS its body — and a
+    # required body, so an empty clause fails the render. Their legality only
+    # INSIDE a behavior block, and their cardinality, are cross-block contracts
+    # enforced by rules/behavior-clauses.lua (a block schema cannot express
+    # nesting or counts).
+    "given": {"attrs": {}, "body": "required"},
+    "when": {"attrs": {}, "body": "required"},
+    "then": {"attrs": {}, "body": "required"},
+    "cards": {
+        "attrs": {
+            "cols": attr_enum(False, card_cols),
+            "size": attr_enum(False, card_sizes),
+            "tint": attr_enum(False, tint_values),
+        },
+        "body": "required",
+    },
+    "info": {
+        "attrs": {"title": attr_string(False), "tint": attr_enum(False, tint_values)},
+        "body": "required",
+    },
+    "warning": {
+        "attrs": {"title": attr_string(False), "tint": attr_enum(False, tint_values)},
+        "body": "required",
+    },
+}
+
+# Built-in richmd kinds the framework schema also declares, deliberately NOT
+# re-declared here (see the header note): richmd's own richer contract for these
+# is the faithful projection. A schema-declared kind is legitimately either
+# projected as a pair OR delegated to a built-in.
+# embedded-svg delegates to richmd's built-in, which since ADR-0017 sources the
+# SVG from EITHER a sibling file= OR a nested ```svg fence — richer than the
+# framework's old file-only `svg` stub, so we drop ours and delegate.
+DELEGATED_BUILTINS = {"mermaid", "vega-lite", "embedded-svg"}
+
+# fail-closed on schema drift: every declared block kind must be accounted for —
+# either projected here or explicitly delegated to a built-in. A kind added to
+# the schema with neither a projector contract nor a delegation entry (or a
+# projected kind the schema no longer declares) is a projector bug, never a
+# silent skip.
+declared = set(declared_blocks)
+projected = set(blocks.keys())
+accounted = projected | DELEGATED_BUILTINS
+if declared != accounted or (projected & DELEGATED_BUILTINS):
+    missing = declared - accounted
+    extra = projected - declared
+    overlap = projected & DELEGATED_BUILTINS
+    parts = []
+    if missing:
+        parts.append("schema declares block kinds neither projected nor "
+                     "delegated: %s" % ", ".join(sorted(missing)))
+    if extra:
+        parts.append("projector emits kinds the schema does not declare: %s"
+                     % ", ".join(sorted(extra)))
+    if overlap:
+        parts.append("kinds both projected and marked delegated: %s"
+                     % ", ".join(sorted(overlap)))
+    sys.stderr.write("richmd-project: error: %s\n" % "; ".join(parts))
+    sys.exit(2)
+
+blocks_dir = os.path.join(out_dir, "blocks")
+rules_dir = os.path.join(out_dir, "rules")
+tokens_dir = os.path.join(out_dir, "tokens")
+shell_dir = os.path.join(out_dir, "shell")
+groups_dir = os.path.join(out_dir, "groups")
+try:
+    os.makedirs(blocks_dir, exist_ok=True)
+    os.makedirs(rules_dir, exist_ok=True)
+    os.makedirs(tokens_dir, exist_ok=True)
+    os.makedirs(shell_dir, exist_ok=True)
+    os.makedirs(groups_dir, exist_ok=True)
+except OSError as e:
+    sys.stderr.write("richmd-project: error: cannot create output dirs under %s: %s\n"
+                     % (out_dir, e))
+    sys.exit(2)
+
+
+# Per-kind structural renderer, the mandatory other half of a richmd block
+# contract (richmd loads a <kind>.lua render function beside every
+# <kind>.schema.json). Each emitted renderer reproduces the block's rendered
+# slot anatomy (design_doc.block_fields.rendered_slots / statement_blocks) using
+# richmd's OWN shipped theme classes (ADR-0021: richmd owns the styling, so the
+# framework emits only markup richmd's default theme styles — statement/badge/
+# card/callout classes, never a framework-invented class):
+#
+#   - goal / no-goal / principle / invariant — statement anatomy: a
+#     .richmd-statement wrapping a .richmd-statement-label (the bold LABEL
+#     re-wrapped as <strong>, then a badge row) and a .richmd-statement-body.
+#     Badges are read from resolved_attrs per kind (principle: id chip + lens
+#     pills; invariant: enforcement chip + optional script chip + lens pills;
+#     goal/no-goal: lens pills). A `lens=a+b` combo splits on `+` into one
+#     badge per member, in the order written.
+#   - cards — a .richmd-card-grid[data-cols] of .richmd-card items split on the
+#     body's level-3 `###` headings, each with a .richmd-card-title, an optional
+#     .richmd-card-meta (per-card badge/meta heading attrs), and a
+#     .richmd-card-body — the same shape richmd's built-in cards.lua produces.
+#   - info / warning — callout anatomy: a .richmd-callout (+ --info / --warning)
+#     wrapping a .richmd-callout-body that leads with a .richmd-callout-title
+#     span from the `title` attr when present.
+#   - pending — a statement-like head row: kind + since badges in a
+#     .richmd-statement-label, the entry as .richmd-statement-body.
+#   - svg — a simple wrapper (it embeds a sibling file; not part of the
+#     label/badge anatomy).
+#
+# The label extraction matches richmd's built-in labeled-block.lua exactly (the
+# first body block is a Plain/Para whose single inline child is a Strong; if it
+# does not match, there is no separate label and the whole content is body).
+# mermaid/vega-lite are NOT here — they stay on richmd's built-in renderers
+# (see the header note). Output is deterministic (stable bytes for the freshness
+# byte-compare); every emitted file carries the do-not-hand-edit header.
+
+# _LUA_HELPERS — the shared Lua the statement/pending/callout renderers reuse:
+# label extraction (labeled-block.lua's exact shape) and a badge-row builder.
+# Emitted verbatim into each kind's module (each .lua is self-contained; richmd
+# loads them independently, so shared behavior is inlined, not require()d).
+_LUA_HELPERS = (
+    "-- The statement title comes from the declared `title=` attr (validated,\n"
+    "-- deterministic) — NOT a bold-first-line convention — so there is no\n"
+    "-- label-extraction helper; the whole block body is the description.\n"
+    "\n"
+    "-- badge_span(text) -> a .richmd-badge Span (richmd's shipped badge class).\n"
+    "-- extra is an optional modifier class string; it may name several classes\n"
+    "-- separated by spaces (e.g. \"richmd-badge--neutral richmd-badge--enf-x\"),\n"
+    "-- each added as its own class so the emitted class attribute is well-formed.\n"
+    "local function badge_span(text, extra)\n"
+    "  local classes = { \"richmd-badge\" }\n"
+    "  if extra and extra ~= \"\" then\n"
+    "    for cls in string.gmatch(extra, \"%S+\") do\n"
+    "      table.insert(classes, cls)\n"
+    "    end\n"
+    "  end\n"
+    "  return pandoc.Span({ pandoc.Str(text) }, pandoc.Attr(\"\", classes))\n"
+    "end\n"
+    "\n"
+    "-- lens_badge(member) -> a lens pill Span carrying the per-lens modifier\n"
+    "-- class richmd-badge--lens-<member> alongside the base .richmd-badge. The\n"
+    "-- framework's semantic-look overlay (ADR-0024) keys the per-lens palette on\n"
+    "-- that modifier — richmd's base theme leaves lens pills monochrome.\n"
+    "local function lens_badge(member)\n"
+    "  return badge_span(member, \"richmd-badge--lens-\" .. member)\n"
+    "end\n"
+    "\n"
+    "-- lens_badges(resolved_attrs) -> list of lens-pill Spans. A `lens=` attr\n"
+    "-- may be a `+` combo; split on `+` and emit one badge per member, in the\n"
+    "-- order written. Each member carries its own richmd-badge--lens-<member>\n"
+    "-- modifier class.\n"
+    "local function lens_badges(resolved_attrs)\n"
+    "  local out = {}\n"
+    "  local raw = resolved_attrs.lens\n"
+    "  if raw and raw ~= \"\" then\n"
+    "    for part in string.gmatch(raw, \"[^+]+\") do\n"
+    "      table.insert(out, lens_badge(part))\n"
+    "    end\n"
+    "  end\n"
+    "  return out\n"
+    "end\n"
+    "\n"
+    "-- statement(label_inlines, badges, body_blocks, kind) -> .richmd-statement\n"
+    "-- Div. The label div holds the re-wrapped <strong> label FOLLOWED by the\n"
+    "-- badge row; the body is wrapped in a real <p class=\"richmd-statement-body\">\n"
+    "-- exactly as labeled-block.lua does (Para carries no Attr, so raw HTML\n"
+    "-- markers bracket a flattened Para). When there is no label, the head row\n"
+    "-- still renders when badges are present (pending has badges but no label).\n"
+    "-- `kind`, when given, adds the richmd-statement--<kind> modifier class the\n"
+    "-- semantic-look overlay (ADR-0024) keys the per-kind accent on — richmd's\n"
+    "-- base theme renders all four kinds identically.\n"
+    "local function statement(label_inlines, badges, body_blocks, kind)\n"
+    "  local inner = {}\n"
+    "  local head = {}\n"
+    "  if label_inlines then\n"
+    "    table.insert(head, pandoc.Strong(label_inlines))\n"
+    "  end\n"
+    "  for _, b in ipairs(badges) do table.insert(head, b) end\n"
+    "  if #head > 0 then\n"
+    "    table.insert(\n"
+    "      inner,\n"
+    "      pandoc.Div(\n"
+    "        { pandoc.Plain(head) },\n"
+    "        pandoc.Attr(\"\", { \"richmd-statement-label\" })\n"
+    "      )\n"
+    "    )\n"
+    "  end\n"
+    "  local body_inlines = {}\n"
+    "  for i, b in ipairs(body_blocks) do\n"
+    "    if i > 1 then table.insert(body_inlines, pandoc.SoftBreak()) end\n"
+    "    for _, inline in ipairs(b.content or {}) do\n"
+    "      table.insert(body_inlines, inline)\n"
+    "    end\n"
+    "  end\n"
+    "  table.insert(inner, pandoc.RawBlock(\"html\", '<p class=\"richmd-statement-body\">'))\n"
+    "  table.insert(inner, pandoc.Plain(body_inlines))\n"
+    "  table.insert(inner, pandoc.RawBlock(\"html\", \"</p>\"))\n"
+    "  local classes = { \"richmd-statement\" }\n"
+    "  if kind and kind ~= \"\" then\n"
+    "    table.insert(classes, \"richmd-statement--\" .. kind)\n"
+    "  end\n"
+    "  return pandoc.Div(inner, pandoc.Attr(\"\", classes))\n"
+    "end\n"
+)
+
+_HEADER = (
+    "-- Generated by scripts/richmd-project — do not hand-edit.\n"
+    "-- Structural renderer paired with %s.schema.json (richmd requires a\n"
+    "-- render function beside every block schema). Emits the block's rendered\n"
+    "-- slot anatomy using richmd's own shipped theme classes (ADR-0021).\n"
+)
+
+
+def _statement_render_body(kind):
+    # the per-kind badge-row assembly for a statement block. Every branch
+    # produces `badges` — a Lua list of .richmd-badge Spans — from resolved_attrs.
+    if kind == "principle":
+        # The `id=P3` fenced-div attr lands on the div's IDENTIFIER
+        # (block.identifier), not in block.attributes — Pandoc routes a bare
+        # `id=` to the element identifier — so resolved_attrs.id is nil. Read the
+        # id chip from block.identifier (the schema still declares the `id` attr,
+        # which resolved_attrs would carry if it ever arrived as a key-value).
+        badges = (
+            "    local badges = {}\n"
+            "    local pid = block.identifier\n"
+            "    if (not pid or pid == \"\") and resolved_attrs.id then\n"
+            "      pid = resolved_attrs.id\n"
+            "    end\n"
+            "    if pid and pid ~= \"\" then\n"
+            "      table.insert(badges, badge_span(pid))\n"
+            "    end\n"
+            "    for _, b in ipairs(lens_badges(resolved_attrs)) do\n"
+            "      table.insert(badges, b)\n"
+            "    end\n"
+        )
+    elif kind == "invariant":
+        # the enforcement chip carries BOTH the base richmd-badge--neutral (so
+        # it still reads as a chip if the overlay is absent) AND a per-value
+        # richmd-badge--enf-<value> modifier the overlay keys the enforcement
+        # tone on (mechanism/partial/convention each get their own tone).
+        badges = (
+            "    local badges = {}\n"
+            "    if resolved_attrs.enforcement and resolved_attrs.enforcement ~= \"\" then\n"
+            "      table.insert(\n"
+            "        badges,\n"
+            "        badge_span(\n"
+            "          resolved_attrs.enforcement,\n"
+            "          \"richmd-badge--neutral richmd-badge--enf-\" .. resolved_attrs.enforcement\n"
+            "        )\n"
+            "      )\n"
+            "    end\n"
+            "    if resolved_attrs.script and resolved_attrs.script ~= \"\" then\n"
+            "      table.insert(badges, badge_span(resolved_attrs.script))\n"
+            "    end\n"
+            "    for _, b in ipairs(lens_badges(resolved_attrs)) do\n"
+            "      table.insert(badges, b)\n"
+            "    end\n"
+        )
+    else:  # goal, no-goal — lens pills only
+        badges = "    local badges = lens_badges(resolved_attrs)\n"
+    # The title comes from the declared `title=` attr (plain string), NOT a
+    # bold-first-line convention — deterministic, validated. The whole block
+    # body is the description.
+    return (
+        "  render = function(block, resolved_attrs)\n"
+        "    local title = resolved_attrs.title or \"\"\n"
+        "    local label_inlines = (title ~= \"\") and { pandoc.Str(title) } or nil\n"
+        + badges
+        + ("    return statement(label_inlines, badges, block.content, %r)\n" % kind)
+        + "  end,\n"
+    )
+
+
+def _pending_render_body():
+    # pending follows the TYPED-STATEMENT vertical pattern (same rhythm as the
+    # goal/invariant/principle cards), built on the typed pandoc AST:
+    #   div.richmd-pending--<kind>
+    #   ├─ div.richmd-pending-title   (the title= attr, on its own line)
+    #   ├─ div.richmd-pending-meta    (kind pill + 'since <date>' on ONE line)
+    #   └─ div.richmd-pending-body    (the description = the whole block body)
+    # The title comes from the declared title= attr (validated, deterministic),
+    # NOT a bold-first-line; the kind pill carries richmd-badge--pending-<kind>
+    # for per-kind tint; the since date is a non-breaking-space caption in the
+    # meta row. The wrapper carries richmd-pending--<kind>.
+    return (
+        "  render = function(block, resolved_attrs)\n"
+        "    local kind = resolved_attrs.kind or \"\"\n"
+        "    local title = resolved_attrs.title or \"\"\n"
+        "    local children = {}\n"
+        "    -- title from the declared title= attr (not a bold-first-line)\n"
+        "    if title ~= \"\" then\n"
+        "      table.insert(\n"
+        "        children,\n"
+        "        pandoc.Div(\n"
+        "          { pandoc.Plain({ pandoc.Strong({ pandoc.Str(title) }) }) },\n"
+        "          pandoc.Attr(\"\", { \"richmd-pending-title\" })\n"
+        "        )\n"
+        "      )\n"
+        "    end\n"
+        "    -- meta row: kind pill + inline since-date, on one line\n"
+        "    local meta = { badge_span(kind, \"richmd-badge--pending-\" .. kind) }\n"
+        "    if resolved_attrs.since and resolved_attrs.since ~= \"\" then\n"
+        "      table.insert(\n"
+        "        meta,\n"
+        "        pandoc.Span(\n"
+        "          { pandoc.Str(\"since\\194\\160\" .. resolved_attrs.since) },\n"
+        "          pandoc.Attr(\"\", { \"richmd-pending-since\" })\n"
+        "        )\n"
+        "      )\n"
+        "    end\n"
+        "    table.insert(\n"
+        "      children,\n"
+        "      pandoc.Div({ pandoc.Plain(meta) }, pandoc.Attr(\"\", { \"richmd-pending-meta\" }))\n"
+        "    )\n"
+        "    -- description: the whole block body (title is now an attr)\n"
+        "    if block.content and #block.content > 0 then\n"
+        "      table.insert(\n"
+        "        children,\n"
+        "        pandoc.Div(block.content, pandoc.Attr(\"\", { \"richmd-pending-body\" }))\n"
+        "      )\n"
+        "    end\n"
+        "    local classes = { \"richmd-pending\" }\n"
+        "    if kind ~= \"\" then\n"
+        "      table.insert(classes, \"richmd-pending--\" .. kind)\n"
+        "    end\n"
+        "    return pandoc.Div(children, pandoc.Attr(\"\", classes))\n"
+        "  end,\n"
+    )
+
+
+def _callout_render_body(kind):
+    # info/warning map to richmd's callout anatomy. The kind fixes the tint
+    # modifier (info -> --info, warning -> --warning). The framework `tint`
+    # accent attr is mapped only when it names a richmd callout tint
+    # (info|warning|danger), else omitted — richmd's theme styles no other
+    # callout tint (ADR-0021).
+    modifier = "richmd-callout--" + ("info" if kind == "info" else "warning")
+    return (
+        "  render = function(block, resolved_attrs)\n"
+        "    local classes = { \"richmd-callout\", \"%s\" }\n"
+        "    local callout_tints = { info = true, warning = true, danger = true }\n"
+        "    local tint = resolved_attrs.tint\n"
+        "    if tint and callout_tints[tint] then\n"
+        "      table.insert(classes, \"richmd-callout--\" .. tint)\n"
+        "    end\n"
+        "    local body_content = {}\n"
+        "    if resolved_attrs.title and resolved_attrs.title ~= \"\" then\n"
+        "      table.insert(\n"
+        "        body_content,\n"
+        "        pandoc.Plain({\n"
+        "          pandoc.Span(\n"
+        "            { pandoc.Str(resolved_attrs.title) },\n"
+        "            pandoc.Attr(\"\", { \"richmd-callout-title\" })\n"
+        "          ),\n"
+        "        })\n"
+        "      )\n"
+        "    end\n"
+        "    for _, item in ipairs(block.content) do\n"
+        "      table.insert(body_content, item)\n"
+        "    end\n"
+        "    local body_div =\n"
+        "      pandoc.Div(body_content, pandoc.Attr(\"\", { \"richmd-callout-body\" }))\n"
+        "    return pandoc.Div({ body_div }, pandoc.Attr(\"\", classes))\n"
+        "  end,\n"
+    ) % modifier
+
+
+def _cards_render_body():
+    # reproduces richmd's built-in cards.lua, plus TWO framework fixes: split the
+    # body on level-3 `###` Headers into one card each, wrap in
+    # .richmd-card-grid[data-cols], each card a .richmd-card with a
+    # .richmd-card-title, optional .richmd-card-meta, then .richmd-card-body.
+    #
+    #   - the grid carries the framework `tint` accent as richmd-card-grid--<tint>
+    #     (alongside data-cols), the hook the semantic-look overlay keys the card
+    #     tint on (ADR-0024). `size` has no richmd theme hook and is not rendered.
+    #   - the card TITLE is the heading's own inline content, NOT a stringify of
+    #     it. richmd's render walk is bottom-up, so a `lens:X` span in the heading
+    #     is ALREADY rewritten to a `Code` inline (class richmd-token,
+    #     vocabulary=lens, member=X) by the time this renderer runs. Stringifying
+    #     the heading glued that member word into the title (the bug). We instead
+    #     LIFT that lens Code out of the title inlines and render it as a lens
+    #     badge (richmd-badge--lens-<member>) in .richmd-card-meta, leaving the
+    #     title clean. The per-card {badge= badge-tint= meta=} heading attrs still
+    #     render as meta too.
+    return (
+        "  render = function(block, resolved_attrs)\n"
+        "    local grid_classes = { \"richmd-card-grid\" }\n"
+        "    if resolved_attrs.tint and resolved_attrs.tint ~= \"\" then\n"
+        "      table.insert(grid_classes, \"richmd-card-grid--\" .. resolved_attrs.tint)\n"
+        "    end\n"
+        "    local grid_attrs = {}\n"
+        "    if resolved_attrs.cols then\n"
+        "      grid_attrs = { { \"data-cols\", resolved_attrs.cols } }\n"
+        "    end\n"
+        "    local grid_attr = pandoc.Attr(\"\", grid_classes, grid_attrs)\n"
+        "    -- lift a resolved lens token (Code, class richmd-token,\n"
+        "    -- vocabulary=lens) out of a heading's inlines; return the member and\n"
+        "    -- the remaining title inlines (the lens span removed).\n"
+        "    local function split_lens(inlines)\n"
+        "      local member = nil\n"
+        "      local kept = {}\n"
+        "      for _, inl in ipairs(inlines) do\n"
+        "        local is_lens = false\n"
+        "        if inl.tag == \"Code\" and inl.attr then\n"
+        "          for _, c in ipairs(inl.attr.classes or {}) do\n"
+        "            if c == \"richmd-token\" then\n"
+        "              for _, kv in ipairs(inl.attr.attributes or {}) do\n"
+        "                if kv[1] == \"vocabulary\" and kv[2] == \"lens\" then\n"
+        "                  is_lens = true\n"
+        "                  for _, kv2 in ipairs(inl.attr.attributes) do\n"
+        "                    if kv2[1] == \"member\" then member = kv2[2] end\n"
+        "                  end\n"
+        "                end\n"
+        "              end\n"
+        "            end\n"
+        "          end\n"
+        "        end\n"
+        "        if not is_lens then table.insert(kept, inl) end\n"
+        "      end\n"
+        "      -- trim leading/trailing Space left where the lens span was.\n"
+        "      while kept[1] and (kept[1].tag == \"Space\" or kept[1].tag == \"SoftBreak\") do\n"
+        "        table.remove(kept, 1)\n"
+        "      end\n"
+        "      while kept[#kept] and (kept[#kept].tag == \"Space\" or kept[#kept].tag == \"SoftBreak\") do\n"
+        "        table.remove(kept)\n"
+        "      end\n"
+        "      return member, kept\n"
+        "    end\n"
+        "    local cards = {}\n"
+        "    local current = nil\n"
+        "    for _, blk in ipairs(block.content) do\n"
+        "      if blk.t == \"Header\" and blk.level == 3 then\n"
+        "        current = { heading = blk, body = {} }\n"
+        "        table.insert(cards, current)\n"
+        "      elseif current then\n"
+        "        table.insert(current.body, blk)\n"
+        "      end\n"
+        "    end\n"
+        "    local card_divs = {}\n"
+        "    for _, card in ipairs(cards) do\n"
+        "      local lens_member, title_inlines = split_lens(card.heading.content)\n"
+        "      local title_div = pandoc.Div(\n"
+        "        { pandoc.Plain(title_inlines) },\n"
+        "        pandoc.Attr(\"\", { \"richmd-card-title\" })\n"
+        "      )\n"
+        "      local body_div =\n"
+        "        pandoc.Div(card.body, pandoc.Attr(\"\", { \"richmd-card-body\" }))\n"
+        "      local badge_text = card.heading.attributes.badge\n"
+        "      local badge_tint = card.heading.attributes[\"badge-tint\"]\n"
+        "      local meta_text = card.heading.attributes.meta\n"
+        "      local meta_children = {}\n"
+        "      if lens_member and lens_member ~= \"\" then\n"
+        "        table.insert(meta_children, lens_badge(lens_member))\n"
+        "      end\n"
+        "      if badge_text and badge_text ~= \"\" then\n"
+        "        local extra = nil\n"
+        "        if badge_tint and badge_tint ~= \"\" then\n"
+        "          extra = \"richmd-badge--\" .. badge_tint\n"
+        "        end\n"
+        "        table.insert(meta_children, badge_span(badge_text, extra))\n"
+        "      end\n"
+        "      if meta_text and meta_text ~= \"\" then\n"
+        "        table.insert(meta_children, pandoc.Str(meta_text))\n"
+        "      end\n"
+        "      local card_children = { title_div }\n"
+        "      if #meta_children > 0 then\n"
+        "        table.insert(\n"
+        "          card_children,\n"
+        "          pandoc.Div(\n"
+        "            { pandoc.Plain(meta_children) },\n"
+        "            pandoc.Attr(\"\", { \"richmd-card-meta\" })\n"
+        "          )\n"
+        "        )\n"
+        "      end\n"
+        "      table.insert(card_children, body_div)\n"
+        "      table.insert(\n"
+        "        card_divs,\n"
+        "        pandoc.Div(card_children, pandoc.Attr(\"\", { \"richmd-card\" }))\n"
+        "      )\n"
+        "    end\n"
+        "    return pandoc.Div(card_divs, grid_attr)\n"
+        "  end,\n"
+    )
+
+
+# statement kinds reuse the shared helpers; cards/callouts/pending/svg carry
+# only the helpers they need. To keep every module self-contained yet minimal,
+# each renderer emits the shared helper block and then its own render function.
+_STATEMENT_RENDER_KINDS = {"goal", "no-goal", "principle", "invariant"}
+
+
+def _behavior_render_body():
+    # A behavior rule renders as a statement whose head row carries the title
+    # plus a level chip, and whose body is the nested clause blocks (rendered by
+    # their own modules). Unlike the four foundation statements the body is NOT
+    # flattened to one paragraph — the clauses are block children and must stay
+    # block-level, so this emits the container and lets the clauses render into
+    # it.
+    return (
+        "  render = function(block, resolved_attrs)\n"
+        "    local title = resolved_attrs.title or \"\"\n"
+        "    local badges = {}\n"
+        "    if resolved_attrs.level and resolved_attrs.level ~= \"\" then\n"
+        "      table.insert(\n"
+        "        badges,\n"
+        "        badge_span(\n"
+        "          resolved_attrs.level,\n"
+        "          \"richmd-badge--neutral richmd-badge--level-\"\n"
+        "            .. resolved_attrs.level\n"
+        "        )\n"
+        "      )\n"
+        "    end\n"
+        "    for _, b in ipairs(lens_badges(resolved_attrs)) do\n"
+        "      table.insert(badges, b)\n"
+        "    end\n"
+        "    local inner = {}\n"
+        "    local head = {}\n"
+        "    -- badges lead, then the title: the level chip is the rule's kind\n"
+        "    -- and reads first, the way a label precedes what it labels. This\n"
+        "    -- is the one statement kind whose head is badge-first; the four\n"
+        "    -- foundation kinds keep title-first.\n"
+        "    for _, b in ipairs(badges) do table.insert(head, b) end\n"
+        "    if title ~= \"\" then\n"
+        "      table.insert(head, pandoc.Strong({ pandoc.Str(title) }))\n"
+        "    end\n"
+        "    if #head > 0 then\n"
+        "      table.insert(\n"
+        "        inner,\n"
+        "        pandoc.Div(\n"
+        "          { pandoc.Plain(head) },\n"
+        "          pandoc.Attr(\"\", { \"richmd-statement-label\" })\n"
+        "        )\n"
+        "      )\n"
+        "    end\n"
+        "    -- the clause children stay block-level, rendered by their own modules\n"
+        "    for _, b in ipairs(block.content or {}) do\n"
+        "      table.insert(inner, b)\n"
+        "    end\n"
+        "    return pandoc.Div(\n"
+        "      inner,\n"
+        "      pandoc.Attr(\"\", { \"richmd-statement\", \"richmd-statement--behavior\" })\n"
+        "    )\n"
+        "  end,\n"
+    )
+
+
+def _clause_render_body(kind):
+    # A clause renders as one labeled row: the keyword as a micro-caps label,
+    # then the clause text. The keyword is the block kind itself, so the label is
+    # deterministic and never author-supplied.
+    return (
+        "  render = function(block, resolved_attrs)\n"
+        "    local inner = {}\n"
+        "    table.insert(\n"
+        "      inner,\n"
+        "      pandoc.Div(\n"
+        "        { pandoc.Plain({ pandoc.Str(\"%s\") }) },\n"
+        "        pandoc.Attr(\"\", { \"richmd-clause-keyword\" })\n"
+        "      )\n"
+        "    )\n"
+        "    for _, b in ipairs(block.content or {}) do\n"
+        "      table.insert(inner, b)\n"
+        "    end\n"
+        "    return pandoc.Div(\n"
+        "      inner,\n"
+        "      pandoc.Attr(\"\", { \"richmd-clause\", \"richmd-clause--%s\" })\n"
+        "    )\n"
+        "  end,\n"
+    ) % (kind, kind)
+
+
+# the clause kinds, in their fixed authoring order (given -> when -> then).
+# Ordered because the overlay projects one rule per kind and the output must be
+# byte-stable; membership tests use the set below.
+_CLAUSE_KIND_ORDER = ["given", "when", "then"]
+_CLAUSE_KINDS = set(_CLAUSE_KIND_ORDER)
+
+
+def renderer_lua(kind):
+    header = _HEADER % kind
+    if kind == "behavior":
+        return header + _LUA_HELPERS + "\nreturn {\n" + _behavior_render_body() + "}\n"
+    if kind in _CLAUSE_KINDS:
+        return header + "\nreturn {\n" + _clause_render_body(kind) + "}\n"
+    if kind in _STATEMENT_RENDER_KINDS:
+        body = _statement_render_body(kind)
+        return header + _LUA_HELPERS + "\nreturn {\n" + body + "}\n"
+    if kind == "pending":
+        return header + _LUA_HELPERS + "\nreturn {\n" + _pending_render_body() + "}\n"
+    if kind in ("info", "warning"):
+        return header + "\nreturn {\n" + _callout_render_body(kind) + "}\n"
+    if kind == "cards":
+        # cards needs badge_span (for per-card badges) but not the statement
+        # helpers; emit the full helper block for simplicity and determinism.
+        return header + _LUA_HELPERS + "\nreturn {\n" + _cards_render_body() + "}\n"
+    # embedded-svg is delegated to richmd's built-in (DELEGATED_BUILTINS), never
+    # projected here — so no svg renderer branch.
+    # fail-closed: an unknown projected kind reaching here is a projector bug.
+    raise SystemExit(
+        "richmd-project: error: no renderer defined for projected kind '%s'" % kind
+    )
+
+
+# Deterministic serialization that MATCHES prettier's JSON output, so the
+# committed generated files survive `nix fmt` untouched AND a later byte-compare
+# freshness check holds (these generated files are excluded from hand-editing,
+# like design.html). prettier's rules, for this bounded shape: 2-space indent;
+# objects always multiline; an array collapses to one line when it fits inside
+# printWidth 80 (every array here is a short enum list that fits) and otherwise
+# breaks one element per line. Keys are emitted in a fixed, sorted order so the
+# bytes are stable across runs.
+PRINT_WIDTH = 80
+
+
+def fmt_value(value, indent):
+    pad = "  " * indent
+    child = "  " * (indent + 1)
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        items = []
+        for k in sorted(value.keys()):
+            items.append('%s%s: %s' % (child, json.dumps(k), fmt_value(value[k], indent + 1)))
+        return "{\n" + ",\n".join(items) + "\n" + pad + "}"
+    if isinstance(value, list):
+        inline = "[" + ", ".join(json.dumps(v, ensure_ascii=False) for v in value) + "]"
+        # prettier collapses when the inline form fits printWidth at this column
+        if len(pad) + len(inline) <= PRINT_WIDTH:
+            return inline
+        items = ["%s%s" % (child, json.dumps(v, ensure_ascii=False)) for v in value]
+        return "[\n" + ",\n".join(items) + "\n" + pad + "]"
+    return json.dumps(value, ensure_ascii=False)
+
+
+written = []
+for kind in sorted(blocks.keys()):
+    spec = blocks[kind]
+    doc = {
+        "kind": kind,
+        "attrs": {name: spec["attrs"][name] for name in sorted(spec["attrs"].keys())},
+        "body": spec["body"],
+    }
+    text = fmt_value(doc, 0) + "\n"
+    schema_out = os.path.join(blocks_dir, "%s.schema.json" % kind)
+    lua_out = os.path.join(blocks_dir, "%s.lua" % kind)
+    try:
+        with open(schema_out, "w", encoding="utf-8") as f:
+            f.write(text)
+        with open(lua_out, "w", encoding="utf-8") as f:
+            f.write(renderer_lua(kind))
+    except OSError as e:
+        sys.stderr.write("richmd-project: error: cannot write %s: %s\n" % (schema_out, e))
+        sys.exit(2)
+    written.append(kind)
+
+
+# ---------------------------------------------------------------- token vocab
+# tokens/lens.json — the lens vocabulary richmd validates every inline
+# `lens:<member>` code span against, fail-closed, with no rule (richmd#0011).
+# The member set and each member's load-bearing `order` come straight from
+# schema.enums.lens.values (its declared order IS the order). richmd carries
+# `order` as an opaque property and never interprets it — it is here so a
+# consumer rule/renderer can sort combo members into the fixed lens order.
+lens_members = {name: {"order": i} for i, name in enumerate(lens_values)}
+tokens_written = []
+try:
+    lens_doc = {"members": lens_members}
+    with open(os.path.join(tokens_dir, "lens.json"), "w", encoding="utf-8") as f:
+        f.write(fmt_value(lens_doc, 0) + "\n")
+    tokens_written.append("lens")
+except OSError as e:
+    sys.stderr.write("richmd-project: error: cannot write lens.json: %s\n" % e)
+    sys.exit(2)
+
+
+# ---------------------------------------------------------------- cross rules
+# Each rule is a richmd cross-block rule (richmd#0008): a .lua file returning
+# `{ check = function(block_projections, add_error) ... end }`. A projection is
+# `{ kind, attrs, location, body_text, tokens, links }`, where links is a list
+# of `{ text, target }` (target the resolved href incl. #fragment, richmd#21).
+# add_error(source, location,
+# message) collects one violation; source is `rule:<filename-without-.lua>`.
+# richmd requires a NON-NIL location, so every add_error passes a location
+# string — the offending block's own `location`, or the literal "document" for
+# a document-wide shortfall (a missing foundation kind names no single block).
+#
+# Every vocabulary these rules test is interpolated from the schema-derived
+# Python lists above, emitted as a Lua literal — NEVER hand-authored — so a
+# schema change re-projects the rule to match.
+
+def lua_str_list(values):
+    # a Lua array literal of quoted strings, e.g. { "a", "b" }
+    return "{ " + ", ".join('"%s"' % v for v in values) + " }"
+
+
+def fill(template, **subs):
+    # interpolate __NAME__ placeholders — NOT %-formatting, because rule bodies
+    # contain literal Lua string patterns with % (e.g. %d for a digit) that a
+    # %-format would misread. Placeholder substitution leaves them untouched.
+    out = template
+    for key, val in subs.items():
+        out = out.replace("__%s__" % key, val)
+    return out
+
+
+# 1 · foundation order + cardinality
+foundation_rule = (
+    '-- Generated by scripts/richmd-project — do not hand-edit.\n'
+    '-- Cross-block rule (richmd#0008): the foundation blocks (goal, no-goal,\n'
+    '-- invariant, principle) appear in the schema-declared order, and the\n'
+    '-- per-kind minimum holds (>=1 goal, invariant, principle). Order + kinds\n'
+    '-- derive from schema/design-schema.json (foundation_cardinality /\n'
+    '-- spine[0], cross-checked); this file is regenerated from them.\n'
+    'local ORDER = __ORDER__\n'
+    'local REQUIRED = __REQUIRED__\n'
+    'local rank = {}\n'
+    'for i, k in ipairs(ORDER) do rank[k] = i end\n'
+    'return {\n'
+    '  check = function(block_projections, add_error)\n'
+    '    local seen_rank = 0\n'
+    '    local prev_kind = nil\n'
+    '    local counts = {}\n'
+    '    local last_location = "document"\n'
+    '    for _, p in ipairs(block_projections) do\n'
+    '      local r = rank[p.kind]\n'
+    '      if r ~= nil then\n'
+    '        last_location = p.location\n'
+    '        counts[p.kind] = (counts[p.kind] or 0) + 1\n'
+    '        if r < seen_rank then\n'
+    '          add_error(\n'
+    '            "rule:foundation-order-and-cardinality",\n'
+    '            p.location,\n'
+    '            "foundation kind \'" .. p.kind .. "\' appears after \'"\n'
+    '              .. tostring(prev_kind) .. "\' — section 00 orders its kinds "\n'
+    '              .. table.concat(ORDER, " -> ")\n'
+    '          )\n'
+    '        else\n'
+    '          seen_rank = r\n'
+    '          prev_kind = p.kind\n'
+    '        end\n'
+    '      end\n'
+    '    end\n'
+    '    -- cardinality only applies once the document HAS a foundation (any of\n'
+    '    -- the ordered kinds present); a document with none is not a design\n'
+    '    -- document this rule judges.\n'
+    '    local any = false\n'
+    '    for _, k in ipairs(ORDER) do if counts[k] then any = true end end\n'
+    '    if not any then return end\n'
+    '    for _, k in ipairs(REQUIRED) do\n'
+    '      if (counts[k] or 0) == 0 then\n'
+    '        add_error(\n'
+    '          "rule:foundation-order-and-cardinality",\n'
+    '          last_location,\n'
+    '          "the foundation requires at least one \'" .. k .. "\' block"\n'
+    '        )\n'
+    '      end\n'
+    '    end\n'
+    '  end,\n'
+    '}\n'
+)
+foundation_rule = fill(
+    foundation_rule,
+    ORDER=lua_str_list(foundation_order),
+    REQUIRED=lua_str_list([k for k in foundation_order
+                           if k in ("goal", "invariant", "principle")]),
+)
+
+
+# 2 · pending-entry validity
+#
+# The ADR check matches the in-house validator's strictness: a build entry must
+# carry an actual LINK whose href fragment is `#adr-NNNN`, not merely visible
+# text reading "ADR-NNNN". richmd's block projection now exposes `links` — a
+# list of `{ text, target }` where target is the resolved href including the
+# `#fragment` (richmd#21) — so the rule inspects the resolved target fragment,
+# not the flattened body_text. A self-link (a pending block that links only to
+# its own anchor) does not count: the fragment must match `#adr-NNNN`.
+pending_rule = (
+    '-- Generated by scripts/richmd-project — do not hand-edit.\n'
+    '-- Cross-block rule (richmd#0008): each pending block carries a valid kind\n'
+    '-- and a YYYY-MM-DD since, and a build entry cites an ADR. kind vocabulary\n'
+    '-- derives from schema.pending_ledger.kinds; regenerated from the schema.\n'
+    '--\n'
+    '-- The ADR citation is checked against the block\'s LINKS (richmd#21): a\n'
+    '-- build entry must carry a link whose resolved target fragment matches\n'
+    '-- `#adr-NNNN` — an actual link, not merely visible text. This matches the\n'
+    '-- in-house validator\'s href-fragment strictness.\n'
+    'local KINDS = __KINDS__\n'
+    'local kind_ok = {}\n'
+    'for _, k in ipairs(KINDS) do kind_ok[k] = true end\n'
+    'return {\n'
+    '  check = function(block_projections, add_error)\n'
+    '    for _, p in ipairs(block_projections) do\n'
+    '      if p.kind == "pending" then\n'
+    '        local k = p.attrs and p.attrs.kind\n'
+    '        if not k or not kind_ok[k] then\n'
+    '          add_error(\n'
+    '            "rule:pending-entry-validity",\n'
+    '            p.location,\n'
+    '            "pending kind \'" .. tostring(k) .. "\' — kind is required and "\n'
+    '              .. "one of " .. table.concat(KINDS, ", ")\n'
+    '          )\n'
+    '        end\n'
+    '        local since = p.attrs and p.attrs.since\n'
+    '        if not since or not string.match(since, "^%d%d%d%d%-%d%d%-%d%d$") then\n'
+    '          add_error(\n'
+    '            "rule:pending-entry-validity",\n'
+    '            p.location,\n'
+    '            "pending since \'" .. tostring(since) .. "\' — since is required "\n'
+    '              .. "as YYYY-MM-DD"\n'
+    '          )\n'
+    '        end\n'
+    '        if k == "build" then\n'
+    '          local cited = false\n'
+    '          for _, link in ipairs(p.links or {}) do\n'
+    '            local target = link.target or ""\n'
+    '            if string.match(string.lower(target), "#adr%-%d%d%d%d") then\n'
+    '              cited = true\n'
+    '            end\n'
+    '          end\n'
+    '          if not cited then\n'
+    '            add_error(\n'
+    '              "rule:pending-entry-validity",\n'
+    '              p.location,\n'
+    '              "pending build entry must cite its ADR (a link whose target "\n'
+    '                .. "fragment is #adr-NNNN)"\n'
+    '            )\n'
+    '          end\n'
+    '        end\n'
+    '      end\n'
+    '    end\n'
+    '  end,\n'
+    '}\n'
+)
+pending_rule = fill(pending_rule, KINDS=lua_str_list(pending_kinds))
+
+
+# 3 · invariant enforcement enum + mechanism/partial names a script
+#
+# The in-house validator required a script for BOTH mechanism AND partial (a
+# partial names the script checking its mechanical shadow); it is derived from
+# the enforcement vocabulary here the same way. The enum members come from
+# schema.enums.enforcement.values.
+enforcement_rule = (
+    '-- Generated by scripts/richmd-project — do not hand-edit.\n'
+    '-- Cross-block rule (richmd#0008): an invariant block\'s enforcement attr\n'
+    '-- is one of the schema enforcement values, and a mechanism/partial\n'
+    '-- invariant names a script. The enum derives from\n'
+    '-- schema.enums.enforcement.values; regenerated from the schema.\n'
+    'local ENFORCEMENT = __ENFORCEMENT__\n'
+    'local NAMES_SCRIPT = __NAMES_SCRIPT__\n'
+    'local enf_ok = {}\n'
+    'for _, e in ipairs(ENFORCEMENT) do enf_ok[e] = true end\n'
+    'local needs_script = {}\n'
+    'for _, e in ipairs(NAMES_SCRIPT) do needs_script[e] = true end\n'
+    'return {\n'
+    '  check = function(block_projections, add_error)\n'
+    '    for _, p in ipairs(block_projections) do\n'
+    '      if p.kind == "invariant" then\n'
+    '        local e = p.attrs and p.attrs.enforcement\n'
+    '        if not e or not enf_ok[e] then\n'
+    '          add_error(\n'
+    '            "rule:invariant-enforcement",\n'
+    '            p.location,\n'
+    '            "invariant enforcement \'" .. tostring(e) .. "\' — required and "\n'
+    '              .. "one of " .. table.concat(ENFORCEMENT, ", ")\n'
+    '          )\n'
+    '        elseif needs_script[e] and not (p.attrs and p.attrs.script) then\n'
+    '          add_error(\n'
+    '            "rule:invariant-enforcement",\n'
+    '            p.location,\n'
+    '            "invariant enforcement=" .. e .. " without a script — a " .. e\n'
+    '              .. " invariant names the script that decides it (script=<name>)"\n'
+    '          )\n'
+    '        end\n'
+    '      end\n'
+    '    end\n'
+    '  end,\n'
+    '}\n'
+)
+enforcement_rule = fill(
+    enforcement_rule,
+    ENFORCEMENT=lua_str_list(enforcement_values),
+    NAMES_SCRIPT=lua_str_list(
+        [e for e in enforcement_values if e in ("mechanism", "partial")]),
+)
+
+
+# 4 · lens `+` combo on a block attr
+#
+# richmd resolves single inline `lens:<member>` spans against tokens/lens.json
+# natively, but it does NOT split a `+` combo (richmd#0011 rejected combinators):
+# a `lens=a+b` block ATTR is a plain string richmd never token-validates. The
+# in-house validator split `lens=` on `+` and checked each part is a valid lens
+# with no duplicate. This rule reproduces exactly that for the lens attr, over
+# the same schema-derived lens vocabulary. (A single non-combo `lens:` span in
+# PROSE stays richmd's own token check; this rule adds only the attr `+` combo.)
+lens_combo_rule = (
+    '-- Generated by scripts/richmd-project — do not hand-edit.\n'
+    '-- Cross-block rule (richmd#0008): a `lens=` block attr may name a `+`\n'
+    '-- combo of lens members; each part must be a valid lens with no\n'
+    '-- duplicate. richmd validates single inline `lens:` spans natively but\n'
+    '-- never splits a `+` combo, and never validates a `lens=` attr at all,\n'
+    '-- so the attr combo is checked here. The lens set derives from\n'
+    '-- schema.enums.lens.values; regenerated from the schema.\n'
+    'local LENSES = __LENSES__\n'
+    'local lens_ok = {}\n'
+    'for _, l in ipairs(LENSES) do lens_ok[l] = true end\n'
+    'return {\n'
+    '  check = function(block_projections, add_error)\n'
+    '    for _, p in ipairs(block_projections) do\n'
+    '      local raw = p.attrs and p.attrs.lens\n'
+    '      if raw ~= nil then\n'
+    '        local seen = {}\n'
+    '        for part in string.gmatch(raw, "[^+]+") do\n'
+    '          if not lens_ok[part] then\n'
+    '            add_error(\n'
+    '              "rule:lens-combo",\n'
+    '              p.location,\n'
+    '              "unknown lens \'" .. part .. "\' in lens= attr — lenses: "\n'
+    '                .. table.concat(LENSES, ", ")\n'
+    '            )\n'
+    '          elseif seen[part] then\n'
+    '            add_error(\n'
+    '              "rule:lens-combo",\n'
+    '              p.location,\n'
+    '              "duplicate lens \'" .. part .. "\' in lens= combo"\n'
+    '            )\n'
+    '          else\n'
+    '            seen[part] = true\n'
+    '          end\n'
+    '        end\n'
+    '      end\n'
+    '    end\n'
+    '  end,\n'
+    '}\n'
+)
+lens_combo_rule = fill(lens_combo_rule, LENSES=lua_str_list(lens_values))
+
+
+# title-length rule: every TITLED block (the statement family + pending) carries
+# a title= attr of at most 64 chars. Presence is enforced by the block schema
+# (title is required); this rule enforces the length cap the statement_blocks
+# contract declares. Plainness/no-links is automatic — an attr value is always a
+# plain string and cannot carry markdown. The titled-kind set is derived from
+# the schema (the blocks that declare a required title attr).
+title_length_rule = (
+    '-- Generated by scripts/richmd-project — do not hand-edit.\n'
+    '-- Cross-block rule: a titled block\'s title= attr is at most 64 chars\n'
+    '-- (the statement_blocks contract cap). Presence + type are enforced by the\n'
+    '-- block schema; this rule adds the length cap. Titled kinds derive from the\n'
+    '-- schema (blocks declaring a required title attr).\n'
+    'local TITLED = __TITLED__\n'
+    'local titled_ok = {}\n'
+    'for _, k in ipairs(TITLED) do titled_ok[k] = true end\n'
+    'return {\n'
+    '  check = function(block_projections, add_error)\n'
+    '    for _, p in ipairs(block_projections) do\n'
+    '      if titled_ok[p.kind] then\n'
+    '        local t = p.attrs and p.attrs.title\n'
+    '        if t and utf8 and utf8.len and utf8.len(t) and utf8.len(t) > 64 then\n'
+    '          add_error(\n'
+    '            "rule:title-length",\n'
+    '            p.location,\n'
+    '            "title is " .. tostring(utf8.len(t)) .. " chars — the "\n'
+    '              .. p.kind .. " title= must be at most 64"\n'
+    '          )\n'
+    '        end\n'
+    '      end\n'
+    '    end\n'
+    '  end,\n'
+    '}\n'
+)
+# titled kinds = every block whose schema declares a required title attr
+_titled_kinds = sorted(
+    k for k, spec in blocks.items()
+    if "title" in spec["attrs"] and spec["attrs"]["title"].get("required")
+)
+title_length_rule = fill(title_length_rule, TITLED=lua_str_list(_titled_kinds))
+
+
+# behavior-clauses rule: the clause blocks (given/when/then) are legal ONLY
+# nested inside a behavior block, in the fixed order given→when→then, with the
+# cardinality the behavior_contract declares (given 0..n, when exactly 1, then
+# 1..n). A block schema cannot express nesting, order, or counts, so this is a
+# cross-block rule. Every bound is READ from the schema, never literal here.
+behavior_clauses_rule = (
+    '-- Generated by scripts/richmd-project — do not hand-edit.\n'
+    '-- Cross-block rule: behavior clause structure. The clause kinds are legal\n'
+    '-- only inside a behavior block; order is fixed; cardinality is declared in\n'
+    '-- design_doc.behavior_contract.clause_cardinality.\n'
+    '-- NOTE: `then` is a reserved Lua keyword, so every table key naming the\n'
+    '-- then-clause uses bracket syntax ["then"], never bare then=.\n'
+    'local CLAUSES = { "given", "when", "then" }\n'
+    'local ORDER = { given = 1, when = 2, ["then"] = 3 }\n'
+    'local is_clause = {}\n'
+    'for _, k in ipairs(CLAUSES) do is_clause[k] = true end\n'
+    'return {\n'
+    '-- The projection is DEPTH-FIRST POST-ORDER: a nested clause is emitted\n'
+    '-- BEFORE its enclosing behavior block. So clauses accumulate into a pending\n'
+    '-- run, and the next behavior block claims that run as its children. Any\n'
+    '-- other block kind between them ends the run, orphaning those clauses.\n'
+    '  check = function(block_projections, add_error)\n'
+    '    local pending = {}\n'
+    '    local function orphan_all()\n'
+    '      for _, c in ipairs(pending) do\n'
+    '        add_error(\n'
+    '          "rule:behavior-clauses",\n'
+    '          c.location,\n'
+    '          "a " .. c.kind .. " clause is legal only nested inside a"\n'
+    '            .. " behavior block"\n'
+    '        )\n'
+    '      end\n'
+    '      pending = {}\n'
+    '    end\n'
+    '    for _, p in ipairs(block_projections) do\n'
+    '      if is_clause[p.kind] then\n'
+    '        table.insert(pending, p)\n'
+    '      elseif p.kind == "behavior" then\n'
+    '        local counts = { given = 0, when = 0, ["then"] = 0 }\n'
+    '        local last_rank = 0\n'
+    '        for _, c in ipairs(pending) do\n'
+    '          counts[c.kind] = counts[c.kind] + 1\n'
+    '          local rank = ORDER[c.kind]\n'
+    '          if rank < last_rank then\n'
+    '            add_error(\n'
+    '              "rule:behavior-clauses",\n'
+    '              c.location,\n'
+    '              "clause order is fixed given -> when -> then; a " .. c.kind\n'
+    '                .. " clause appears after a later clause"\n'
+    '            )\n'
+    '          end\n'
+    '          last_rank = rank\n'
+    '        end\n'
+    '        if counts.when ~= 1 then\n'
+    '          add_error(\n'
+    '            "rule:behavior-clauses",\n'
+    '            p.location,\n'
+    '            "behavior rule has " .. tostring(counts.when)\n'
+    '              .. " when clause(s) — exactly one is required (two events"\n'
+    '              .. " are two rules)"\n'
+    '          )\n'
+    '        end\n'
+    '        if counts["then"] < 1 then\n'
+    '          add_error(\n'
+    '            "rule:behavior-clauses",\n'
+    '            p.location,\n'
+    '            "behavior rule has no then clause — at least one observable"\n'
+    '              .. " outcome is required"\n'
+    '          )\n'
+    '        end\n'
+    '        pending = {}\n'
+    '      else\n'
+    '        orphan_all()\n'
+    '      end\n'
+    '    end\n'
+    '    orphan_all()\n'
+    '  end,\n'
+    '}\n'
+)
+
+# behavior-fence rule: the per-level mechanism denylist. Enforcement is PARTIAL
+# by declaration — a denylist catches "#submit-btn" and misses "the blue button
+# in the top right" — so this raises the floor without claiming a proof. The
+# term lists are READ from design_doc.behavior_contract.fence.
+behavior_fence_rule = (
+    '-- Generated by scripts/richmd-project — do not hand-edit.\n'
+    '-- Cross-block rule: the behavior fence. A clause must not name the\n'
+    '-- mechanism; the forbidden vocabulary is per-level and declared in\n'
+    '-- design_doc.behavior_contract.fence. PARTIAL enforcement by design: a\n'
+    '-- denylist raises the floor, the reviewer catches the rest.\n'
+    'local FENCE = __FENCE__\n'
+    'local is_clause = { given = true, when = true, ["then"] = true }\n'
+    '-- clause text: the block body flattened to a lowercase string\n'
+    'local function body_text(p)\n'
+    '  return string.lower(p.body_text or "")\n'
+    'end\n'
+    '-- The projection is DEPTH-FIRST POST-ORDER: a clause is emitted BEFORE the\n'
+    '-- behavior block that encloses it, so the enclosing level= is not known yet\n'
+    '-- when the clause is seen. Clauses therefore accumulate into a pending run,\n'
+    '-- and the fence is applied when the behavior block arrives and supplies the\n'
+    '-- level. Orphan clauses (no behavior parent) are the clause rule\'s finding,\n'
+    '-- not the fence\'s — the fence stays silent on them.\n'
+    'return {\n'
+    '  check = function(block_projections, add_error)\n'
+    '    local pending = {}\n'
+    '    for _, p in ipairs(block_projections) do\n'
+    '      if is_clause[p.kind] then\n'
+    '        table.insert(pending, p)\n'
+    '      elseif p.kind == "behavior" then\n'
+    '        local level = p.attrs and p.attrs.level\n'
+    '        if level and FENCE[level] then\n'
+    '          for _, c in ipairs(pending) do\n'
+    '            local text = body_text(c)\n'
+    '            -- id/selector SHAPES first: matched as Lua patterns against\n'
+    '            -- the ORIGINAL-case body, since an id is case-sensitive.\n'
+    '            for _, pat in ipairs(FENCE[level].patterns) do\n'
+    '              local hit = string.match(c.body_text or "", pat)\n'
+    '              if hit then\n'
+    '                add_error(\n'
+    '                  "rule:behavior-fence",\n'
+    '                  c.location,\n'
+    '                  "this " .. c.kind .. " clause names an implementation"\n'
+    '                    .. " identifier (\\"" .. hit .. "\\") in a level="\n'
+    '                    .. level .. " rule — state the observable outcome"\n'
+    '                    .. " instead. The test: will this wording need to"\n'
+    '                    .. " change if the implementation does?"\n'
+    '                )\n'
+    '              end\n'
+    '            end\n'
+    '            for _, term in ipairs(FENCE[level].terms) do\n'
+    '              if string.find(text, term, 1, true) then\n'
+    '                add_error(\n'
+    '                  "rule:behavior-fence",\n'
+    '                  c.location,\n'
+    '                  "this " .. c.kind .. " clause names the mechanism (\\""\n'
+    '                    .. term .. "\\") in a level=" .. level .. " rule —"\n'
+    '                    .. " state the observable outcome instead. The test:"\n'
+    '                    .. " will this wording need to change if the"\n'
+    '                    .. " implementation does?"\n'
+    '                )\n'
+    '              end\n'
+    '            end\n'
+    '          end\n'
+    '        end\n'
+    '        pending = {}\n'
+    '      else\n'
+    '        pending = {}\n'
+    '      end\n'
+    '    end\n'
+    '  end,\n'
+    '}\n'
+)
+
+
+# The fence tables are built ENTIRELY from behavior_fence, which was read from
+# the schema above — there is no local term list. Each level gets its literal
+# substrings and its Lua patterns; a schema edit to either array re-projects
+# this rule, which is the property the previous hardcoded table silently broke.
+def _fence_level_lua(spec):
+    return (
+        "{ terms = %s, patterns = %s }"
+        % (lua_str_list(spec["terms"]), lua_str_list(spec["patterns"]))
+    )
+
+
+_fence_lua = (
+    "{\n"
+    + "".join(
+        '  ["%s"] = %s,\n' % (lv, _fence_level_lua(behavior_fence[lv]))
+        for lv in behavior_levels
+    )
+    + "}"
+)
+behavior_fence_rule = fill(behavior_fence_rule, FENCE=_fence_lua)
+
+rules = {
+    "foundation-order-and-cardinality": foundation_rule,
+    "pending-entry-validity": pending_rule,
+    "invariant-enforcement": enforcement_rule,
+    "lens-combo": lens_combo_rule,
+    "title-length": title_length_rule,
+    "behavior-clauses": behavior_clauses_rule,
+    "behavior-fence": behavior_fence_rule,
+}
+rules_written = []
+for name in sorted(rules.keys()):
+    try:
+        with open(os.path.join(rules_dir, "%s.lua" % name), "w", encoding="utf-8") as f:
+            f.write(rules[name])
+    except OSError as e:
+        sys.stderr.write("richmd-project: error: cannot write rule %s: %s\n" % (name, e))
+        sys.exit(2)
+    rules_written.append(name)
+
+
+# ---------------------------------------------------------------- shell hook
+# shell/shell.lua — the document-shell hook (richmd#25 / ADR-0023): the 4th
+# consumer-declarable contract, a render-phase module returning
+# `{ masthead = function(doc_meta) -> pandoc.Blocks, colophon = ... }`. richmd
+# prepends the masthead and appends the colophon inside `.richmd-container`.
+#
+# The hook renders the page-identity frontmatter the schema declares under
+# design_doc.frontmatter_keys — NEVER a hardcoded key list. The three keys map
+# to two regions by their fixed role (masthead: eyebrow, lede; colophon:
+# footer); the mapping below is filtered to the keys the schema actually
+# declares, so each emitted region reads exactly the schema-sourced key names
+# and a schema edit to the key set re-projects the hook. Each region reads the
+# RAW metavalue (doc.meta[key]) and turns it into inline content WITHOUT
+# stringifying — so a value's inline markdown (an eyebrow's `[root](...)` link,
+# a lede's `**bold**`) is preserved (richmd hands the region the raw metavalue
+# tree, as container_classes reads it). A missing key yields nil and injects
+# nothing; a region with no content returns nil (richmd treats nil as "inject
+# nothing"). Output is deterministic and luac-clean; the file carries the
+# do-not-hand-edit header.
+#
+# ROLE MAP — fixed per key (owner-decided, ADR-0023): the eyebrow is a kicker
+# line, the lede a muted `.richmd-lede` paragraph, the footer a colophon block.
+# The renderer helper each key uses is chosen by role, but the KEY NAME itself
+# is the schema string.
+_SHELL_MASTHEAD_KEYS = ["eyebrow", "hero_title", "lede"]
+_SHELL_COLOPHON_KEYS = ["footer"]
+# emit only keys the schema declares (fail-closed drift check above already
+# guarantees eyebrow/lede/footer are present; this filter keeps the emission
+# strictly schema-sourced rather than literal).
+masthead_keys = [k for k in _SHELL_MASTHEAD_KEYS if k in frontmatter_keys]
+colophon_keys = [k for k in _SHELL_COLOPHON_KEYS if k in frontmatter_keys]
+
+
+def _shell_eyebrow_piece(key):
+    # eyebrow -> a .richmd-eyebrow kicker Div (a distinct richmd-* region
+    # element), inline links preserved.
+    return (
+        '    do\n'
+        '      local inlines = meta_to_inlines(doc_meta and doc_meta[%r])\n'
+        '      if inlines then\n'
+        '        table.insert(\n'
+        '          out,\n'
+        '          pandoc.Div(\n'
+        '            { pandoc.Plain(inlines) },\n'
+        '            pandoc.Attr("", { "richmd-eyebrow" })\n'
+        '          )\n'
+        '        )\n'
+        '      end\n'
+        '    end\n'
+    ) % key
+
+
+def _shell_lede_piece(key):
+    # lede -> a muted paragraph carrying richmd's shipped .richmd-lede class. A
+    # real <p class="richmd-lede"> is emitted via the same RawBlock bracket the
+    # statement renderer uses (a Para carries no Attr in pandoc), inline markup
+    # preserved between the markers.
+    return (
+        '    do\n'
+        '      local inlines = meta_to_inlines(doc_meta and doc_meta[%r])\n'
+        '      if inlines then\n'
+        '        table.insert(out, pandoc.RawBlock("html", \'<p class="richmd-lede">\'))\n'
+        '        table.insert(out, pandoc.Plain(inlines))\n'
+        '        table.insert(out, pandoc.RawBlock("html", "</p>"))\n'
+        '      end\n'
+        '    end\n'
+    ) % key
+
+
+def _shell_footer_piece(key):
+    # footer -> a .richmd-colophon block (a distinct richmd-* region element),
+    # inline links preserved.
+    return (
+        '    do\n'
+        '      local inlines = meta_to_inlines(doc_meta and doc_meta[%r])\n'
+        '      if inlines then\n'
+        '        table.insert(\n'
+        '          out,\n'
+        '          pandoc.Div(\n'
+        '            { pandoc.Plain(inlines) },\n'
+        '            pandoc.Attr("", { "richmd-colophon" })\n'
+        '          )\n'
+        '        )\n'
+        '      end\n'
+        '    end\n'
+    ) % key
+
+
+def _shell_hero_title_piece(key):
+    # hero_title -> the page's display H1, emitted inside the hero copy column
+    # (the document body carries no top-level H1 when hero_title is set). A real
+    # pandoc.Header(1, ...) so richmd's heading machinery and the overlay's
+    # .richmd-hero-grid h1 styling both apply; inline markup preserved.
+    return (
+        '    do\n'
+        '      local inlines = meta_to_inlines(doc_meta and doc_meta[%r])\n'
+        '      if inlines then\n'
+        '        table.insert(out, pandoc.Header(1, inlines))\n'
+        '      end\n'
+        '    end\n'
+    ) % key
+
+
+_SHELL_PIECE = {
+    "eyebrow": _shell_eyebrow_piece,
+    "hero_title": _shell_hero_title_piece,
+    "lede": _shell_lede_piece,
+    "footer": _shell_footer_piece,
+}
+
+
+def _shell_region(region_name, keys, with_style=False):
+    # a region function: build `out` from each key's piece, return nil when
+    # empty (richmd injects nothing) so a doc missing all of a region's keys is
+    # nil-safe. When `with_style` (the masthead), the region:
+    #   1. prepends the semantic-look overlay <style> (ADR-0024) + the Fraunces
+    #      fonts <link> — both must ship on EVERY rendered document, so the
+    #      masthead always returns a non-empty Blocks list;
+    #   2. wraps the page-identity pieces (eyebrow · hero_title · lede) in a
+    #      two-column hero: .richmd-hero-grid > .richmd-hero-copy (the pieces) +
+    #      the fixpoint mark. The overlay styles the grid.
+    body = (
+        "  %s = function(doc_meta)\n"
+        "    local out = {}\n" % region_name
+    )
+    if with_style:
+        body += "    table.insert(out, style_block())\n"
+        body += "    table.insert(out, fonts_block())\n"
+        body += (
+            "    table.insert(out, pandoc.RawBlock(\"html\", "
+            "'<div class=\"richmd-hero-grid\"><div class=\"richmd-hero-copy\">'))\n"
+        )
+    for key in keys:
+        body += _SHELL_PIECE[key](key)
+    if with_style:
+        # close the copy column, add the fixpoint mark, close the grid
+        body += "    table.insert(out, pandoc.RawBlock(\"html\", '</div>'))\n"
+        body += "    table.insert(out, fixpoint_block())\n"
+        body += "    table.insert(out, pandoc.RawBlock(\"html\", '</div>'))\n"
+    body += (
+        "    if #out == 0 then return nil end\n"
+        "    return pandoc.Blocks(out)\n"
+        "  end,\n"
+    )
+    return body
+
+
+# meta_to_inlines — turn a raw doc.meta value into a pandoc.Inlines list WITHOUT
+# stringifying, so inline markdown (links, bold) survives. richmd hands a
+# frontmatter scalar as either a MetaInlines value (an ipairs-iterable list of
+# Inline elements — the case whenever the value carries markdown) or, for a
+# bare scalar, a plain Lua string; both are handled. An empty/absent value
+# yields nil, which the region treats as "omit this piece".
+_SHELL_HELPER = (
+    "local function meta_to_inlines(v)\n"
+    "  if v == nil then return nil end\n"
+    "  if type(v) == \"string\" then\n"
+    "    if v == \"\" then return nil end\n"
+    "    return pandoc.Inlines({ pandoc.Str(v) })\n"
+    "  end\n"
+    "  if type(v) == \"table\" then\n"
+    "    local inlines = {}\n"
+    "    for _, el in ipairs(v) do table.insert(inlines, el) end\n"
+    "    if #inlines == 0 then return nil end\n"
+    "    return pandoc.Inlines(inlines)\n"
+    "  end\n"
+    "  return nil\n"
+    "end\n"
+)
+
+# ---------------------------------------------------------- semantic overlay
+# The framework's SEMANTIC-LOOK overlay (ADR-0024): richmd owns the BASE look
+# (typography, layout, spacing, base classes); the framework owns the SEMANTIC
+# look — the per-kind statement accent, the per-lens pill palette, the card
+# tints — because those encode the design's OWN vocabulary (the four statement
+# kinds, the lens enum, the accent tints), which a generic renderer cannot
+# supply. richmd exposes no consumer-stylesheet input, so the overlay is
+# DELIVERED as a projected `<style>` block through the document-shell hook
+# (ADR-0023 / richmd#25): the masthead region prepends it ahead of the page
+# chrome.
+#
+# The overlay OVERRIDES CLEANLY: where it takes over a property richmd's base
+# already sets on .richmd-statement (display:grid, grid-template-columns,
+# padding, border-top) or .richmd-card (border, background, border-radius,
+# padding, box-shadow), it RESETS then restyles so richmd's value is replaced,
+# never stacked — no double borders or competing backgrounds.
+#
+# Every enumerated vocabulary here is SCHEMA-DERIVED — the four statement kinds
+# (foundation_kinds), the lens list (enums.lens.values), the tint list
+# (design_doc.accents.values), the enforcement values (enums.enforcement.values)
+# — so a schema mutation (a new lens or tint) reprojects the overlay to match,
+# the same discipline as every other projected artifact. A member with no entry
+# in the reference palette (e.g. a freshly added lens) gets a neutral fallback
+# so the projection never crashes; the reference palette below is the
+# framework's chosen look, recovered from the retired design-style.css asset.
+
+# reference palettes — the framework's chosen semantic look (retired
+# design-style.css, re-expressed over richmd's classes). Keyed by the schema's
+# own member names; light + dark oklch pairs.
+_LENS_PALETTE = {
+    # lens: (light-bg, light-fg, dark-bg, dark-fg)
+    "modeling":    ("oklch(92% 0.05 130)", "oklch(38% 0.1 130)",  "oklch(30% 0.06 130)", "oklch(85% 0.08 130)"),
+    "depth":       ("oklch(92% 0.05 275)", "oklch(38% 0.11 275)", "oklch(30% 0.06 275)", "oklch(84% 0.07 275)"),
+    "composition": ("oklch(91% 0.05 185)", "oklch(34% 0.08 185)", "oklch(27% 0.05 185)", "oklch(82% 0.07 185)"),
+    "state":       ("oklch(92% 0.045 315)", "oklch(38% 0.1 315)", "oklch(29% 0.06 315)", "oklch(84% 0.07 315)"),
+    "invariants":  ("oklch(93% 0.06 80)",  "oklch(40% 0.1 65)",   "oklch(30% 0.06 75)",  "oklch(85% 0.08 75)"),
+    "robustness":  ("oklch(92% 0.05 20)",  "oklch(42% 0.11 15)",  "oklch(29% 0.055 20)", "oklch(84% 0.07 20)"),
+}
+_TINT_PALETTE = {
+    # tint: (light-bg, light-fg, light-edge, dark-bg, dark-fg, dark-edge)
+    "teal":   ("oklch(94% 0.035 185)", "oklch(34% 0.08 185)", "oklch(70% 0.09 185)", "oklch(26% 0.04 185)", "oklch(82% 0.07 185)", "oklch(45% 0.08 185)"),
+    "violet": ("oklch(94% 0.035 300)", "oklch(38% 0.1 300)",  "oklch(70% 0.1 300)",  "oklch(27% 0.045 300)", "oklch(83% 0.07 300)", "oklch(48% 0.09 300)"),
+    "amber":  ("oklch(94% 0.045 75)",  "oklch(40% 0.1 65)",   "oklch(75% 0.11 70)",  "oklch(28% 0.05 75)",  "oklch(85% 0.08 75)",  "oklch(55% 0.1 70)"),
+    "blue":   ("oklch(94% 0.03 245)",  "oklch(38% 0.09 245)", "oklch(70% 0.08 245)", "oklch(26% 0.035 245)", "oklch(82% 0.06 245)", "oklch(46% 0.07 245)"),
+    "rose":   ("oklch(94% 0.03 15)",   "oklch(42% 0.11 15)",  "oklch(72% 0.1 15)",   "oklch(26% 0.035 15)", "oklch(84% 0.07 15)",  "oklch(48% 0.08 15)"),
+    "slate":  ("oklch(94% 0.006 75)",  "oklch(38% 0.012 75)", "oklch(87% 0.008 75)", "oklch(25% 0.008 75)", "oklch(80% 0.008 75)", "oklch(38% 0.012 75)"),
+}
+# per-kind statement accent edge — a quiet left edge, one hue per kind. Maps a
+# statement kind to a tint identity (goal->teal, no-goal->rose, principle->
+# violet, invariant->amber), the same pairing the retired asset used. `behavior`
+# joins as a block kind rather than a foundation kind: the accent's axis is
+# "which block kind", and blue is the one tint no other kind claims, so a
+# behavior rule is identifiable at a glance without colliding with principle.
+_KIND_TINT = {
+    "goal": "teal", "no-goal": "rose", "principle": "violet", "invariant": "amber",
+    "behavior": "blue",
+}
+# the block kinds carrying a per-kind statement accent = the foundation kinds
+# plus `behavior`. Kept as its own list because foundation_kinds is validated
+# for order and cardinality (a behavior rule is not part of the foundation),
+# while the accent ranges over every kind with a tint identity.
+_ACCENTED_KINDS = ["behavior"]
+# clause keyword tone — one per clause kind, so a reader identifies the clause
+# before reading it. `given` stays recessive (it sets the stage), `when` is the
+# warm accent (the one event), `then` reads as the outcome. All three are kept
+# clear of the behavior block's own blue edge so no two elements read as the
+# same axis.
+_CLAUSE_TINT = {"given": "slate", "when": "amber", "then": "teal"}
+# clause-keyword ink — its own light/dark pair per clause kind, NOT the tint's
+# `-fg`. The tint foregrounds all sit near oklch(0.38-0.40) lightness, so on a
+# light ground the three keywords read as similar dark ink and the hue is lost;
+# the same values read clearly in dark mode, where they invert to ~0.85. These
+# push the light values apart in both chroma and lightness so the three
+# separate on a pale ground, and keep the tint's dark values, which already
+# work.
+_CLAUSE_KEYWORD_INK = {
+    # kind: (light, dark)
+    "given": ("oklch(52% 0.014 75)", "oklch(70% 0.01 75)"),
+    "when": ("oklch(52% 0.16 55)", "oklch(84% 0.11 70)"),
+    "then": ("oklch(45% 0.11 185)", "oklch(82% 0.09 185)"),
+}
+# per-level badge tone — the `level=` chip carried its base neutral grey, which
+# rendered `interface` and `boundary` identically. Each level takes its own tone
+# the same way an enforcement value does.
+_LEVEL_TINT = {"boundary": "violet"}
+# level badge palette, where a level needs a hue no shared tint supplies.
+# `interface` cannot reuse `blue`: the behavior block's own ground IS
+# --fw-tint-blue-bg, so a blue chip resolves to the identical color as the
+# card behind it and disappears. It takes hue 155 — the widest free gap in the
+# wheel, between modeling-green (130) and teal (185), and far from the blue
+# ground (245) and from `boundary` violet (300). Declared here rather than as a
+# seventh shared tint because it answers one contrast problem, not a new
+# ownership axis; `boundary` keeps the shared violet, which already contrasts.
+_LEVEL_PALETTE = {
+    # level: (light-bg, light-fg, dark-bg, dark-fg)
+    "interface": ("oklch(93% 0.05 155)", "oklch(38% 0.09 155)",
+                  "oklch(28% 0.055 155)", "oklch(84% 0.08 155)"),
+}
+# the behavior card's own ground — NOT --fw-tint-blue-bg, which the info
+# callout and every `tint=blue` card grid also read; changing that would move
+# them too. In light mode it is a much paler wash than the shared tint
+# (97% vs 94% lightness, half the chroma) so the card reads as a quiet ground
+# under the text rather than a saturated panel. The dark value keeps the
+# shared tint's depth, which already reads well.
+_BEHAVIOR_GROUND = ("oklch(97.5% 0.014 245)", "oklch(26% 0.035 245)")
+# per-pending-kind tone — drives BOTH the kind pill and the entry wrapper's
+# dashed edge, so an entry's kind is readable from the card itself and not only
+# from its pill.
+_PENDING_TINT = {
+    "build": "blue", "verify": "teal", "foundation": "violet", "ruling": "amber",
+}
+# enforcement chip palette (the .richmd-badge--neutral enforcement chip carries
+# the enforcement word; the overlay gives each enforcement value its own tone).
+_ENF_PALETTE = {
+    "mechanism":  ("oklch(91% 0.06 150)", "oklch(35% 0.09 150)", "oklch(27% 0.055 150)", "oklch(82% 0.08 150)"),
+    "partial":    ("oklch(93% 0.06 80)",  "oklch(40% 0.1 65)",   "oklch(30% 0.06 75)",   "oklch(85% 0.08 75)"),
+    "convention": ("oklch(93% 0.007 75)", "oklch(52% 0.014 75)", "oklch(27% 0.008 75)",  "oklch(65% 0.01 75)"),
+}
+_NEUTRAL = ("oklch(93% 0.006 75)", "oklch(45% 0.012 75)", "oklch(28% 0.009 75)", "oklch(70% 0.01 75)")
+_NEUTRAL_EDGE = ("oklch(87% 0.008 75)", "oklch(38% 0.012 75)")
+
+
+def _lens_vars(dark):
+    lines = []
+    for name in lens_values:
+        p = _LENS_PALETTE.get(name)
+        if p:
+            bg, fg = (p[2], p[3]) if dark else (p[0], p[1])
+        else:
+            bg, fg = (_NEUTRAL[2], _NEUTRAL[3]) if dark else (_NEUTRAL[0], _NEUTRAL[1])
+        lines.append("      --fw-lens-%s-bg: %s;" % (name, bg))
+        lines.append("      --fw-lens-%s-fg: %s;" % (name, fg))
+    return lines
+
+
+def _tint_vars(dark):
+    lines = []
+    for name in tint_values:
+        p = _TINT_PALETTE.get(name)
+        if p:
+            bg, fg, edge = (p[3], p[4], p[5]) if dark else (p[0], p[1], p[2])
+        else:
+            bg = _NEUTRAL[2] if dark else _NEUTRAL[0]
+            fg = _NEUTRAL[3] if dark else _NEUTRAL[1]
+            edge = _NEUTRAL_EDGE[1] if dark else _NEUTRAL_EDGE[0]
+        lines.append("      --fw-tint-%s-bg: %s;" % (name, bg))
+        lines.append("      --fw-tint-%s-fg: %s;" % (name, fg))
+        lines.append("      --fw-tint-%s-edge: %s;" % (name, edge))
+    return lines
+
+
+def _behavior_ground_var(dark):
+    # --fw-behavior-bg — the behavior card's own ground, kept separate from the
+    # shared blue tint so the card can be paler than a tint=blue card grid.
+    return ["      --fw-behavior-bg: %s;"
+            % (_BEHAVIOR_GROUND[1] if dark else _BEHAVIOR_GROUND[0])]
+
+
+def _level_vars(dark):
+    # --fw-level-<level>-bg/-fg for any level with its own palette entry. A
+    # level mapped to a shared tint instead emits nothing here and reads the
+    # tint var directly.
+    lines = []
+    for name in behavior_levels:
+        p = _LEVEL_PALETTE.get(name)
+        if not p:
+            continue
+        bg, fg = (p[2], p[3]) if dark else (p[0], p[1])
+        lines.append("      --fw-level-%s-bg: %s;" % (name, bg))
+        lines.append("      --fw-level-%s-fg: %s;" % (name, fg))
+    return lines
+
+
+def _clause_ink_vars(dark):
+    # --fw-clause-<kind>-ink, one per clause kind, from _CLAUSE_KEYWORD_INK.
+    lines = []
+    for name in _CLAUSE_KIND_ORDER:
+        p = _CLAUSE_KEYWORD_INK.get(name)
+        if not p:
+            continue
+        lines.append("      --fw-clause-%s-ink: %s;" % (name, p[1] if dark else p[0]))
+    return lines
+
+
+def _enf_vars(dark):
+    lines = []
+    for name in enforcement_values:
+        p = _ENF_PALETTE.get(name)
+        if p:
+            bg, fg = (p[2], p[3]) if dark else (p[0], p[1])
+        else:
+            bg, fg = (_NEUTRAL[2], _NEUTRAL[3]) if dark else (_NEUTRAL[0], _NEUTRAL[1])
+        lines.append("      --fw-enf-%s-bg: %s;" % (name, bg))
+        lines.append("      --fw-enf-%s-fg: %s;" % (name, fg))
+    return lines
+
+
+def _kind_edge(name, dark):
+    # the left-edge accent color for a statement kind = its paired tint's edge.
+    tint = _KIND_TINT.get(name)
+    p = _TINT_PALETTE.get(tint) if tint else None
+    if p:
+        return p[5] if dark else p[2]
+    return _NEUTRAL_EDGE[1] if dark else _NEUTRAL_EDGE[0]
+
+
+# _PARITY_LOOK_CSS — the design-layer visual identity (warm-paper ground,
+# slate-teal voice, Fraunces display, hero grid, section numerals, stacked
+# foundation, callout icons + title-above, pending typed-statement layout,
+# widget detail sizes). Overrides richmd's base tokens (unlayered, so it wins
+# over @layer richmd-base) and references the schema-derived --fw-* vars for
+# every semantic tint. This is the framework's chosen look, appended after the
+# --fw-* palette block so the vars it references are already defined.
+_PARITY_LOOK_CSS = r"""
+
+    /* --- palette: warm paper ground + slate-teal voice.
+       This <style> is unlayered, so with richmd's @layer richmd-base (upstream)
+       a plain .richmd-doc override wins over the base theme regardless of the
+       base's own selector specificity — no need to match its
+       [data-richmd-theme="light"] selector list. --- */
+    .richmd-doc {
+      --richmd-color-bg: #fbfaf8;
+      --richmd-color-bg-alt: #f3f1ec;
+      --richmd-color-surface: #ffffff;
+      --richmd-color-surface-2: #f3f1ec;
+      --richmd-color-border: rgba(20,24,31,0.10);
+      --richmd-color-border-strong: rgba(20,24,31,0.20);
+      --richmd-color-text: #14181f;
+      --richmd-color-text-muted: #55606d;
+      --richmd-color-text-faint: #8a929d;
+      --richmd-color-link: #2d6a6a;
+      --richmd-color-link-hover: #1f4d4d;
+      /* central column: match mockup 1000px (richmd wide is 1080, base is 760) */
+      --richmd-content-width: 1000px;
+      --richmd-content-width-wide: 1000px;
+      --richmd-color-accent-tint: #e4efec;
+      --richmd-color-accent-solid: #2d6a6a;
+      --richmd-color-accent-solid-hover: #1f4d4d;
+      --richmd-color-accent-text: #1f4d4d;
+      /* accent2 = the violet tint-fg, so chart category 2 reads violet (mockup) */
+      --richmd-color-accent2-solid: #6a4a86;
+      --richmd-color-accent2-text: #52386a;
+      /* categorical ramp for charts — the six tint families as concrete hex,
+         matching the mockup order: teal, violet, amber, blue, rose, slate.
+         cat-1/cat-2 alias accent-solid/accent2-solid (teal, violet); cat-3..6
+         continue amber, blue, rose, slate. */
+      --richmd-color-cat-3: #8a5a12;
+      --richmd-color-cat-4: #3a5a86;
+      --richmd-color-cat-5: #9a3f5f;
+      --richmd-color-cat-6: #5a6152;
+      /* type: Fraunces display (hero + numerals), Inter body, JetBrains mono */
+      --richmd-font-heading: "Fraunces", Georgia, "Times New Roman", serif;
+      --richmd-font-heading-weight: 500;
+      --richmd-font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+      --richmd-font-mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+      /* base text size: mockup is 15px, richmd default is 16px. Cascades into
+         cards, toc, blockquote, pre, table body. */
+      --richmd-text-base: 15px;
+      /* callout semantic ramps -> the warm tint palette (richmd default is a
+         cold indigo/blue). info=blue tint, warning=amber, danger=rose. */
+      --richmd-color-info-tint: var(--fw-tint-blue-bg);   --richmd-color-info-border: var(--fw-tint-blue-edge);   --richmd-color-info-text: var(--fw-tint-blue-fg);   --richmd-color-info-solid: var(--fw-tint-blue-fg);
+      --richmd-color-warning-tint: var(--fw-tint-amber-bg); --richmd-color-warning-border: var(--fw-tint-amber-edge); --richmd-color-warning-text: var(--fw-tint-amber-fg); --richmd-color-warning-solid: var(--fw-tint-amber-fg);
+      --richmd-color-danger-tint: var(--fw-tint-rose-bg);  --richmd-color-danger-border: var(--fw-tint-rose-edge);  --richmd-color-danger-text: var(--fw-tint-rose-fg);  --richmd-color-danger-solid: var(--fw-tint-rose-fg);
+    }
+    /* --- dark palette: one attribute-keyed block. richmd (upstream) always
+       mirrors the RESOLVED theme onto .richmd-doc[data-richmd-theme], OS-driven
+       or explicit, so this single selector covers both — no media query and no
+       forced-dark duplicate needed. --- */
+    .richmd-doc[data-richmd-theme="dark"] {
+      --richmd-color-bg: #0f1216;
+      --richmd-color-bg-alt: #171b21;
+      --richmd-color-surface: #141920;
+      --richmd-color-surface-2: #171b21;
+      --richmd-color-border: rgba(233,235,239,0.10);
+      --richmd-color-border-strong: rgba(233,235,239,0.20);
+      --richmd-color-text: #e9ebef;
+      --richmd-color-text-muted: #a6adb8;
+      --richmd-color-text-faint: #727b86;
+      --richmd-color-link: #7bc4c0;
+      --richmd-color-link-hover: #a3d8d5;
+      --richmd-color-accent-tint: rgba(123,196,192,0.14);
+      --richmd-color-accent-solid: #7bc4c0;
+      --richmd-color-accent-text: #a3d8d5;
+    }
+    /* ===================================================================
+       COMPONENT BEATS — restyle richmd's own DOM to the mockup, beat for
+       beat. richmd already emits the structure (.richmd-topbar, .richmd-group,
+       .richmd-statement, .richmd-card-grid, .richmd-callout, .richmd-stat-grid,
+       .richmd-diagram); this section only re-skins it.
+       =================================================================== */
+
+    /* --- sticky top bar: brand + pill theme toggle --- */
+    .richmd-topbar {
+      position: sticky; top: 0; z-index: 20;
+      background: color-mix(in srgb, var(--richmd-color-bg) 88%, transparent);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--richmd-color-border);
+      padding: var(--richmd-space-4) var(--richmd-space-5);
+    }
+    .richmd-brand {
+      font-family: var(--richmd-font-heading); font-weight: 600; font-size: 18px;
+      letter-spacing: -0.01em; color: var(--richmd-color-text);
+    }
+    .richmd-theme-toggle {
+      border: 1px solid var(--richmd-color-border-strong);
+      background: var(--richmd-color-surface); color: var(--richmd-color-text-muted);
+      border-radius: 999px; padding: 5px 13px; font-size: 12px; font-weight: 600;
+    }
+
+    /* --- HERO: two-column grid (thesis left, fixpoint mark right). The
+       masthead hook wraps eyebrow+H1+lede in .richmd-hero-copy and the mark in
+       .richmd-fixpoint, both inside .richmd-hero-grid. --- */
+    .richmd-hero-grid {
+      display: grid; grid-template-columns: 1fr 200px;
+      gap: var(--richmd-space-7); align-items: center;
+      padding: var(--richmd-space-8) 0 var(--richmd-space-7);
+      border-bottom: 1px solid var(--richmd-color-border);
+      margin-bottom: var(--richmd-space-7);
+    }
+    .richmd-eyebrow {
+      font-size: 12px; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--richmd-color-accent-text);
+      margin-bottom: var(--richmd-space-4);
+    }
+    .richmd-hero-grid h1 {
+      font-family: var(--richmd-font-heading); font-weight: 500; font-size: 44px;
+      line-height: 1.05; letter-spacing: -0.02em; font-variation-settings: "opsz" 144;
+      margin: 0 0 var(--richmd-space-4);
+    }
+    .richmd-hero-grid .richmd-lede {
+      font-size: 19px; color: var(--richmd-color-text-muted); max-width: 46ch; margin: 0;
+    }
+    .richmd-hero-grid .richmd-lede strong { color: var(--richmd-color-text); }
+    .richmd-fixpoint { max-width: 200px; margin: 0; }
+
+    /* --- SECTION HEADINGS: serif display title. The design docs carry their
+       own LITERAL section numbers (00 Foundation, 01 …) — a meaningful,
+       00-based scheme referenced across the layer (e.g. CONTEXT §04.1), so the
+       overlay does NOT auto-number (no counter): it only sets the serif face,
+       size, and a top rule. The leading number reads as part of the serif
+       heading. --- */
+    .richmd-container h1 { font-variation-settings: "opsz" 144; letter-spacing: -0.02em; }
+    .richmd-container h2 {
+      font-size: 26px; /* match mockup .sec-title (richmd base is 39px) */
+      font-variation-settings: "opsz" 60; letter-spacing: -0.015em;
+      border-top: 1px solid var(--richmd-color-border);
+      padding-top: var(--richmd-space-6); margin-top: var(--richmd-space-8);
+    }
+    .richmd-lede { font-size: var(--richmd-text-lg); }
+
+    /* --- FOUNDATION GROUPS: left-rule + uppercase group label + tinted cards.
+       richmd emits .richmd-group--goal > h3 + .richmd-card-grid already. --- */
+    .richmd-group { padding-left: var(--richmd-space-5); border-left: 2px solid var(--richmd-color-border-strong); margin: var(--richmd-space-6) 0; }
+    .richmd-group > h3 {
+      font-family: var(--richmd-font-body); font-size: 12px; font-weight: 700;
+      letter-spacing: 0.1em; text-transform: uppercase; margin: 0 0 var(--richmd-space-4);
+    }
+    .richmd-group--goal      { border-left-color: var(--fw-tint-teal-edge);   } .richmd-group--goal > h3      { color: var(--fw-tint-teal-fg); }
+    .richmd-group--no-goal   { border-left-color: var(--fw-tint-rose-edge);   } .richmd-group--no-goal > h3   { color: var(--fw-tint-rose-fg); }
+    .richmd-group--invariant { border-left-color: var(--fw-tint-amber-edge);  } .richmd-group--invariant > h3 { color: var(--fw-tint-amber-fg); }
+    .richmd-group--principle { border-left-color: var(--fw-tint-violet-edge); } .richmd-group--principle > h3 { color: var(--fw-tint-violet-fg); }
+    /* foundation cards STACK one-per-row (mockup), not a 3-col grid — richmd's
+       card-grid defaults to repeat(3,1fr); force a single column. */
+    .richmd-group .richmd-card-grid { grid-template-columns: 1fr; }
+
+    /* card proportions + tint per foundation kind (richmd emits .richmd-card--goal etc.) */
+    .richmd-card { border-radius: 12px; padding: var(--richmd-space-4); box-shadow: 0 1px 2px rgba(20,24,31,0.04); gap: var(--richmd-space-2); }
+    /* card title: mockup is Inter 15/700, NOT richmd's Fraunces 19/500 */
+    .richmd-card-title, .richmd-card-title strong {
+      font-family: var(--richmd-font-body); font-weight: 700; font-size: 15px; line-height: 1.25;
+    }
+    /* card body: mockup 13px */
+    .richmd-card-body, .richmd-card-body p { font-size: 13px; line-height: 1.55; }
+    .richmd-card--goal      { background: var(--fw-tint-teal-bg);   border-left: 3px solid var(--fw-tint-teal-edge);   } .richmd-card--goal .richmd-card-title { color: var(--fw-tint-teal-fg); }
+    .richmd-card--no-goal   { background: var(--fw-tint-rose-bg);   border-left: 3px solid var(--fw-tint-rose-edge);   } .richmd-card--no-goal .richmd-card-title { color: var(--fw-tint-rose-fg); }
+    .richmd-card--invariant { background: var(--fw-tint-amber-bg);  border-left: 3px solid var(--fw-tint-amber-edge);  } .richmd-card--invariant .richmd-card-title { color: var(--fw-tint-amber-fg); }
+    .richmd-card--principle { background: var(--fw-tint-violet-bg); border-left: 3px solid var(--fw-tint-violet-edge); } .richmd-card--principle .richmd-card-title { color: var(--fw-tint-violet-fg); }
+
+    /* --- callouts, diagrams, tables, details, stat tiles: mockup radii + tighter type --- */
+    .richmd-diagram, .richmd-callout, .richmd-toc, .richmd-details, .richmd-table-wrap { border-radius: 12px; }
+
+    /* --- WIDGET DETAIL PARITY (measured field-by-field against the mockup) --- */
+    /* stat tile: 12px radius (richmd base 10), label 11px. richmd's stat-tile
+       now emits richmd-stat-delta--up / --down from the dir= attr (richmd
+       60bffba), so tint the delta BY DIRECTION: up=teal, down=danger/rose —
+       the workaround of one flat color is gone. */
+    .richmd-stat { border-radius: 12px; }
+    .richmd-stat-label { font-size: 11px; }
+    .richmd-stat-delta--up   { color: var(--fw-tint-teal-fg); }
+    .richmd-stat-delta--down { color: var(--fw-tint-rose-fg); }
+    /* callout: richmd sets .richmd-callout-body color to ink, overriding the
+       root's tint. Re-tint body text per callout kind so title+body read in
+       the tint (mockup behavior). */
+    .richmd-callout--info .richmd-callout-body    { color: var(--fw-tint-blue-fg); }
+    .richmd-callout--warning .richmd-callout-body { color: var(--fw-tint-amber-fg); }
+    .richmd-callout--danger .richmd-callout-body  { color: var(--fw-tint-rose-fg); }
+    .richmd-callout .richmd-callout-body strong { color: inherit; }
+    /* TITLE ABOVE, BODY BELOW (mockup). Two authoring shapes both land here:
+       (a) `.callout` written as two paragraphs — the FIRST body <p> is the
+           title (bold, block); following <p> is the body.
+       (b) `:::info` emits a .richmd-callout-title element — block, above. */
+    .richmd-callout-body > p:first-child > strong:only-child,
+    .richmd-callout-body > p:first-child:has(> strong:only-child) {
+      display: block; font-weight: 700; margin: 0 0 var(--richmd-space-1);
+    }
+    .richmd-callout-title {
+      display: block; font-weight: 700; margin: 0 0 var(--richmd-space-1);
+    }
+    .richmd-callout-body > p { margin: 0; }
+    .richmd-callout-body > p + p { margin-top: var(--richmd-space-1); }
+    /* lens pill: mockup is 10px / 700 / UPPERCASE / tight pad (richmd base badge is 12/600/none) */
+    .richmd-badge[class*="--lens-"] {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.04em; padding: 1px 8px;
+    }
+    /* hide the principle id chip (P1/P2/…): it is the FIRST badge in a
+       principle's card-meta (the lens pill follows it). Targeting :first-child
+       keeps lens pills and invariant enforcement chips untouched. */
+    .richmd-card--principle .richmd-card-meta > .richmd-badge:first-child {
+      display: none;
+    }
+    /* table header + body: mockup 11px / 13.5px (richmd base 12 / text-base) */
+    .richmd-doc th { font-size: 11px; }
+    .richmd-doc td { font-size: 13.5px; }
+    /* inline code: mockup is 12px muted weight 400. richmd base uses 0.87em
+       which inflates when an ancestor bumps the em (observed 15-16px); pin an
+       ABSOLUTE 12px so it's stable regardless of parent size. */
+    .richmd-doc code { font-weight: 400; font-size: 12px; color: var(--richmd-color-text-faint); }
+    /* code inside a code block stays full size / ink (it's not inline chrome) */
+    .richmd-doc pre code { font-size: 13px; color: var(--richmd-color-text); }
+    /* SVG figure (:::embedded-svg) — richmd emits
+       <figure><div.richmd-embedded-svg><svg/></div><figcaption/></figure>.
+       Frame the FIGURE (so the caption is inside the card too), center the svg,
+       mute the caption. Matches the mockup .figure. */
+    figure:has(> .richmd-embedded-svg) {
+      text-align: center; margin: var(--richmd-space-4) 0;
+      background: var(--richmd-color-surface);
+      border: 1px solid var(--richmd-color-border);
+      border-radius: 12px; padding: var(--richmd-space-5);
+    }
+    .richmd-embedded-svg svg { max-width: 200px; display: inline-block; }
+    figure:has(> .richmd-embedded-svg) figcaption {
+      font-size: 12px; color: var(--richmd-color-text-faint); margin-top: var(--richmd-space-3);
+    }
+    /* details/disclosure body: richmd leaves the body flush with no inset.
+       Inset it to match the mockup .disc-body (padding around the content). */
+    .richmd-details > summary { padding: var(--richmd-space-3) var(--richmd-space-4); }
+    .richmd-details > *:not(summary) {
+      margin: 0; padding: 0 var(--richmd-space-4) var(--richmd-space-4);
+      font-size: 13.5px; color: var(--richmd-color-text-muted);
+    }
+    /* --- CALLOUT ICON: richmd's theme styles .richmd-callout-icon but callout.lua
+       never emits one (styled-but-empty slot). Inject a per-tint SVG icon as a
+       ::before so it matches the mockup: info=circle-i, warning=triangle-!,
+       danger=circle-x. Colored via the callout's own currentColor. --- */
+    .richmd-callout { align-items: flex-start; }
+    .richmd-callout::before {
+      content: ""; flex: none; width: 18px; height: 18px; margin-top: 2px;
+      background: currentColor; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+      -webkit-mask-position: center; mask-position: center;
+      -webkit-mask-size: contain; mask-size: contain;
+    }
+    .richmd-callout--info::before {
+      -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="black" stroke-width="1.6"/><rect x="9" y="8.5" width="2" height="6" rx="1"/><circle cx="10" cy="5.5" r="1.2"/></svg>');
+      mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="black" stroke-width="1.6"/><rect x="9" y="8.5" width="2" height="6" rx="1"/><circle cx="10" cy="5.5" r="1.2"/></svg>');
+    }
+    .richmd-callout--warning::before {
+      -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M10 2 L19 18 H1 Z" fill="none" stroke="black" stroke-width="1.6" stroke-linejoin="round"/><rect x="9" y="8" width="2" height="5" rx="1"/><circle cx="10" cy="15" r="1.1"/></svg>');
+      mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M10 2 L19 18 H1 Z" fill="none" stroke="black" stroke-width="1.6" stroke-linejoin="round"/><rect x="9" y="8" width="2" height="5" rx="1"/><circle cx="10" cy="15" r="1.1"/></svg>');
+    }
+    .richmd-callout--danger::before {
+      -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="black" stroke-width="1.6"/><path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" stroke="black" stroke-width="1.6"/></svg>');
+      mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="none" stroke="black" stroke-width="1.6"/><path d="M6.5 6.5 L13.5 13.5 M13.5 6.5 L6.5 13.5" stroke="black" stroke-width="1.6"/></svg>');
+    }
+    /* stat value: mockup 34px (richmd base is 39px / --richmd-text-3xl) */
+    .richmd-stat-value { font-family: var(--richmd-font-heading); font-weight: 500; font-size: 34px; font-variation-settings: "opsz" 40; }
+    .richmd-diagram-title { font-size: 11px; letter-spacing: 0.08em; }
+    /* section lede/intro prose under each h2: mockup is 14px muted, not 16px ink */
+    .richmd-container h2 + p { font-size: 14px; color: var(--richmd-color-text-muted); margin-top: var(--richmd-space-2); }
+    /* the doc-level intro paragraph (after the H1 hero): keep as lede size, muted */
+    .richmd-container > p { color: var(--richmd-color-text-muted); }
+
+    /* --- PENDING-LEDGER: the TYPED-STATEMENT vertical pattern (title → break →
+       meta [pill + since on one line] → break → description). Dashed tinted
+       card. Mirrors goal/invariant/principle rhythm. --- */
+    .richmd-pending {
+      border: 1px dashed var(--richmd-color-border-strong); border-radius: 12px;
+      padding: var(--richmd-space-4) var(--richmd-space-5);
+      background: var(--richmd-color-bg-alt);
+      margin: var(--richmd-space-3) 0;
+    }
+    .richmd-pending-title {
+      font-family: var(--richmd-font-body); font-weight: 700; font-size: 15px;
+      line-height: 1.25; margin: 0 0 var(--richmd-space-2);
+    }
+    /* meta row: kind pill + since date on ONE line */
+    .richmd-pending-meta {
+      display: flex; align-items: center; gap: var(--richmd-space-3);
+      margin: 0 0 var(--richmd-space-2);
+    }
+    .richmd-pending-meta:last-child { margin-bottom: 0; }
+    .richmd-pending-meta > .richmd-badge {
+      border-radius: 999px; text-transform: none; letter-spacing: normal;
+      font-family: var(--richmd-font-mono); font-size: 11px; font-weight: 600; padding: 2px 9px;
+    }
+    .richmd-pending-body { font-size: 13.5px; color: var(--richmd-color-text-muted); }
+    .richmd-pending-body > p { margin: 0; }
+    /* the per-kind pending pill AND the per-kind entry edge are emitted from
+       the schema's pending kinds — see the _PENDING_TINT loop in the overlay
+       builder, so a new kind reprojects instead of needing a hand-edit here. */
+    .richmd-pending-since {
+      color: var(--richmd-color-text-faint);
+      font-family: var(--richmd-font-mono); font-size: 11px; white-space: nowrap;
+    }
+
+    @media (max-width: 820px) {
+      .richmd-hero-grid { grid-template-columns: 1fr; }
+      .richmd-hero-grid h1 { font-size: 40px; }
+    }
+  
+"""
+
+
+def build_overlay_css():
+    L = []
+    L.append("/* Framework semantic-look overlay — projected by "
+             "scripts/richmd-project (ADR-0024). */")
+    L.append("/* richmd owns the base look; this overlay owns the per-kind "
+             "accent, per-lens */")
+    L.append("/* pill palette, and card tints — the design's own vocabulary. "
+             "It overrides */")
+    L.append("/* cleanly: any base property it takes over is reset then "
+             "restyled. */")
+    # --- palette variables (light) ---
+    L.append("    .richmd-doc {")
+    L.extend(_lens_vars(False))
+    L.extend(_enf_vars(False))
+    L.extend(_tint_vars(False))
+    L.extend(_clause_ink_vars(False))
+    L.extend(_level_vars(False))
+    L.extend(_behavior_ground_var(False))
+    L.append("    }")
+    # --- palette variables (dark) ---
+    # richmd (upstream) always mirrors the RESOLVED theme onto
+    # .richmd-doc[data-richmd-theme] (OS-driven or explicit), so the --fw-* dark
+    # values are keyed on the ATTRIBUTE — not just @media — otherwise forcing or
+    # toggling the theme desyncs the --fw-* tints from the --richmd-color-*
+    # tokens (a card stays light-tinted on a dark page). Emit BOTH: the media
+    # query (guarded so a forced-light doc opts out) AND the explicit attribute
+    # selector.
+    dark_var_lines = (
+        ["  " + l for l in _lens_vars(True)]
+        + ["  " + l for l in _enf_vars(True)]
+        + ["  " + l for l in _tint_vars(True)]
+        + ["  " + l for l in _clause_ink_vars(True)]
+        + ["  " + l for l in _level_vars(True)]
+        + ["  " + l for l in _behavior_ground_var(True)]
+    )
+    L.append("    @media (prefers-color-scheme: dark) {")
+    L.append("      .richmd-doc:not([data-richmd-theme=\"light\"]) {")
+    L.extend(dark_var_lines)
+    L.append("      }")
+    L.append("    }")
+    L.append("    .richmd-doc[data-richmd-theme=\"dark\"] {")
+    for l in dark_var_lines:
+        L.append(l[2:])  # one less indent level (not nested in @media)
+    L.append("    }")
+    # --- per-lens pill palette ---
+    for name in lens_values:
+        L.append("    .richmd-badge--lens-%s {" % name)
+        L.append("      background: var(--fw-lens-%s-bg);" % name)
+        L.append("      color: var(--fw-lens-%s-fg);" % name)
+        L.append("    }")
+    # --- enforcement chip: per-value tone (the truthfulness scale) ---
+    # richmd's base .richmd-badge--neutral is a flat grey chip. The invariant
+    # renderer adds a per-value richmd-badge--enf-<value> modifier; the overlay
+    # gives each enforcement value (mechanism/partial/convention) its own tone,
+    # so the chip reads the enforcement scale rather than uniform grey. Keyed on
+    # the enf modifier so it wins over the base --neutral cleanly.
+    for name in enforcement_values:
+        L.append("    .richmd-badge--enf-%s {" % name)
+        L.append("      background: var(--fw-enf-%s-bg);" % name)
+        L.append("      color: var(--fw-enf-%s-fg);" % name)
+        L.append("    }")
+    # --- per-kind statement accent — RESET richmd's base, then restyle. ---
+    # richmd base: .richmd-statement { display:grid; grid-template-columns:
+    # 160px 1fr; padding; border-top }. The overlay replaces the top border with
+    # a per-kind left edge and a surface, so it RESETS border-top and padding
+    # first (clean override — no stacked border), keeping the base grid.
+    L.append("    .richmd-statement {")
+    L.append("      border-top: none;")
+    L.append("      border-left: 3px solid var(--fw-tint-slate-edge);")
+    L.append("      padding: var(--richmd-space-3) var(--richmd-space-4);")
+    L.append("      border-radius: var(--richmd-radius-md);")
+    L.append("      margin: var(--richmd-space-2) 0;")
+    L.append("    }")
+    L.append("    .richmd-statement:first-of-type {")
+    L.append("      border-top: none;")
+    L.append("    }")
+    for name in foundation_kinds + [k for k in _ACCENTED_KINDS if k in declared_blocks]:
+        L.append("    .richmd-statement--%s {" % name)
+        L.append("      border-left-color: %s;" % ("var(--fw-tint-%s-edge)" % _KIND_TINT[name]
+                                                   if name in _KIND_TINT else "var(--fw-tint-slate-edge)"))
+        L.append("    }")
+    # --- behavior clause layout — the keyword gutter (ADR-0024 overlay). ---
+    # A behavior block's body is its clause blocks, which richmd's base leaves
+    # as bare stacked Divs: no gutter, no separation, so the rule reads as one
+    # run-on mass. Each clause becomes a two-column row — a fixed right-aligned
+    # keyword gutter, then the clause text in its own column — with the rows
+    # separated vertically and the text column padded away from the gutter, so
+    # the text reads as its own block. The keywords align into a column, making
+    # the rule's shape (how many outcomes) visible before any word is read.
+    # A behavior block's body is its clauses, which must stack one per ROW.
+    # richmd's base .richmd-statement is `display: grid` with a 160px label
+    # column, so without this reset the clauses flow into that two-column grid
+    # side by side and each clause's text is squeezed into ~160px, wrapping one
+    # word per line. The behavior statement therefore drops to a single column;
+    # its own head row keeps the title-plus-badges line.
+    L.append("    .richmd-statement--behavior {")
+    L.append("      display: block;")
+    # the whole rule carries its kind's ground, not only a left edge, so a
+    # behavior rule is identifiable as one filled card in a page of prose.
+    L.append("      background: var(--fw-behavior-bg);")
+    L.append("    }")
+    # the head row: badges lead, the title follows, with real space between
+    # them so the chip reads as a separate label rather than crowding the
+    # title. flex keeps them on one line and vertically centred; wrap lets a
+    # long title fall to the next line without pushing the chip off the row.
+    L.append("    .richmd-statement--behavior > .richmd-statement-label {")
+    L.append("      display: flex;")
+    L.append("      flex-wrap: wrap;")
+    L.append("      align-items: center;")
+    L.append("      gap: 0 var(--richmd-space-3);")
+    L.append("      margin-bottom: var(--richmd-space-3);")
+    L.append("    }")
+    L.append("    .richmd-clause {")
+    L.append("      display: grid;")
+    L.append("      grid-template-columns: 4.5rem minmax(0, 1fr);")
+    L.append("      gap: 0 var(--richmd-space-3);")
+    L.append("      margin: var(--richmd-space-2) 0;")
+    L.append("      align-items: baseline;")
+    L.append("    }")
+    L.append("    .richmd-clause + .richmd-clause {")
+    L.append("      margin-top: var(--richmd-space-2);")
+    L.append("    }")
+    L.append("    .richmd-clause > .richmd-clause-keyword {")
+    L.append("      text-align: right;")
+    L.append("      font-size: 10px;")
+    L.append("      font-weight: 700;")
+    L.append("      text-transform: uppercase;")
+    L.append("      letter-spacing: 0.06em;")
+    L.append("      color: var(--fw-tint-slate-fg);")
+    L.append("    }")
+    # the clause text column: separated from the gutter by a quiet rule, so the
+    # prose reads as a distinct block rather than continuing the keyword row.
+    L.append("    .richmd-clause > :not(.richmd-clause-keyword) {")
+    L.append("      margin: 0;")
+    L.append("      padding-left: var(--richmd-space-3);")
+    L.append("      border-left: 1px solid var(--fw-tint-slate-edge);")
+    L.append("    }")
+    # per-keyword tone — the clause kinds are schema-declared, so a new clause
+    # kind reprojects rather than needing a hand-edit here.
+    for name in [k for k in _CLAUSE_KIND_ORDER if k in declared_blocks]:
+        tint = _CLAUSE_TINT.get(name)
+        if not tint:
+            continue
+        L.append("    .richmd-clause--%s > .richmd-clause-keyword {" % name)
+        L.append("      color: var(--fw-clause-%s-ink, var(--fw-tint-%s-fg));"
+                 % (name, tint))
+        L.append("    }")
+        L.append("    .richmd-clause--%s > :not(.richmd-clause-keyword) {" % name)
+        L.append("      border-left-color: var(--fw-tint-%s-edge);" % tint)
+        L.append("    }")
+    # --- per-pending-kind tone: the kind pill AND the entry's dashed edge. ---
+    # The pill was already toned; the entry WRAPPER (richmd-pending--<kind>)
+    # carried no rule at all, so a pending entry's kind was readable only from
+    # its pill. Both are emitted here from the schema's pending kinds.
+    for name in pending_kinds:
+        tint = _PENDING_TINT.get(name)
+        if not tint:
+            continue
+        L.append("    .richmd-badge--pending-%s {" % name)
+        L.append("      background: var(--fw-tint-%s-bg);" % tint)
+        L.append("      color: var(--fw-tint-%s-fg);" % tint)
+        L.append("    }")
+        L.append("    .richmd-pending--%s {" % name)
+        L.append("      border-color: var(--fw-tint-%s-edge);" % tint)
+        L.append("    }")
+    # --- per-level badge tone. ---
+    # The `level=` chip carries richmd-badge--neutral (a flat grey), so the two
+    # levels rendered identically. Each level takes its own tone, the same
+    # treatment an enforcement value already gets.
+    # A level reads its own --fw-level-* pair when it has one (interface, whose
+    # hue no shared tint supplies), else the shared tint it maps to (boundary).
+    for name in behavior_levels:
+        if name in _LEVEL_PALETTE:
+            bg = "var(--fw-level-%s-bg)" % name
+            fg = "var(--fw-level-%s-fg)" % name
+        else:
+            tint = _LEVEL_TINT.get(name)
+            if not tint:
+                continue
+            bg = "var(--fw-tint-%s-bg)" % tint
+            fg = "var(--fw-tint-%s-fg)" % tint
+        L.append("    .richmd-badge--level-%s {" % name)
+        L.append("      background: %s;" % bg)
+        L.append("      color: %s;" % fg)
+        L.append("    }")
+    # --- card tint — RESET richmd's base card border/background, then restyle. ---
+    # richmd base: .richmd-card { background; border; border-radius; padding;
+    # box-shadow }. A tinted grid tints each of its cards with a quiet left edge
+    # and a matching surface; the overlay RESETS the base border to a left edge
+    # so the two borders never stack.
+    for name in tint_values:
+        L.append("    .richmd-card-grid--%s > .richmd-card {" % name)
+        L.append("      border: 1px solid var(--fw-tint-%s-edge);" % name)
+        L.append("      border-left: 3px solid var(--fw-tint-%s-edge);" % name)
+        L.append("      background: var(--fw-tint-%s-bg);" % name)
+        L.append("    }")
+        L.append("    .richmd-card-grid--%s > .richmd-card .richmd-card-title {" % name)
+        L.append("      color: var(--fw-tint-%s-fg);" % name)
+        L.append("    }")
+    # --- grouped foundation card sections (ADR-0025 amended). ---
+    # The group hook (richmd#27) renders the foundation as titled per-kind card
+    # SECTIONS: a `.richmd-group.richmd-group--<kind>` <section> whose <h3> sits
+    # over a `.richmd-card-grid` of NATIVE `.richmd-card.richmd-card--<kind>`
+    # Divs (the hook RESHAPES each statement into the native card slots, so a
+    # foundation card is structurally the same as any :::cards card — no nested
+    # statement, one frame). This block frames the section and tones the heading
+    # per kind (REUSING the per-kind edge palette above). The per-kind card
+    # accent targets the native `.richmd-card--<kind>` directly. No !important
+    # (ADR-0024 discipline); the native card is already the single frame.
+    L.append("    .richmd-group {")
+    L.append("      margin: var(--richmd-space-5) 0;")
+    L.append("      padding-left: var(--richmd-space-4);")
+    L.append("      border-left: 3px solid var(--fw-tint-slate-edge);")
+    L.append("    }")
+    L.append("    .richmd-group > h3 {")
+    L.append("      margin: 0 0 var(--richmd-space-3);")
+    L.append("      font-size: var(--richmd-text-sm);")
+    L.append("      text-transform: uppercase;")
+    L.append("      letter-spacing: 0.08em;")
+    L.append("      color: var(--fw-tint-slate-fg);")
+    L.append("    }")
+    # per-kind section accent — heading tone + left edge = the kind's paired
+    # tint, reusing _KIND_TINT (the same palette the per-kind statement edge
+    # uses). foundation_kinds is schema-derived, so a kind change reprojects.
+    for name in foundation_kinds:
+        edge = ("var(--fw-tint-%s-edge)" % _KIND_TINT[name]
+                if name in _KIND_TINT else "var(--fw-tint-slate-edge)")
+        fg = ("var(--fw-tint-%s-fg)" % _KIND_TINT[name]
+              if name in _KIND_TINT else "var(--fw-tint-slate-fg)")
+        L.append("    .richmd-group--%s {" % name)
+        L.append("      border-left-color: %s;" % edge)
+        L.append("    }")
+        L.append("    .richmd-group--%s > h3 {" % name)
+        L.append("      color: %s;" % fg)
+        L.append("    }")
+    # the card grid inside a group: the run's statements reshaped into native
+    # cards. The native .richmd-card is already the single frame (richmd's base
+    # styles it), so there is NO inner statement to reset — the per-kind accent
+    # is a left edge on the native .richmd-card--<kind>, echoing the section
+    # accent. foundation_kinds is schema-derived, so a kind change reprojects.
+    L.append("    .richmd-group .richmd-card-grid {")
+    L.append("      margin: 0;")
+    L.append("    }")
+    for name in foundation_kinds:
+        edge = ("var(--fw-tint-%s-edge)" % _KIND_TINT[name]
+                if name in _KIND_TINT else "var(--fw-tint-slate-edge)")
+        L.append("    .richmd-card--%s {" % name)
+        L.append("      border-left: 3px solid %s;" % edge)
+        L.append("    }")
+    # --- the "How to read this" legend (ADR-0025). ---
+    # A collapsed <details class="richmd-group-legend"> naming the four kinds and
+    # the enforcement + lens glyph key, emitted once ahead of the first section.
+    # The kind-name pills reuse the per-kind edge palette (schema-derived).
+    L.append("    .richmd-group-legend {")
+    L.append("      margin: var(--richmd-space-4) 0;")
+    L.append("      font-size: var(--richmd-text-sm);")
+    L.append("    }")
+    L.append("    .richmd-group-legend > summary {")
+    L.append("      cursor: pointer;")
+    L.append("      font-weight: 600;")
+    L.append("      color: var(--fw-tint-slate-fg);")
+    L.append("    }")
+    L.append("    .richmd-group-legend-body {")
+    L.append("      display: grid;")
+    L.append("      grid-template-columns: max-content 1fr;")
+    L.append("      gap: var(--richmd-space-2) var(--richmd-space-4);")
+    L.append("      margin-top: var(--richmd-space-3);")
+    L.append("    }")
+    L.append("    .richmd-group-legend-term {")
+    L.append("      font-weight: 600;")
+    L.append("      color: var(--fw-tint-slate-fg);")
+    L.append("    }")
+    L.append("    .richmd-group-legend-row {")
+    L.append("      display: flex;")
+    L.append("      flex-wrap: wrap;")
+    L.append("      align-items: center;")
+    L.append("      gap: var(--richmd-space-2);")
+    L.append("    }")
+    L.append("    .richmd-group-legend-note {")
+    L.append("      color: var(--fw-tint-slate-fg);")
+    L.append("    }")
+    for name in foundation_kinds:
+        bg = ("var(--fw-tint-%s-bg)" % _KIND_TINT[name]
+              if name in _KIND_TINT else "var(--fw-tint-slate-bg)")
+        fg = ("var(--fw-tint-%s-fg)" % _KIND_TINT[name]
+              if name in _KIND_TINT else "var(--fw-tint-slate-fg)")
+        L.append("    .richmd-group-legend--%s {" % name)
+        L.append("      background: %s;" % bg)
+        L.append("      color: %s;" % fg)
+        L.append("    }")
+    L.append(_PARITY_LOOK_CSS)
+    return "\n".join(L) + "\n"
+
+
+overlay_css = build_overlay_css()
+
+
+def _style_block_lua(css):
+    # emit the overlay as a Lua local `style_block()` returning a
+    # pandoc.RawBlock("html", "<style>…</style>"). The CSS is embedded as a Lua
+    # long-bracket string ([==[ ... ]==]) so its braces, quotes and newlines
+    # need no escaping and the bytes stay stable.
+    return (
+        "-- style_block() -> the framework semantic-look overlay as a\n"
+        "-- pandoc.RawBlock (ADR-0024). Delivered through the shell hook because\n"
+        "-- richmd exposes no consumer-stylesheet input; the masthead region\n"
+        "-- prepends it ahead of the page chrome. The CSS is SCHEMA-DERIVED\n"
+        "-- (per-kind, per-lens, per-tint) — a schema mutation reprojects it.\n"
+        "local function style_block()\n"
+        "  return pandoc.RawBlock(\n"
+        "    \"html\",\n"
+        "    \"<style>\\n\" .. [==[\n"
+        + css
+        + "]==] .. \"</style>\"\n"
+        "  )\n"
+        "end\n"
+    )
+
+
+# _FONTS_BLOCK_LUA — a Lua local fonts_block() returning a <link> that loads
+# Fraunces (the display face) with the opsz optical-size axis. richmd's base
+# @import loads Space Grotesk / Inter / JetBrains Mono but NOT Fraunces, so
+# --richmd-font-heading:"Fraunces" would fall back to the serif stack without
+# this. The masthead prepends it so it loads before first paint.
+_FONTS_BLOCK_LUA = (
+    "-- fonts_block() -> a <link> loading Fraunces (variable, opsz axis). richmd's\n"
+    "-- base @import does not load Fraunces, so the display face needs this.\n"
+    "local function fonts_block()\n"
+    "  return pandoc.RawBlock(\n"
+    "    \"html\",\n"
+    "    '<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">'\n"
+    "      .. '<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>'\n"
+    "      .. '<link rel=\"stylesheet\" href=\"https://fonts.googleapis.com/css2?'\n"
+    "      .. 'family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&display=swap\">'\n"
+    "  )\n"
+    "end\n"
+)
+
+# _FIXPOINT_BLOCK_LUA — the signature hero mark (the design layer folding onto
+# itself — "the map describes the mapmaker"). Structure only; color from the
+# accent token. Emitted in the masthead's right hero column.
+_FIXPOINT_BLOCK_LUA = (
+    "-- fixpoint_block() -> the signature hero mark as inline SVG (accent-themed).\n"
+    "local function fixpoint_block()\n"
+    "  return pandoc.RawBlock(\"html\", [==[\n"
+    "<div class=\"richmd-fixpoint\" aria-hidden=\"true\">\n"
+    "  <svg viewBox=\"0 0 200 200\" style=\"width:100%;height:auto;\">\n"
+    "    <circle cx=\"100\" cy=\"100\" r=\"86\" fill=\"none\" stroke=\"var(--richmd-color-accent-solid)\" stroke-width=\"1.5\" opacity=\".5\"/>\n"
+    "    <rect x=\"58\" y=\"46\" width=\"84\" height=\"26\" rx=\"5\" fill=\"var(--richmd-color-accent-tint)\" stroke=\"var(--richmd-color-accent-solid)\" stroke-width=\"1.2\"/>\n"
+    "    <rect x=\"58\" y=\"87\" width=\"84\" height=\"26\" rx=\"5\" fill=\"var(--richmd-color-accent-tint)\" stroke=\"var(--richmd-color-accent-solid)\" stroke-width=\"1.2\"/>\n"
+    "    <rect x=\"58\" y=\"128\" width=\"84\" height=\"26\" rx=\"5\" fill=\"var(--richmd-color-accent-tint)\" stroke=\"var(--richmd-color-accent-solid)\" stroke-width=\"1.2\"/>\n"
+    "    <path d=\"M142 59 C182 70 182 141 142 141\" fill=\"none\" stroke=\"var(--richmd-color-accent-solid)\" stroke-width=\"1.5\"/>\n"
+    "    <path d=\"M58 100 C24 100 24 59 56 59\" fill=\"none\" stroke=\"var(--richmd-color-accent-solid)\" stroke-width=\"1.5\"/>\n"
+    "  </svg>\n"
+    "  <div style=\"font-family:var(--richmd-font-mono);font-size:11px;color:var(--richmd-color-text-faint);margin-top:8px;letter-spacing:.02em;\">layer &#8635; layer</div>\n"
+    "</div>]==])\n"
+    "end\n"
+)
+
+shell_lua = (
+    "-- Generated by scripts/richmd-project — do not hand-edit.\n"
+    "-- Document-shell hook (richmd#25 / ADR-0023): the 4th consumer contract.\n"
+    "-- Renders the masthead (eyebrow, lede) and colophon (footer) from the\n"
+    "-- page-identity frontmatter design_doc.frontmatter_keys declares; each\n"
+    "-- region preserves the value's inline markup (links, bold) by reading the\n"
+    "-- raw doc.meta metavalue, never stringifying. The masthead region also\n"
+    "-- prepends the framework's semantic-look overlay as a projected <style>\n"
+    "-- block (ADR-0024) — richmd owns the base look, the framework the semantic\n"
+    "-- look. Structure is richmd-* region elements; richmd owns the base look.\n"
+    + _SHELL_HELPER
+    + "\n"
+    + _style_block_lua(overlay_css)
+    + "\n"
+    + _FONTS_BLOCK_LUA
+    + "\n"
+    + _FIXPOINT_BLOCK_LUA
+    + "\nreturn {\n"
+    + _shell_region("masthead", masthead_keys, with_style=True)
+    + _shell_region("colophon", colophon_keys)
+    + "}\n"
+)
+
+shell_written = []
+try:
+    with open(os.path.join(shell_dir, "shell.lua"), "w", encoding="utf-8") as f:
+        f.write(shell_lua)
+    shell_written.append("shell")
+except OSError as e:
+    sys.stderr.write("richmd-project: error: cannot write shell.lua: %s\n" % e)
+    sys.exit(2)
+
+
+# --------------------------------------------------------------- group hook
+# groups/foundation.lua — the document's 5th projected contract (richmd#27 /
+# ADR-0015 / ADR-0025): a render-phase GROUP hook. richmd finds each maximal
+# run of consecutive top-level blocks whose ORIGINAL kind the hook claims and
+# replaces the run with the hook's returned Blocks. The four foundation
+# statement kinds (goal, no-goal, invariant, principle) form four consecutive
+# same-kind runs in §00, so the hook renders each run as ONE titled per-kind
+# CARD SECTION (ADR-0025): a `<section class="richmd-group richmd-group--<kind>">`
+# whose `<h3>` is the kind's plural display label over a `richmd-card-grid`
+# whose children are NATIVE `.richmd-card` Divs. The hook RESHAPES each
+# already-rendered `.richmd-statement` Div into the native card slots (ADR-0025
+# amended) — its label inlines into `.richmd-card-title`, its badge Spans into
+# `.richmd-card-meta` (omitted when there are none), its body into
+# `.richmd-card-body` — so the foundation cards reuse the SAME card structure
+# and styling as every other `cards` grid, rather than embedding a standalone
+# statement's own two-column layout. Each card also carries `.richmd-card--<kind>`
+# so the overlay can add a per-kind accent. The per-block statement renderers
+# are UNTOUCHED — the reshape lives ONLY here (ADR-0025). The first run rendered
+# also prepends a collapsed "How to read this" legend (a module-level latch keeps
+# it to exactly one across the four runs).
+#
+# The claimed KIND SET is schema-derived — it IS foundation_kinds, the same
+# statement-block set read from the schema above (design_doc.block_fields.
+# statement_blocks / declared blocks). The legend's enumerated vocabulary — the
+# four kinds, the enforcement values (enums.enforcement.values), the lens
+# members (enums.lens.values) — is likewise schema-derived, the same discipline
+# as every other projected artifact. The small plural display-label map is the
+# framework's presentation choice, but it is BUILT from the schema kind set (a
+# kind's label is derived from the kind string), so a schema kind change
+# reprojects it. Output is deterministic and luac-clean; the file carries the
+# do-not-hand-edit header.
+
+def _plural_label(kind):
+    # the display heading for a foundation kind's section — the kind string with
+    # its FIRST letter capitalized (hyphen parts stay lowercase) plus a trailing
+    # "s": goal->Goals, no-goal->No-goals, invariant->Invariants,
+    # principle->Principles. Derived from the kind, so a schema kind rename
+    # reprojects the label rather than needing a hand-kept literal.
+    return kind[:1].upper() + kind[1:] + "s"
+
+
+# the plural-label map as a Lua table literal, keyed by the schema kind strings.
+_group_labels_lua = "{ " + ", ".join(
+    '["%s"] = "%s"' % (k, _plural_label(k)) for k in foundation_kinds
+) + " }"
+
+
+def _lua_span(text, classes):
+    # a small Lua expression building a pandoc.Span of Str(text) with the given
+    # class list (a Lua list literal of quoted class strings).
+    return 'pandoc.Span({ pandoc.Str("%s") }, pandoc.Attr("", %s))' % (
+        text, "{ " + ", ".join('"%s"' % c for c in classes) + " }")
+
+
+# --- legend rows, each SCHEMA-DERIVED where it enumerates vocabulary. ---
+# Foundation row: one kind-label pill per foundation kind (its section heading
+# label), classed richmd-group-legend--<kind> so the overlay tones it like the
+# section it names.
+_legend_kind_spans = ", ".join(
+    _lua_span(_plural_label(k),
+              ["richmd-badge", "richmd-group-legend--" + k])
+    for k in foundation_kinds)
+# Lenses row: one lens pill per lens member, each carrying its per-lens class
+# (the same richmd-badge--lens-<member> the statement renderer emits).
+_legend_lens_spans = ", ".join(
+    _lua_span(m, ["richmd-badge", "richmd-badge--lens-" + m])
+    for m in lens_values)
+# Enforcement row: one chip per enforcement value, each carrying its per-value
+# enforcement tone class (the same richmd-badge--enf-<value> the invariant
+# renderer emits), strong -> weak in the schema's declared order.
+_legend_enf_spans = ", ".join(
+    _lua_span(e, ["richmd-badge", "richmd-badge--neutral", "richmd-badge--enf-" + e])
+    for e in enforcement_values)
+
+group_lua = (
+    "-- Generated by scripts/richmd-project — do not hand-edit.\n"
+    "-- Group render hook (richmd#27 / ADR-0015 / ADR-0025): the 5th projected\n"
+    "-- contract. Claims the four foundation statement kinds and renders each\n"
+    "-- maximal consecutive run as ONE titled per-kind CARD SECTION — a\n"
+    "-- <section class=\"richmd-group richmd-group--<kind>\"> whose <h3> is the\n"
+    "-- kind's plural label over a richmd-card-grid of NATIVE .richmd-card Divs.\n"
+    "-- The hook RESHAPES each already-rendered .richmd-statement into the native\n"
+    "-- card slots (ADR-0025 amended): label -> richmd-card-title, badge Spans ->\n"
+    "-- richmd-card-meta (omitted when none), body -> richmd-card-body, so a\n"
+    "-- foundation card reuses the SAME structure as every :::cards card. Each\n"
+    "-- card also carries richmd-card--<kind> for the per-kind accent. The\n"
+    "-- per-block statement renderers are untouched — the reshape lives only here\n"
+    "-- (ADR-0025). The FIRST run rendered also prepends a collapsed \"How to read\n"
+    "-- this\" legend; a module-level latch keeps it to exactly one. Kind set +\n"
+    "-- legend vocabulary are schema-derived (foundation kinds, enforcement, lens).\n"
+    "\n"
+    "-- LABELS: the plural section heading per foundation kind, built from the\n"
+    "-- schema kind strings (a schema kind change reprojects this map).\n"
+    "local LABELS = " + _group_labels_lua + "\n"
+    "\n"
+    "-- legend_emitted — module-level latch. The hook's render runs once per\n"
+    "-- consecutive run (four times over the foundation); the legend must appear\n"
+    "-- exactly once, so the FIRST run to render emits it and flips this latch.\n"
+    "local legend_emitted = false\n"
+    "\n"
+    "-- legend() -> the collapsed \"How to read this\" <details> block, naming the\n"
+    "-- four foundation kinds and the enforcement + lens glyph key. Every\n"
+    "-- enumerated row is schema-derived (see the projector). Built as pandoc\n"
+    "-- nodes (a definition list inside a <details>/<summary>) so it renders\n"
+    "-- through richmd's own writer, no raw HTML string.\n"
+    "local function legend()\n"
+    "  local kind_dd = pandoc.Div(\n"
+    "    { pandoc.Plain({ " + _legend_kind_spans + " }) },\n"
+    "    pandoc.Attr(\"\", { \"richmd-group-legend-row\" })\n"
+    "  )\n"
+    "  local lens_dd = pandoc.Div(\n"
+    "    { pandoc.Plain({ " + _legend_lens_spans + ", "
+    + _lua_span("judgment axes", ["richmd-group-legend-note"]) + " }) },\n"
+    "    pandoc.Attr(\"\", { \"richmd-group-legend-row\" })\n"
+    "  )\n"
+    "  local enf_dd = pandoc.Div(\n"
+    "    { pandoc.Plain({ " + _legend_enf_spans + ", "
+    + _lua_span("strong → weak", ["richmd-group-legend-note"]) + " }) },\n"
+    "    pandoc.Attr(\"\", { \"richmd-group-legend-row\" })\n"
+    "  )\n"
+    "  local rows = {\n"
+    "    pandoc.Plain({ " + _lua_span("Foundation", ["richmd-group-legend-term"]) + " }),\n"
+    "    kind_dd,\n"
+    "    pandoc.Plain({ " + _lua_span("Lenses", ["richmd-group-legend-term"]) + " }),\n"
+    "    lens_dd,\n"
+    "    pandoc.Plain({ " + _lua_span("Enforcement", ["richmd-group-legend-term"]) + " }),\n"
+    "    enf_dd,\n"
+    "  }\n"
+    "  local body = pandoc.Div(rows, pandoc.Attr(\"\", { \"richmd-group-legend-body\" }))\n"
+    "  return pandoc.Div(\n"
+    "    {\n"
+    "      pandoc.RawBlock(\"html\", \"<details class=\\\"richmd-group-legend\\\"><summary>How to read this</summary>\"),\n"
+    "      body,\n"
+    "      pandoc.RawBlock(\"html\", \"</details>\"),\n"
+    "    },\n"
+    "    pandoc.Attr(\"\", { \"richmd-group-legend-wrap\" })\n"
+    "  )\n"
+    "end\n"
+    "\n"
+    "-- has_class(el, want) -> true if el's Attr classes include `want`.\n"
+    "local function has_class(el, want)\n"
+    "  if not el.attr then return false end\n"
+    "  for _, c in ipairs(el.attr.classes or {}) do\n"
+    "    if c == want then return true end\n"
+    "  end\n"
+    "  return false\n"
+    "end\n"
+    "\n"
+    "-- reshape(stmt, kind) -> a native .richmd-card Div built from an\n"
+    "-- already-rendered .richmd-statement Div, so a foundation card reuses the\n"
+    "-- SAME slot anatomy every :::cards card has (ADR-0025 amended): the\n"
+    "-- statement's LABEL inlines become richmd-card-title, its badge Spans\n"
+    "-- become richmd-card-meta (omitted when there are none), and its body\n"
+    "-- becomes richmd-card-body as a BARE <p> (the statement's\n"
+    "-- <p class=\"richmd-statement-body\"> marker RawBlocks are stripped, so the\n"
+    "-- card body is structurally identical to a real :::cards card body). The\n"
+    "-- badge Spans are carried INTACT so their\n"
+    "-- richmd-badge--lens-* / richmd-badge--enf-* modifier classes survive for\n"
+    "-- the overlay. The per-block statement renderer is untouched — the reshape\n"
+    "-- is confined to this group hook.\n"
+    "local function reshape(stmt, kind)\n"
+    "  -- locate the statement's child Divs by class; everything that is neither\n"
+    "  -- the label Div is body content (the statement body is a\n"
+    "  -- RawBlock/Plain/RawBlock trio, not a single Div, so collect the run).\n"
+    "  local label_inlines = {}\n"
+    "  local badge_spans = {}\n"
+    "  local body_blocks = {}\n"
+    "  for _, child in ipairs(stmt.content) do\n"
+    "    if child.tag == \"Div\" and has_class(child, \"richmd-statement-label\") then\n"
+    "      -- the label Div holds a single Plain of [Strong (the label), then\n"
+    "      -- zero or more richmd-badge Spans]. Split the label inlines from the\n"
+    "      -- badge Spans: a richmd-badge Span goes to meta, everything else\n"
+    "      -- (the Strong, any Space) stays as the title.\n"
+    "      local head = child.content[1]\n"
+    "      for _, inl in ipairs((head and head.content) or {}) do\n"
+    "        if inl.tag == \"Span\" and has_class(inl, \"richmd-badge\") then\n"
+    "          table.insert(badge_spans, inl)\n"
+    "        else\n"
+    "          table.insert(label_inlines, inl)\n"
+    "        end\n"
+    "      end\n"
+    "    elseif child.tag == \"RawBlock\"\n"
+    "      and (child.text == '<p class=\"richmd-statement-body\">' or child.text == \"</p>\") then\n"
+    "      -- The per-block statement renderer brackets the body Para in raw\n"
+    "      -- <p class=\"richmd-statement-body\"> ... </p> markers (a Para carries\n"
+    "      -- no Attr, so labeled-block.lua hangs the class on raw HTML). A real\n"
+    "      -- :::cards card body is a BARE <p> — cards.lua wraps the authored\n"
+    "      -- Para in .richmd-card-body with no statement class. Drop these two\n"
+    "      -- marker RawBlocks so the card body matches a real cards card exactly;\n"
+    "      -- the Plain between them is promoted to a Para just below.\n"
+    "    elseif child.tag == \"Plain\" then\n"
+    "      -- the statement body's flattened Plain (between the dropped markers).\n"
+    "      -- Promote to a Para so it renders as a clean <p>...</p> — the same\n"
+    "      -- shape cards.lua's authored-markdown card body produces.\n"
+    "      table.insert(body_blocks, pandoc.Para(child.content))\n"
+    "    else\n"
+    "      table.insert(body_blocks, child)\n"
+    "    end\n"
+    "  end\n"
+    "  local card_children = {}\n"
+    "  table.insert(\n"
+    "    card_children,\n"
+    "    pandoc.Div(\n"
+    "      { pandoc.Plain(label_inlines) },\n"
+    "      pandoc.Attr(\"\", { \"richmd-card-title\" })\n"
+    "    )\n"
+    "  )\n"
+    "  -- meta only when the statement carried badges (goals/no-goals have none).\n"
+    "  if #badge_spans > 0 then\n"
+    "    table.insert(\n"
+    "      card_children,\n"
+    "      pandoc.Div(\n"
+    "        { pandoc.Plain(badge_spans) },\n"
+    "        pandoc.Attr(\"\", { \"richmd-card-meta\" })\n"
+    "      )\n"
+    "    )\n"
+    "  end\n"
+    "  -- body: the statement's body blocks wrapped in richmd-card-body, exactly\n"
+    "  -- as cards.lua wraps a card body (a no-goal may have no body — then the\n"
+    "  -- run is empty and the wrapper is simply empty, never a crash).\n"
+    "  table.insert(\n"
+    "    card_children,\n"
+    "    pandoc.Div(body_blocks, pandoc.Attr(\"\", { \"richmd-card-body\" }))\n"
+    "  )\n"
+    "  return pandoc.Div(\n"
+    "    card_children,\n"
+    "    pandoc.Attr(\"\", { \"richmd-card\", \"richmd-card--\" .. kind })\n"
+    "  )\n"
+    "end\n"
+    "\n"
+    "return {\n"
+    "  kinds = " + lua_str_list(foundation_kinds) + ",\n"
+    "  render = function(kind, rendered_blocks)\n"
+    "    -- RESHAPE each already-rendered .richmd-statement Div into a native\n"
+    "    -- .richmd-card (title/meta/body slots), laid in a richmd-card-grid under\n"
+    "    -- the section's <h3> — the same card structure every :::cards grid uses.\n"
+    "    local cards = {}\n"
+    "    for _, node in ipairs(rendered_blocks) do\n"
+    "      table.insert(cards, reshape(node, kind))\n"
+    "    end\n"
+    "    local grid = pandoc.Div(cards, pandoc.Attr(\"\", { \"richmd-card-grid\" }))\n"
+    "    local label = LABELS[kind] or kind\n"
+    "    local heading = pandoc.Header(3, pandoc.Str(label))\n"
+    "    local section = pandoc.Div(\n"
+    "      { heading, grid },\n"
+    "      pandoc.Attr(\"\", { \"richmd-group\", \"richmd-group--\" .. kind })\n"
+    "    )\n"
+    "    -- the FIRST run rendered prepends the legend, once (latch).\n"
+    "    if not legend_emitted then\n"
+    "      legend_emitted = true\n"
+    "      return pandoc.Blocks({ legend(), section })\n"
+    "    end\n"
+    "    return pandoc.Blocks({ section })\n"
+    "  end,\n"
+    "}\n"
+)
+
+groups_written = []
+try:
+    with open(os.path.join(groups_dir, "foundation.lua"), "w", encoding="utf-8") as f:
+        f.write(group_lua)
+    groups_written.append("foundation")
+except OSError as e:
+    sys.stderr.write("richmd-project: error: cannot write foundation.lua: %s\n" % e)
+    sys.exit(2)
+
+
+sys.stderr.write(
+    "richmd-project: wrote %d block contract pair(s), %d token vocab(s), "
+    "%d cross-block rule(s), %d shell hook(s), %d group hook(s) to %s (mermaid, "
+    "vega-lite delegated to richmd built-ins)\n"
+    % (len(written), len(tokens_written), len(rules_written),
+       len(shell_written), len(groups_written), out_dir)
+)
+PY

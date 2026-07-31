@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
-# design-schema-version: 3
 #
-# gate-stamp-check — stamp-freshness gate for a TARGET repo's copy-installed
-# check scripts (schema scripts_contract.distribution). Two comparisons,
-# fail closed:
+# gate-stamp-check — schema-version-freshness gate for a TARGET repo's
+# copy-installed check scripts and schema copy (schema
+# scripts_contract.distribution). The version is single-sourced from the
+# schema.json "version" field, in exactly one place on each side: the
+# framework's schema/design-schema.json and the host's copy at
+# scripts/design-schema.json. Scripts carry NO per-script version stamp —
+# the old per-script schema-version header stamp and the older
+# design-render-build hash are both retired.
 #
-#   (a) every copy-installed check script in <target>/scripts/ (design-render,
-#       layer-integrity, gate-stamp-check) carries a bare
-#       'design-schema-version: <N>' substring (grep the substring, never the
-#       comment leader) whose <N> equals the framework schema's "version";
-#   (b) the target's scripts/design-render carries a
-#       'design-render-build: <hash>' equal to the framework bundle's —
-#       behavior can change under an unchanged schema version.
+# Two checks, fail closed:
 #
-# A missing script or a missing stamp line is a violation, never a skip.
-# Staleness warns rather than blocks by policy — the CALLER (sync,
-# setup-project-skills) decides; this script only reports and exits.
+#   (a) every copy-installed check script (layer-integrity, gate-stamp-check,
+#       richmd-project) exists in <target>/scripts/. A missing one is a
+#       violation, never a skip. There is no per-script stamp to check.
+#   (b) the host's copy-installed <target>/scripts/design-schema.json exists
+#       and its "version" equals the framework schema's "version". A lower
+#       host version is a stale install: the host runs an older gate, behind
+#       the framework. It is reported as a violation naming both versions;
+#       the CALLER (sync, setup-project-skills) decides whether to warn-and-
+#       offer re-install or block. This script only reports and exits.
 #
 # Usage: gate-stamp-check <target-repo> [framework-root]
 #   framework-root defaults to this script's own repo (<script-dir>/..);
@@ -24,12 +28,14 @@
 # Self-contained mode: when NO framework-root argument is given and the
 # default (<script-dir>/..) carries no schema/design-schema.json — the
 # copy-installed layout with no framework checkout in reach — there is
-# nothing to be stale AGAINST. That is not an error: an explicit notice and
+# nothing to compare AGAINST. That is not an error: an explicit notice and
 # exit 0. An explicit framework-root that does not resolve stays exit 2.
 #
-# Exit 0: all stamps current (one OK line), or self-contained mode (notice).
-# Exit 1: at least one violation (one report line per file). Exit 2: usage/IO
-# error (bad args, unreadable framework schema or bundle).
+# Exit 0: versions equal (one OK line), or self-contained mode (notice).
+# Exit 1: at least one violation (one report line per finding) — a missing
+# copy-installed script, a missing host schema copy, or a host version lower
+# than the framework version. Exit 2: usage/IO error (bad args, target repo
+# not found, unreadable framework or host schema).
 set -euo pipefail
 
 usage() {
@@ -65,7 +71,7 @@ fi
 # framework checkout, and no explicit root was passed — skip, do not fail.
 if [ "$EXPLICIT_FRAMEWORK" -eq 0 ] &&
   { [ ! -d "$FRAMEWORK_ARG" ] || [ ! -f "$FRAMEWORK_ARG/schema/design-schema.json" ]; }; then
-  echo "gate-stamp-check: framework not reachable (no schema/design-schema.json under $FRAMEWORK_ARG); stamp check skipped (self-contained mode)"
+  echo "gate-stamp-check: framework not reachable (no schema/design-schema.json under $FRAMEWORK_ARG); version check skipped (self-contained mode)"
   exit 0
 fi
 if [ ! -d "$FRAMEWORK_ARG" ]; then
@@ -74,7 +80,7 @@ if [ ! -d "$FRAMEWORK_ARG" ]; then
 fi
 FRAMEWORK="$(cd "$FRAMEWORK_ARG" && pwd -P)"
 
-# --- Framework truth: schema version + bundle build hash ---------------------
+# --- Framework truth: schema version -----------------------------------------
 
 FW_SCHEMA="$FRAMEWORK/schema/design-schema.json"
 if [ ! -f "$FW_SCHEMA" ]; then
@@ -86,26 +92,9 @@ if ! FW_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]
   exit 2
 fi
 
-# stamp_of <file> <label> — first bare '<label>: <value>' substring's value;
-# empty when the file carries no stamp (grep's miss must not trip pipefail).
-stamp_of() {
-  { grep -oE "$2: [A-Za-z0-9]+" "$1" 2>/dev/null || true; } | head -1 | sed "s/^$2: //"
-}
+# --- Target checks, fail closed ----------------------------------------------
 
-FW_BUNDLE="$FRAMEWORK/scripts/design-render"
-if [ ! -f "$FW_BUNDLE" ]; then
-  echo "error: framework bundle not found: $FW_BUNDLE" >&2
-  exit 2
-fi
-FW_BUILD="$(stamp_of "$FW_BUNDLE" design-render-build)"
-if [ -z "$FW_BUILD" ]; then
-  echo "error: framework bundle carries no design-render-build stamp: $FW_BUNDLE" >&2
-  exit 2
-fi
-
-# --- Target comparison, fail closed ------------------------------------------
-
-CHECK_SCRIPTS=(design-render layer-integrity gate-stamp-check)
+CHECK_SCRIPTS=(layer-integrity gate-stamp-check richmd-project)
 
 found=0
 violation() { # <file> <why>
@@ -113,27 +102,26 @@ violation() { # <file> <why>
   found=1
 }
 
+# Every copy-installed check script must exist. There is no per-script stamp
+# to check anymore — the version lives only in the schema copy (checked next).
 for name in "${CHECK_SCRIPTS[@]}"; do
   f="$TARGET/scripts/$name"
   if [ ! -f "$f" ]; then
     violation "scripts/$name" "missing copy-installed check script (re-run setup-project-skills)"
-    continue
-  fi
-  got="$(stamp_of "$f" design-schema-version)"
-  if [ -z "$got" ]; then
-    violation "scripts/$name" "no design-schema-version stamp line"
-  elif [ "$got" != "$FW_VERSION" ]; then
-    violation "scripts/$name" "stale design-schema-version stamp: $got (framework schema is $FW_VERSION)"
   fi
 done
 
-if [ -f "$TARGET/scripts/design-render" ]; then
-  got_build="$(stamp_of "$TARGET/scripts/design-render" design-render-build)"
-  if [ -z "$got_build" ]; then
-    violation "scripts/design-render" "no design-render-build stamp line"
-  elif [ "$got_build" != "$FW_BUILD" ]; then
-    violation "scripts/design-render" "stale design-render-build stamp: $got_build (framework bundle is $FW_BUILD)"
-  fi
+# The version is single-sourced from the host's copy of the schema. A missing
+# copy is a violation; a lower version is a stale install (re-run setup).
+HOST_SCHEMA="$TARGET/scripts/design-schema.json"
+if [ ! -f "$HOST_SCHEMA" ]; then
+  violation "scripts/design-schema.json" "missing copy-installed schema (re-run setup-project-skills)"
+elif ! HOST_VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$HOST_SCHEMA")"; then
+  violation "scripts/design-schema.json" 'cannot read "version" from copy-installed schema'
+elif [ "$HOST_VERSION" -lt "$FW_VERSION" ]; then
+  violation "scripts/design-schema.json" "stale install: host schema version is $HOST_VERSION, framework schema is $FW_VERSION — re-run setup-project-skills to re-install"
+elif [ "$HOST_VERSION" -gt "$FW_VERSION" ]; then
+  violation "scripts/design-schema.json" "host schema version $HOST_VERSION is ahead of the framework schema $FW_VERSION (framework checkout is behind?)"
 fi
 
 # --- Verdict -------------------------------------------------------------------
@@ -141,5 +129,5 @@ fi
 if [ "$found" -ne 0 ]; then
   exit 1
 fi
-echo "gate-stamp-check OK: schema v$FW_VERSION, build $FW_BUILD — all installed stamps current in $TARGET"
+echo "gate-stamp-check OK: schema v$FW_VERSION — host install current in $TARGET"
 exit 0

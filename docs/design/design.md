@@ -15,8 +15,7 @@ clean.
 
 ## 00 Foundation
 
-:::goal
-**Rich markdown, validated, to static HTML**
+:::goal {title="Rich markdown, validated, to static HTML"}
 
 Convert extended-markdown [documents](CONTEXT.md#term-document) into
 self-contained static HTML carrying rich visual blocks — callouts, cards,
@@ -24,8 +23,7 @@ diagrams, charts, stat tiles, embedded SVG — recognizable to anyone who
 already writes markdown.
 :::
 
-:::goal
-**Fail closed, before ever writing output**
+:::goal {title="Fail closed, before ever writing output"}
 
 A malformed [block](CONTEXT.md#term-block) — wrong attrs, invalid mermaid or
 vega-lite grammar, a dangling cross-document link — never reaches rendered
@@ -34,24 +32,21 @@ document is collected and reported with a clear, per-block reason before
 any HTML is written.
 :::
 
-:::goal
-**Consumable as a dependency, not copy-pasted scripts**
+:::goal {title="Consumable as a dependency, not copy-pasted scripts"}
 
 Any repo pulls richmd in as a pinned, reproducible package — via its Nix
 flake or the npm wrapper — and runs it as a CLI. See
 [ADR-0001](../adr/0001-nix-flake-primary-npm-thin-wrapper.md#adr-0001).
 :::
 
-:::goal
-**Extend without forking**
+:::goal {title="Extend without forking"}
 
 A consumer adds its own [block kind](CONTEXT.md#term-block-kind) — schema
 plus renderer — without touching richmd's core source. See
 [ADR-0003](../adr/0003-schema-lua-plugin-pair-for-extension.md#adr-0003).
 :::
 
-:::no-goal
-**Not a static site generator**
+:::no-goal {title="Not a static site generator"}
 
 No navigation, search, or multi-page site scaffolding beyond what
 [cross-document link](CONTEXT.md#term-cross-document-link) rewriting gives
@@ -63,22 +58,19 @@ that one render are classified, never adds a second document to the call.
 See [ADR-0005](../adr/0005-tree-flag-for-in-tree-link-classification.md#adr-0005).
 :::
 
-:::no-goal
-**Not a WYSIWYG editor**
+:::no-goal {title="Not a WYSIWYG editor"}
 
 richmd converts markdown text a human or agent already wrote; it never
 provides an authoring UI.
 :::
 
-:::no-goal
-**Not a hosting or publishing tool**
+:::no-goal {title="Not a hosting or publishing tool"}
 
 richmd's job ends at a written `.html` file on disk. Deploying, serving, or
 publishing it is the consumer's concern.
 :::
 
-:::no-goal
-**Not a semantic validator for diagrams/charts**
+:::no-goal {title="Not a semantic validator for diagrams/charts"}
 
 [Grammar validators](CONTEXT.md#term-grammar-validator) check that mermaid
 and vega-lite source is syntactically well-formed. They do not check that a
@@ -86,8 +78,7 @@ vega-lite spec references fields that actually exist in its data, or that a
 mermaid diagram's logic makes domain sense.
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
-**Fail-closed gate**
+:::invariant {title="Fail-closed gate" enforcement=mechanism script=richmd-filter-core lens=robustness}
 
 A [document](CONTEXT.md#term-document) that fails the
 [validate phase](CONTEXT.md#term-validate-phase) never reaches the
@@ -96,8 +87,7 @@ gates on an empty error list — there is no path from a non-empty error list
 to a written `.html` file.
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=invariants}
-**Schema-driven validation, no hardcoded kinds**
+:::invariant {title="Schema-driven validation, no hardcoded kinds" enforcement=mechanism script=richmd-filter-core lens=invariants}
 
 Every [block](CONTEXT.md#term-block) — built-in or consumer-extended — is
 checked against its
@@ -107,23 +97,20 @@ reads the registry generically; extending the vocabulary means adding a
 schema entry, never adding an `if kind == "x"` branch.
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
-**All errors collected, never fail-fast on the first**
+:::invariant {title="All errors collected, never fail-fast on the first" enforcement=mechanism script=richmd-filter-core lens=robustness}
 
 The [validate phase](CONTEXT.md#term-validate-phase) accumulates every
 [validation error](CONTEXT.md#term-validation-error) in the document before
 reporting or exiting — never an early return on the first problem found.
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
-**Document-wide checks run after what they depend on**
+:::invariant {title="Document-wide checks run after what they depend on" enforcement=mechanism script=richmd-filter-core lens=robustness}
 
 A [document-wide check](CONTEXT.md#term-document-wide-check) runs only after
 every check whose output it depends on has already collected its errors.
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
-**Cross-document links always resolve**
+:::invariant {title="Cross-document links always resolve" enforcement=mechanism script=richmd-filter-core lens=robustness}
 
 Every relative [cross-document link](CONTEXT.md#term-cross-document-link) is
 checked against the filesystem during the
@@ -133,8 +120,7 @@ resolve to an existing source file is a
 broken link in the output.
 :::
 
-:::invariant {enforcement=mechanism script=richmd-directive-lift lens=robustness}
-**Directive lift agrees with the parse, never fires inside code**
+:::invariant {title="Directive lift agrees with the parse, never fires inside code" enforcement=mechanism script=richmd-directive-lift lens=robustness}
 
 The [directive lift](CONTEXT.md#term-directive-lift) rewrites a
 [bareword directive](CONTEXT.md#term-bareword-directive) fence-opener only
@@ -145,8 +131,7 @@ have read as verbatim code, and no attr-bearing bareword block escapes
 validation as prose.
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=invariants}
-**A token reference resolves to a declared member, never to prose**
+:::invariant {title="A token reference resolves to a declared member, never to prose" enforcement=mechanism script=richmd-filter-core lens=invariants}
 
 Every [token reference](CONTEXT.md#term-token-reference) richmd recognizes
 resolves by exact key lookup against its
@@ -158,8 +143,7 @@ keys its vocabulary declares. See
 [ADR-0011](../adr/0011-token-vocabulary-as-closed-set-resolved-per-reference.md#adr-0011).
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
-**The shell hook renders, never gates**
+:::invariant {title="The shell hook renders, never gates" enforcement=mechanism script=richmd-filter-core lens=robustness}
 
 The consumer [shell hook](CONTEXT.md#term-shell-hook) runs only in the
 [render phase](CONTEXT.md#term-render-phase), after the fail-closed gate is
@@ -173,8 +157,7 @@ a partial or silently wrong page. See
 [ADR-0014](../adr/0014-document-shell-hook-as-fourth-consumer-contract.md#adr-0014).
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
-**The group hook renders a consecutive run, never gates**
+:::invariant {title="The group hook renders a consecutive run, never gates" enforcement=mechanism script=richmd-filter-core lens=robustness}
 
 The consumer [group hook](CONTEXT.md#term-group-hook) runs only in the render
 phase, after the fail-closed gate is already green: it wraps a
@@ -190,8 +173,7 @@ partial or silently wrong page. See
 [ADR-0015](../adr/0015-group-render-hook-as-fifth-consumer-contract.md#adr-0015).
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=state}
-**A heading's anchor id is deterministic: explicit id, else slug**
+:::invariant {title="A heading's anchor id is deterministic: explicit id, else slug" enforcement=mechanism script=richmd-filter-core lens=state}
 
 A heading's [anchor id](CONTEXT.md#term-anchor-id) is its own explicit
 Pandoc id (`{#id}`) when authored, else its [slug](CONTEXT.md#term-slug),
@@ -204,8 +186,7 @@ it contributes nothing, so tagging a heading never renames its anchor. See
 [ADR-0012](../adr/0012-token-references-are-addressing-not-heading-prose.md#adr-0012).
 :::
 
-:::invariant {enforcement=mechanism script=richmd-filter-core lens=robustness}
-**Fragment resolution sees every authored anchor id**
+:::invariant {title="Fragment resolution sees every authored anchor id" enforcement=mechanism script=richmd-filter-core lens=robustness}
 
 `#fragment` link validation resolves against every
 [anchor id](CONTEXT.md#term-anchor-id) in the target document — both
@@ -214,32 +195,28 @@ never against heading slugs alone. Widening the known-id set never narrows
 what a previously-valid link resolves to.
 :::
 
-:::principle {id=P1 lens=invariants}
-**Mechanize the decidable**
+:::principle {title="Mechanize the decidable" id=P1 lens=invariants}
 
 A rule a machine can check belongs in the
 [block kind schema](CONTEXT.md#term-block-kind-schema) and the validator,
 never in author convention or documentation prose.
 :::
 
-:::principle {id=P2 lens=robustness}
-**Fail loud, local, and early**
+:::principle {title="Fail loud, local, and early" id=P2 lens=robustness}
 
 A malformed block's error names the block, its location, and the reason, at
 [validate-phase](CONTEXT.md#term-validate-phase) time — never a downstream
 rendering crash or a silently wrong page.
 :::
 
-:::principle {id=P3 lens=composition}
-**Style is swappable, never hardcoded**
+:::principle {title="Style is swappable, never hardcoded" id=P3 lens=composition}
 
 The renderer emits structure and `--richmd-*` CSS-variable hooks; visual
 identity lives entirely in the [theme](CONTEXT.md#term-theme) stylesheet,
 never in generator logic.
 :::
 
-:::principle {id=P4 lens=composition}
-**Extend by composition, never by fork**
+:::principle {title="Extend by composition, never by fork" id=P4 lens=composition}
 
 A consumer adds a [block kind](CONTEXT.md#term-block-kind) through the
 [extension directory](CONTEXT.md#term-extension-directory)'s schema + Lua

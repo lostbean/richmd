@@ -1,0 +1,18 @@
+{
+  "attrs": {
+    "id": {
+      "required": false,
+      "type": "string"
+    },
+    "lens": {
+      "required": false,
+      "type": "string"
+    },
+    "title": {
+      "required": true,
+      "type": "string"
+    }
+  },
+  "body": "required",
+  "kind": "principle"
+}
