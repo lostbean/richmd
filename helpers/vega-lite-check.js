@@ -22,21 +22,33 @@
 // browser dependency anywhere in ajv's own dependency tree — just
 // fast-deep-equal, fast-uri, json-schema-traverse, require-from-string).
 //
-// Usage as a CLI (stdin -> JSON on stdout, distinct exit code):
-//   node helpers/vega-lite-check.js < spec.vl.json
-//   echo '{"mark":"bar", ...}' | node helpers/vega-lite-check.js
+// Usage as a CLI (one JSON batch on stdin -> one JSON batch on stdout,
+// with a distinct exit code per outcome — the shared protocol defined in
+// helpers/batch-cli.js, ADR-0018):
+//   echo '{"blocks":[{"id":"a","source":"{\"mark\":\"bar\"}"}]}' \
+//     | node helpers/vega-lite-check.js
 //
-// Exit code 0: valid vega-lite spec, stdout is {"valid":true}
-// Exit code 1: invalid (malformed JSON or schema-invalid), stdout is
-//   {"valid":false,"reason":"..."}
-// Exit code 2: usage/IO error (e.g. helper itself crashed unexpectedly) —
-//   distinct from a normal grammar rejection, per design.md §05 failure
+// The Lua filter invokes this ONCE PER DOCUMENT with every vega-lite block
+// in that document, not once per block — which is what makes the
+// once-per-process ajv schema compile below actually pay off (see
+// getValidateFn). Note the nesting: each block's `source` is itself a JSON
+// document (the vega-lite spec) carried as a STRING inside the batch
+// envelope, never as a nested object — the helper must see the author's
+// exact source text to report "not valid JSON" the way it does today.
+//
+// Exit code 0: every block valid, stdout is {"results":[{"id":...,"valid":true},...]}
+// Exit code 1: at least one block rejected (malformed JSON or schema-invalid);
+//   that block's verdict carries the specific reason, and its neighbours
+//   still get verdicts.
+// Exit code 2: the helper itself failed (malformed stdin, IO error, crash) —
+//   distinct from a normal grammar rejection, per design.md §07 failure
 //   behavior ("a validator subprocess crashing unexpectedly is itself a
 //   hard filter failure, distinct from a normal grammar rejection").
 
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { runBatchCli } from "./batch-cli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = path.join(__dirname, "vega-lite-schema.json");
@@ -159,50 +171,12 @@ export async function checkVegaLite(source) {
 // Only runs when this file is executed directly — the Lua filter shells
 // out to this file as a subprocess (filter/blocks/vega-lite.lua), it never
 // requires it in-process, exactly mirroring mermaid-check.js's CLI entry
-// point.
-async function readStdin() {
-  const chunks = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString("utf8");
-}
-
-async function main() {
-  let source;
-  try {
-    source = await readStdin();
-  } catch (err) {
-    process.stdout.write(
-      JSON.stringify({
-        valid: false,
-        reason: `failed to read stdin: ${err.message}`,
-      }) + "\n",
-    );
-    return 2;
-  }
-
-  let result;
-  try {
-    result = await checkVegaLite(source);
-  } catch (err) {
-    // The helper itself crashed unexpectedly (not a normal grammar
-    // rejection) — distinct exit code per design.md §05 failure behavior.
-    process.stdout.write(
-      JSON.stringify({
-        valid: false,
-        reason: `vega-lite-check helper crashed: ${err.message || String(err)}`,
-      }) + "\n",
-    );
-    return 2;
-  }
-
-  process.stdout.write(JSON.stringify(result) + "\n");
-  return result.valid ? 0 : 1;
-}
-
+// point (both delegate the batch protocol itself to the shared
+// helpers/batch-cli.js, so neither owns a private copy of it).
 const isMain =
   process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
-  main().then((code) => process.exit(code));
+  runBatchCli(checkVegaLite, "vega-lite-check").then((code) =>
+    process.exit(code),
+  );
 }

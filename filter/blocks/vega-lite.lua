@@ -10,9 +10,10 @@
 --
 -- Validation shells out to helpers/vega-lite-check.js (JSON-schema
 -- validation against the published vega-lite JSON schema, no browser/
--- Puppeteer — design.md §05) to catch both malformed JSON and
+-- Puppeteer — design.md §07) to catch both malformed JSON and
 -- schema-nonconforming vega-lite specs before the render phase is ever
--- reached.
+-- reached — ONCE PER DOCUMENT with every vega-lite spec in it, not once per
+-- block (ADR-0018): see `pending` / `validate` / `validate_batch` below.
 --
 -- Rendering never turns the chart into a picture at build time (a named
 -- no-goal, design.md §00/§07): the raw JSON spec is embedded in a
@@ -21,6 +22,8 @@
 -- mermaid's <pre class="mermaid"> pattern.
 
 local script_dir = PANDOC_SCRIPT_FILE:match("(.*/)") or "./"
+
+local BatchCheck = require("batch-check")
 
 local schema = {
   kind = "vega-lite",
@@ -46,6 +49,13 @@ local schema = {
   -- JSON-schema checking has no schema-expressible shape within richmd's
   -- own block-kind-schema vocabulary.
   validate = nil, -- set below, after `validate` is defined
+  -- Companion document-wide hook (design.md §07, ADR-0018): the filter core
+  -- calls `schema.validate_batch()` generically, if present, for ANY
+  -- registered kind, once after the whole validate walk has finished — the
+  -- point at which every block of this kind has been collected. `validate`
+  -- above queues; this one runs the single subprocess. Kinds with no
+  -- document-wide half (callout, cards, ...) simply do not declare it.
+  validate_batch = nil, -- set below, after `validate_batch` is defined
 }
 
 -- VEGA_CDN_URL / VEGA_LITE_CDN_URL / VEGA_EMBED_CDN_URL: the pinned
@@ -120,79 +130,48 @@ local function read_offline_bundle(path)
   return source
 end
 
--- run_vega_lite_check(source) -> valid (bool), reason (string | nil)
+-- pending / validate / validate_batch: the two halves of ONE grammar check,
+-- split across the filter core's validate phase (design.md §07, ADR-0018) —
+-- the identical shape filter/blocks/mermaid.lua uses, for the identical
+-- reason.
 --
--- Shells out to the Node grammar-validator helper via io.popen, passing the
--- block's source over stdin and reading its JSON result back from stdout —
--- exactly the shell-out design.md §05 calls for, and the identical
--- mechanism run_mermaid_check (filter/blocks/mermaid.lua) uses. A
--- subprocess that itself fails to run (helper missing, node missing,
--- non-JSON output) is treated as a validation failure naming the raw
--- problem, rather than silently passing the block through.
-local function run_vega_lite_check(source)
-  local helper_path = script_dir .. "../helpers/vega-lite-check.js"
-
-  -- Write the source to a temp file rather than piping through the shell
-  -- directly, to avoid any quoting/escaping hazards with arbitrary JSON
-  -- source text (quotes, backslashes, etc.) — same rationale as mermaid's
-  -- run_mermaid_check.
-  local tmp_path = os.tmpname()
-  local tmp_file = io.open(tmp_path, "w")
-  if not tmp_file then
-    return false, "could not create temp file to invoke vega-lite-check helper"
-  end
-  tmp_file:write(source)
-  tmp_file:close()
-
-  local handle = io.popen("node " .. helper_path .. " < " .. tmp_path .. " 2>&1")
-  local output = ""
-  if handle then
-    output = handle:read("*a") or ""
-    handle:close()
-  end
-  os.remove(tmp_path)
-
-  if not handle then
-    return false, "could not invoke vega-lite-check helper (node not found?)"
-  end
-
-  local valid_true = output:match('"valid"%s*:%s*true')
-  local reason = output:match('"reason"%s*:%s*"(.-)"[^"]*"?%s*}')
-  if not reason then
-    -- Fall back to a looser match in case escaping in the JSON reason
-    -- string trips up the pattern above.
-    reason = output:match('"reason"%s*:%s*"(.*)"%s*}')
-  end
-
-  if valid_true then
-    return true, nil
-  end
-
-  if reason then
-    -- Unescape the common JSON escapes the helper's JSON.stringify would
-    -- have produced, so the printed error reads naturally.
-    reason = reason:gsub("\\n", " "):gsub('\\"', '"'):gsub("\\\\", "\\")
-    return false, reason
-  end
-
-  -- No parseable JSON at all — the helper crashed or never ran.
-  if output == "" then
-    return false, "vega-lite-check helper produced no output"
-  end
-  return false, "vega-lite-check helper produced unexpected output: " .. output
-end
+-- `validate` no longer shells out. It only ENQUEUES the block's source, so
+-- that `validate_batch` — called once, after the whole document has been
+-- walked — can hand every vega-lite spec in the document to a SINGLE
+-- vega-lite-check.js subprocess. That is the entire point: the helper has
+-- ajv compile a 1.87MB JSON schema before it can validate anything, and a
+-- one-block-per-process invocation threw that compiled validator away
+-- immediately; one process for the document lets the helper's own
+-- module-level cache do the job it was written for.
+--
+-- Note whose specs land in this queue: hand-authored ```vega-lite blocks AND
+-- the specs filter/blocks/chart.lua expands its markdown tables into, since
+-- chart.lua calls THIS validate function with a synthesized `{text = spec}`
+-- block. Both therefore ride in the same single subprocess, and each still
+-- reports under its own kind and location, because each entry carries its
+-- own `report` closure rather than a shared one.
+--
+-- Module-level state is per-DOCUMENT here for the same reason
+-- next_ordinal()'s counter below is: bin/richmd.js spawns one `pandoc`
+-- process per document, so this Lua state is created fresh per document and
+-- dies with it. The queue is drained by validate_batch, so it is also empty
+-- again by the time the render phase runs.
+local pending = {}
 
 -- validate(block, kind_name, location, add_error)
 --
 -- Called by the filter core's generic validate step alongside the
--- schema-driven attr/body checks (this kind has no attrs and a required
--- body, both already covered generically) — this function adds the ONE
--- check no generic schema field can express: real JSON-schema validity
--- against the published vega-lite schema. A malformed or nonconforming
--- block's error names the block and the validator's own reason, added to
--- the SAME shared errors list every other kind's errors use (via the
--- add_error callback the filter core passes in), never a separate
--- error-collection path.
+-- schema-driven attrs/body checks (this kind has no attrs and a required
+-- body, both already covered generically) — this hook covers the ONE check
+-- no generic schema field can express: real JSON-schema validity against
+-- the published vega-lite schema.
+--
+-- Queues rather than checks. Each entry carries its own `report` closure
+-- over the (kind_name, location, add_error) triple this block was collected
+-- under, so a rejection still names THIS block, with the validator's own
+-- reason, in the SAME shared errors list every other kind's errors use —
+-- never a separate error-collection path, and never attributed to whichever
+-- spec happens to be checked alongside it.
 local function validate(block, kind_name, location, add_error)
   local source = block.text or ""
   if source == "" then
@@ -201,13 +180,46 @@ local function validate(block, kind_name, location, add_error)
     return
   end
 
-  local valid, reason = run_vega_lite_check(source)
-  if not valid then
-    add_error(kind_name, location, "invalid vega-lite spec: " .. (reason or "unknown error"))
-  end
+  table.insert(pending, {
+    -- The id only has to be unique within this batch and stable across the
+    -- round trip; the ordinal makes it both, and reads back usefully if it
+    -- ever surfaces in a diagnostic. Deliberately NOT derived from
+    -- kind_name — a chart-expanded spec and a hand-authored block share
+    -- this one queue, so one counter is what keeps every id distinct.
+    id = "vega-lite-" .. tostring(#pending + 1),
+    source = source,
+    report = function(reason)
+      add_error(kind_name, location, "invalid vega-lite spec: " .. reason)
+    end,
+  })
+end
+
+-- validate_batch()
+--
+-- The document-wide half: one vega-lite-check.js subprocess for every
+-- vega-lite spec collected during the walk, verdicts paired back by id.
+-- Called by the filter core generically, for ANY registered kind that
+-- declares one, after the validate walk completes — never via an
+-- `if kind == "vega-lite"` branch in the core.
+--
+-- A document with no vega-lite (or chart) blocks leaves `pending` empty, and
+-- BatchCheck.run spawns nothing at all. Draining the queue makes this
+-- idempotent: a second call has nothing left to check.
+--
+-- `chart` deliberately declares NO validate_batch of its own. Its expanded
+-- specs are already in THIS queue (chart.lua calls this module's `validate`
+-- to put them there), and this hook is reached for every registered kind
+-- whether or not the document contains one — so a chart-only document still
+-- gets its specs checked here, in the same single subprocess, with no
+-- second hook and no second process.
+local function validate_batch()
+  local entries = pending
+  pending = {}
+  BatchCheck.run(script_dir .. "../helpers/vega-lite-check.js", "vega-lite-check", entries)
 end
 
 schema.validate = validate
+schema.validate_batch = validate_batch
 
 -- html_escape(text) -> string
 --
@@ -616,5 +628,6 @@ return {
   schema = schema,
   render = render,
   validate = validate,
+  validate_batch = validate_batch,
   register = register,
 }

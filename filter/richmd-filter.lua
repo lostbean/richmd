@@ -6,9 +6,16 @@
 -- unless the validate phase's error list is empty (§00 fail-closed gate
 -- invariant).
 --
+-- The validate phase is itself two steps: the AST walk, which runs each
+-- kind's per-block `schema.validate` hook, and then run_batch_validators,
+-- which runs each kind's document-wide `schema.validate_batch` hook once the
+-- walk has collected every block of that kind (design.md §07, ADR-0018).
+-- Both feed the SAME collected error list the fail-closed gate reads.
+--
 -- This module owns the phase boundary itself; it must never contain an
 -- `if kind == "callout"` branch — per-kind behavior lives entirely behind
--- registry:lookup(kind_name), in filter/blocks/*.lua.
+-- registry:lookup(kind_name) and registry:each_kind(), in
+-- filter/blocks/*.lua.
 
 -- Make `require` find sibling modules regardless of the caller's cwd:
 -- Pandoc sets PANDOC_SCRIPT_FILE to this filter's own path.
@@ -870,6 +877,38 @@ local function validate_only_codeblock(code_block)
   end
 
   return nil
+end
+
+-- run_batch_validators()
+--
+-- The document-wide half of the validate phase's per-kind grammar checking
+-- (design.md §07, ADR-0018). The walk above calls each kind's per-block
+-- `schema.validate` hook; a kind whose real check is an expensive subprocess
+-- uses that hook only to COLLECT its blocks, and does the actual checking
+-- here — once, with the whole set — the moment the walk has finished and the
+-- set is complete. mermaid and vega-lite are the two such kinds today: each
+-- pays per-process setup (a linkedom DOM, a compiled 1.87MB JSON schema)
+-- that a one-block-per-process invocation discarded immediately.
+--
+-- Generic in exactly the way the per-block hook is: every registered kind
+-- that declares a `validate_batch` gets called, in registration order, and
+-- the core never asks which kind it is holding — no `if kind_name ==
+-- "mermaid"` branch here (§00 schema-driven-validation invariant, §03's own
+-- "must never contain an `if kind == ...` branch" rule). A kind with no
+-- document-wide half simply does not declare the field. Registration order
+-- (registry:each_kind) is what keeps the resulting error ordering identical
+-- from run to run.
+--
+-- Errors land in the SAME shared `errors` table via the SAME `add_error`
+-- closure every other check uses, so the fail-closed gate below sees them
+-- exactly like a per-block error — one bad block never suppresses the
+-- reporting of another (§00 all-errors-collected).
+local function run_batch_validators()
+  for _, schema in registry:each_kind() do
+    if schema.validate_batch then
+      schema.validate_batch()
+    end
+  end
 end
 
 -- build_block_projections(doc)
@@ -2029,6 +2068,14 @@ function Pandoc(doc)
     Link = validate_only_link,
     CodeBlock = validate_only_codeblock,
   })
+
+  -- Per-kind batch grammar checking (design.md §07, ADR-0018): runs the
+  -- moment the walk above has finished, because that is the first point at
+  -- which every block of a given kind has been collected. Placed here, ahead
+  -- of the two document-wide passes below, so grammar errors keep the same
+  -- position in the collected error list they held when the walk itself ran
+  -- them per block — before token-resolution and rules errors, never after.
+  run_batch_validators()
 
   -- Token resolution (design.md §06, ADR-0011): a document-wide check that
   -- runs AFTER every per-block schema check above (so an opted-in attr's

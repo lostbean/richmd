@@ -9,8 +9,10 @@
 -- walk entries.
 --
 -- Validation shells out to helpers/mermaid-check.js (a real grammar parser,
--- no browser/Puppeteer — design.md §05) to catch malformed mermaid syntax
--- before the render phase is ever reached.
+-- no browser/Puppeteer — design.md §07) to catch malformed mermaid syntax
+-- before the render phase is ever reached — ONCE PER DOCUMENT with every
+-- mermaid block in it, not once per block (ADR-0018): see `pending` /
+-- `validate` / `validate_batch` below.
 --
 -- Rendering never turns the diagram into a picture at build time (a named
 -- no-goal, design.md §00/§07): the raw source is embedded in a
@@ -19,6 +21,8 @@
 -- load.
 
 local script_dir = PANDOC_SCRIPT_FILE:match("(.*/)") or "./"
+
+local BatchCheck = require("batch-check")
 
 local schema = {
   kind = "mermaid",
@@ -44,6 +48,13 @@ local schema = {
   -- schema-expressible shape); callout has no `validate` field and the
   -- filter core skips the call entirely for it.
   validate = nil, -- set below, after `validate` is defined
+  -- Companion document-wide hook (design.md §07, ADR-0018): the filter core
+  -- calls `schema.validate_batch()` generically, if present, for ANY
+  -- registered kind, once after the whole validate walk has finished — the
+  -- point at which every block of this kind has been collected. `validate`
+  -- above queues; this one runs the single subprocess. Kinds with no
+  -- document-wide half (callout, cards, ...) simply do not declare it.
+  validate_batch = nil, -- set below, after `validate_batch` is defined
 }
 
 -- MERMAID_CDN_URL: the pinned mermaid.js runtime script, loaded from a CDN
@@ -85,76 +96,38 @@ local function read_offline_bundle()
   return source
 end
 
--- run_mermaid_check(source) -> valid (bool), reason (string | nil)
+-- pending / validate / validate_batch: the two halves of ONE grammar check,
+-- split across the filter core's validate phase (design.md §07, ADR-0018).
 --
--- Shells out to the Node grammar-validator helper via io.popen, passing the
--- block's source over stdin and reading its JSON result back from stdout —
--- exactly the shell-out design.md §05 calls for. A subprocess that itself
--- fails to run (helper missing, node missing, non-JSON output) is treated
--- as a validation failure naming the raw problem, rather than silently
--- passing the block through.
-local function run_mermaid_check(source)
-  local helper_path = script_dir .. "../helpers/mermaid-check.js"
-
-  -- Write the source to a temp file rather than piping through the shell
-  -- directly, to avoid any quoting/escaping hazards with arbitrary mermaid
-  -- source text (backticks, quotes, etc.).
-  local tmp_path = os.tmpname()
-  local tmp_file = io.open(tmp_path, "w")
-  if not tmp_file then
-    return false, "could not create temp file to invoke mermaid-check helper"
-  end
-  tmp_file:write(source)
-  tmp_file:close()
-
-  local handle = io.popen("node " .. helper_path .. " < " .. tmp_path .. " 2>&1")
-  local output = ""
-  if handle then
-    output = handle:read("*a") or ""
-    handle:close()
-  end
-  os.remove(tmp_path)
-
-  if not handle then
-    return false, "could not invoke mermaid-check helper (node not found?)"
-  end
-
-  local valid_true = output:match('"valid"%s*:%s*true')
-  local reason = output:match('"reason"%s*:%s*"(.-)"[^"]*"?%s*}')
-  if not reason then
-    -- Fall back to a looser match in case escaping in the JSON reason
-    -- string trips up the pattern above.
-    reason = output:match('"reason"%s*:%s*"(.*)"%s*}')
-  end
-
-  if valid_true then
-    return true, nil
-  end
-
-  if reason then
-    -- Unescape the common JSON escapes the helper's JSON.stringify would
-    -- have produced, so the printed error reads naturally.
-    reason = reason:gsub("\\n", " "):gsub('\\"', '"'):gsub("\\\\", "\\")
-    return false, reason
-  end
-
-  -- No parseable JSON at all — the helper crashed or never ran.
-  if output == "" then
-    return false, "mermaid-check helper produced no output"
-  end
-  return false, "mermaid-check helper produced unexpected output: " .. output
-end
+-- `validate` no longer shells out. It only ENQUEUES the block's source, so
+-- that `validate_batch` — called once, after the whole document has been
+-- walked — can hand every mermaid block in the document to a SINGLE
+-- mermaid-check.js subprocess. That is the entire point: the helper
+-- initializes a linkedom DOM before it can parse anything, and a
+-- one-block-per-process invocation threw that setup away immediately; one
+-- process for the document lets the helper's own module-level cache do the
+-- job it was written for.
+--
+-- Module-level state is per-DOCUMENT here for the same reason
+-- next_ordinal()'s counter below is: bin/richmd.js spawns one `pandoc`
+-- process per document, so this Lua state is created fresh per document and
+-- dies with it. The queue is drained by validate_batch, so it is also empty
+-- again by the time the render phase runs.
+local pending = {}
 
 -- validate(block, kind_name, location, add_error)
 --
 -- Called by the filter core's generic validate step alongside the
 -- schema-driven attr/body checks (this kind has no attrs and a required
--- body, both already covered generically) — this function adds the ONE
--- check no generic schema field can express: real mermaid grammar
--- validity. A malformed block's error names the block and the parser's own
--- reason, added to the SAME shared errors list callout's errors use (via
--- the add_error callback the filter core passes in), never a separate
--- error-collection path.
+-- body, both already covered generically) — this hook covers the ONE check
+-- no generic schema field can express: real mermaid grammar validity.
+--
+-- Queues rather than checks. Each entry carries its own `report` closure
+-- over the (kind_name, location, add_error) triple this block was collected
+-- under, so a rejection still names THIS block, with the parser's own
+-- reason, in the SAME shared errors list callout's errors use — never a
+-- separate error-collection path, and never attributed to whichever block
+-- happens to be checked alongside it.
 local function validate(block, kind_name, location, add_error)
   local source = block.text or ""
   if source == "" then
@@ -163,13 +136,37 @@ local function validate(block, kind_name, location, add_error)
     return
   end
 
-  local valid, reason = run_mermaid_check(source)
-  if not valid then
-    add_error(kind_name, location, "invalid mermaid syntax: " .. (reason or "unknown error"))
-  end
+  table.insert(pending, {
+    -- The id only has to be unique within this batch and stable across the
+    -- round trip; the ordinal makes it both, and reads back usefully if it
+    -- ever surfaces in a diagnostic.
+    id = "mermaid-" .. tostring(#pending + 1),
+    source = source,
+    report = function(reason)
+      add_error(kind_name, location, "invalid mermaid syntax: " .. reason)
+    end,
+  })
+end
+
+-- validate_batch()
+--
+-- The document-wide half: one mermaid-check.js subprocess for every mermaid
+-- block collected during the walk, verdicts paired back by id. Called by
+-- the filter core generically, for ANY registered kind that declares one,
+-- after the validate walk completes — never via an `if kind == "mermaid"`
+-- branch in the core.
+--
+-- A document with no mermaid blocks leaves `pending` empty, and
+-- BatchCheck.run spawns nothing at all. Draining the queue makes this
+-- idempotent: a second call has nothing left to check.
+local function validate_batch()
+  local entries = pending
+  pending = {}
+  BatchCheck.run(script_dir .. "../helpers/mermaid-check.js", "mermaid-check", entries)
 end
 
 schema.validate = validate
+schema.validate_batch = validate_batch
 
 -- html_escape(text) -> string
 --
@@ -405,5 +402,6 @@ return {
   schema = schema,
   render = render,
   validate = validate,
+  validate_batch = validate_batch,
   register = register,
 }

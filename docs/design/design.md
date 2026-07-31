@@ -702,10 +702,16 @@ stack.
 - **Interface**: two standalone scripts, `mermaid-check.js` (calls
   `mermaid.parse(source)` headless — no DOM, no browser) and
   `vega-lite-check.js` (validates against the vega-lite JSON schema);
-  invoked as a subprocess per block, communicating over stdin/stdout as
-  JSON.
+  invoked as one subprocess per document per kind, communicating over
+  stdin/stdout as JSON: stdin carries every block of that kind found in the
+  document, each tagged with an identifier; stdout returns one verdict per
+  identifier, so a rejection names the block it came from. Batching is what
+  makes each script's per-process setup — the mermaid DOM, the compiled
+  vega-lite schema validator — pay once per document instead of once per
+  block ([ADR-0018](../adr/0018-batch-grammar-validation-per-document.md#adr-0018)).
 - **Interacts with**: the [filter core](#03-filter-core)'s validate phase,
-  once per mermaid or vega-lite block found.
+  which collects every mermaid and vega-lite block during its walk and
+  invokes each validator once with the collected set.
 - **Invariants held**: contributes to schema-driven validation (§00) for the
   two block kinds no Lua grammar exists for.
 - **Failure behavior**: a malformed diagram/chart is a

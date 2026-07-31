@@ -462,8 +462,18 @@ local function validate(block, kind_name, location, add_error)
   -- directly usable without its own (block, kind_name, location, add_error)
   -- signature — call it exactly like the filter core does, with a
   -- synthesized CodeBlock-like object carrying the generated spec as
-  -- `.text`, reusing its ENTIRE validate function (which itself shells out
-  -- to vega-lite-check.js) rather than duplicating that shell-out here.
+  -- `.text`, reusing its ENTIRE validate path rather than duplicating the
+  -- shell-out here.
+  --
+  -- Since ADR-0018 that path ENQUEUES the spec into vega-lite.lua's own
+  -- per-document batch rather than shelling out on the spot, which is
+  -- exactly what this call site wants: an expanded chart spec rides in the
+  -- same single vega-lite-check.js subprocess as every hand-authored
+  -- ```vega-lite block, and still reports under "chart" and THIS block's
+  -- location because the kind_name/location/add_error triple passed here is
+  -- what the queued entry closes over. vega-lite.lua's own validate_batch
+  -- drains that queue for every registered kind, so this kind needs no
+  -- batch hook of its own.
   vega_lite.validate({ text = spec }, "chart", location, add_error)
 end
 
