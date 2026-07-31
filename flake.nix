@@ -27,13 +27,18 @@
           programs.nixfmt.enable = true;
           programs.prettier = {
             enable = true;
-            # design-render owns every generated design.html's exact byte
-            # layout (docs/adr/0002 spirit: one tool owns one artifact's
-            # formatting) — letting prettier reformat it makes
-            # `design-render --check` perpetually report false staleness,
-            # since the check compares its own raw output against whatever
-            # is on disk.
-            excludes = [ "**/design.html" ];
+            # richmd owns every HTML file it generates, byte for byte
+            # (docs/adr/0002 spirit: one tool owns one artifact's
+            # formatting) — letting prettier reformat one makes the
+            # corresponding `--check` perpetually report false staleness,
+            # since the check compares richmd's own raw output against
+            # whatever is on disk. This covers both generated families: the
+            # design documents (design-render --check) and the rendered
+            # examples (richmd render --check, run over examples/ in CI).
+            excludes = [
+              "**/design.html"
+              "examples/*.html"
+            ];
           };
         };
         # Same rationale as the devShell below: the top-level `pandoc`

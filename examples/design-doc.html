@@ -1,232 +1,94 @@
-<!doctype html>
+<!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="generator" content="pandoc" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, user-scalable=yes"
-    />
-    <title>design-doc</title>
-    <style>
-      code {
-        white-space: pre-wrap;
-      }
-      span.smallcaps {
-        font-variant: small-caps;
-      }
-      div.columns {
-        display: flex;
-        gap: min(4vw, 1.5em);
-      }
-      div.column {
-        flex: auto;
-        overflow-x: auto;
-      }
-      div.hanging-indent {
-        margin-left: 1.5em;
-        text-indent: -1.5em;
-      }
-      /* The extra [class] is a hack that increases specificity enough to
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>design-doc</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
        override a similar rule in reveal.js */
-      ul.task-list[class] {
-        list-style: none;
-      }
-      ul.task-list li input[type="checkbox"] {
-        font-size: inherit;
-        width: 0.8em;
-        margin: 0 0.8em 0.2em -1.6em;
-        vertical-align: middle;
-      }
-      .display.math {
-        display: block;
-        text-align: center;
-        margin: 0.5rem auto;
-      }
-      /* CSS for syntax highlighting */
-      html {
-        -webkit-text-size-adjust: 100%;
-      }
-      pre > code.sourceCode {
-        white-space: pre;
-        position: relative;
-      }
-      pre > code.sourceCode > span {
-        display: inline-block;
-        line-height: 1.25;
-      }
-      pre > code.sourceCode > span:empty {
-        height: 1.2em;
-      }
-      .sourceCode {
-        overflow: visible;
-      }
-      code.sourceCode > span {
-        color: inherit;
-        text-decoration: inherit;
-      }
-      div.sourceCode {
-        margin: 1em 0;
-      }
-      pre.sourceCode {
-        margin: 0;
-      }
-      @media screen {
-        div.sourceCode {
-          overflow: auto;
-        }
-      }
-      @media print {
-        pre > code.sourceCode {
-          white-space: pre-wrap;
-        }
-        pre > code.sourceCode > span {
-          text-indent: -5em;
-          padding-left: 5em;
-        }
-      }
-      pre.numberSource code {
-        counter-reset: source-line 0;
-      }
-      pre.numberSource code > span {
-        position: relative;
-        left: -4em;
-        counter-increment: source-line;
-      }
-      pre.numberSource code > span > a:first-child::before {
-        content: counter(source-line);
-        position: relative;
-        left: -1em;
-        text-align: right;
-        vertical-align: baseline;
-        border: none;
-        display: inline-block;
-        -webkit-touch-callout: none;
-        -webkit-user-select: none;
-        -khtml-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
-        user-select: none;
-        padding: 0 4px;
-        width: 4em;
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    html { -webkit-text-size-adjust: 100%; }
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
         color: #aaaaaa;
       }
-      pre.numberSource {
-        margin-left: 3em;
-        border-left: 1px solid #aaaaaa;
-        padding-left: 4px;
-      }
-      div.sourceCode {
-      }
-      @media screen {
-        pre > code.sourceCode > span > a:first-child::before {
-          text-decoration: underline;
-        }
-      }
-      code span.al {
-        color: #ff0000;
-        font-weight: bold;
-      } /* Alert */
-      code span.an {
-        color: #60a0b0;
-        font-weight: bold;
-        font-style: italic;
-      } /* Annotation */
-      code span.at {
-        color: #7d9029;
-      } /* Attribute */
-      code span.bn {
-        color: #40a070;
-      } /* BaseN */
-      code span.bu {
-        color: #008000;
-      } /* BuiltIn */
-      code span.cf {
-        color: #007020;
-        font-weight: bold;
-      } /* ControlFlow */
-      code span.ch {
-        color: #4070a0;
-      } /* Char */
-      code span.cn {
-        color: #880000;
-      } /* Constant */
-      code span.co {
-        color: #60a0b0;
-        font-style: italic;
-      } /* Comment */
-      code span.cv {
-        color: #60a0b0;
-        font-weight: bold;
-        font-style: italic;
-      } /* CommentVar */
-      code span.do {
-        color: #ba2121;
-        font-style: italic;
-      } /* Documentation */
-      code span.dt {
-        color: #902000;
-      } /* DataType */
-      code span.dv {
-        color: #40a070;
-      } /* DecVal */
-      code span.er {
-        color: #ff0000;
-        font-weight: bold;
-      } /* Error */
-      code span.ex {
-      } /* Extension */
-      code span.fl {
-        color: #40a070;
-      } /* Float */
-      code span.fu {
-        color: #06287e;
-      } /* Function */
-      code span.im {
-        color: #008000;
-        font-weight: bold;
-      } /* Import */
-      code span.in {
-        color: #60a0b0;
-        font-weight: bold;
-        font-style: italic;
-      } /* Information */
-      code span.kw {
-        color: #007020;
-        font-weight: bold;
-      } /* Keyword */
-      code span.op {
-        color: #666666;
-      } /* Operator */
-      code span.ot {
-        color: #007020;
-      } /* Other */
-      code span.pp {
-        color: #bc7a00;
-      } /* Preprocessor */
-      code span.sc {
-        color: #4070a0;
-      } /* SpecialChar */
-      code span.ss {
-        color: #bb6688;
-      } /* SpecialString */
-      code span.st {
-        color: #4070a0;
-      } /* String */
-      code span.va {
-        color: #19177c;
-      } /* Variable */
-      code span.vs {
-        color: #4070a0;
-      } /* VerbatimString */
-      code span.wa {
-        color: #60a0b0;
-        font-weight: bold;
-        font-style: italic;
-      } /* Warning */
-    </style>
-    <style>
-      /* ============================================================================
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <style>
+  /* ============================================================================
      richmd — default report theme
      A single CSS asset, styled entirely through --richmd-* custom properties.
      Drop this file next to a richmd-generated report and it just works; override
@@ -241,9 +103,9 @@
      any ancestor of .richmd-doc) — that attribute always wins over OS preference.
      ========================================================================= */
 
-      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap");
+  @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap");
 
-      /* All of richmd's own rules live in a single named cascade layer,
+  /* All of richmd's own rules live in a single named cascade layer,
      `richmd-base`. Because any UNLAYERED consumer CSS beats ALL layered CSS
      regardless of selector specificity, a consumer can override richmd's
      variables by writing a plain `.richmd-doc { --richmd-color-bg: … }` rule
@@ -252,1631 +114,1503 @@
      `:root[data-richmd-theme="dark"]` scoped blocks, with no specificity
      matching required. All richmd rules share ONE layer, so their cascade
      order among themselves is unchanged and the default look is identical. */
-      @layer richmd-base;
+  @layer richmd-base;
 
-      @layer richmd-base {
-        /* -------------------------------------------------------------------------
+  @layer richmd-base {
+    /* -------------------------------------------------------------------------
      1. TOKENS — light theme (default) — "Bright Lab": cool paper ground,
      vivid indigo/cyan accents, geometric type.
      ------------------------------------------------------------------------ */
-        :root {
-          color-scheme: light;
+    :root {
+      color-scheme: light;
 
-          /* base surfaces & text */
-          --richmd-color-bg: #f6f7fb;
-          --richmd-color-bg-alt: #edeff6; /* zebra rows, code bg, inset panels */
-          --richmd-color-surface: #ffffff; /* cards, stat tiles, TOC panel */
-          --richmd-color-surface-2: #eef0f7; /* nested surface (card-on-card) */
-          --richmd-color-border: rgba(15, 23, 42, 0.1);
-          --richmd-color-border-strong: rgba(15, 23, 42, 0.22);
-          --richmd-color-text: #12172b;
-          --richmd-color-text-muted: rgba(18, 23, 43, 0.62);
-          --richmd-color-text-faint: rgba(18, 23, 43, 0.4);
-          --richmd-color-link: #4338ca;
-          --richmd-color-link-hover: #312493;
-          --richmd-color-selection: rgba(79, 70, 229, 0.22);
+      /* base surfaces & text */
+      --richmd-color-bg: #f6f7fb;
+      --richmd-color-bg-alt: #edeff6; /* zebra rows, code bg, inset panels */
+      --richmd-color-surface: #ffffff; /* cards, stat tiles, TOC panel */
+      --richmd-color-surface-2: #eef0f7; /* nested surface (card-on-card) */
+      --richmd-color-border: rgba(15, 23, 42, 0.1);
+      --richmd-color-border-strong: rgba(15, 23, 42, 0.22);
+      --richmd-color-text: #12172b;
+      --richmd-color-text-muted: rgba(18, 23, 43, 0.62);
+      --richmd-color-text-faint: rgba(18, 23, 43, 0.4);
+      --richmd-color-link: #4338ca;
+      --richmd-color-link-hover: #312493;
+      --richmd-color-selection: rgba(79, 70, 229, 0.22);
 
-          /* accent ramp — vivid indigo (primary voice: links, TOC active, primary badges) */
-          --richmd-accent-100: #eef0fe;
-          --richmd-accent-300: #b7bcfa;
-          --richmd-accent-500: #4f46e5;
-          --richmd-accent-700: #362f9e;
-          --richmd-accent-900: #201a5c;
+      /* accent ramp — vivid indigo (primary voice: links, TOC active, primary badges) */
+      --richmd-accent-100: #eef0fe;
+      --richmd-accent-300: #b7bcfa;
+      --richmd-accent-500: #4f46e5;
+      --richmd-accent-700: #362f9e;
+      --richmd-accent-900: #201a5c;
 
-          /* accent-2 ramp — vivid cyan (secondary voice: success states, alt badges) */
-          --richmd-accent2-100: #e3f9fc;
-          --richmd-accent2-300: #99e6f0;
-          --richmd-accent2-500: #0891b2;
-          --richmd-accent2-700: #0a5a70;
-          --richmd-accent2-900: #073445;
+      /* accent-2 ramp — vivid cyan (secondary voice: success states, alt badges) */
+      --richmd-accent2-100: #e3f9fc;
+      --richmd-accent2-300: #99e6f0;
+      --richmd-accent2-500: #0891b2;
+      --richmd-accent2-700: #0a5a70;
+      --richmd-accent2-900: #073445;
 
-          /* categorical palette — cat-1/cat-2 alias accent/accent-2; cat-3..6 are new
+      /* categorical palette — cat-1/cat-2 alias accent/accent-2; cat-3..6 are new
        hues (green, amber, magenta, red) chosen and validated (CVD-safe order,
        WCAG contrast) for distinctness from each other and from accent/accent2 */
-          --richmd-color-cat-3: #16a34a;
-          --richmd-color-cat-4: #b45309;
-          --richmd-color-cat-5: #db2777;
-          --richmd-color-cat-6: #b91c1c;
+      --richmd-color-cat-3: #16a34a;
+      --richmd-color-cat-4: #b45309;
+      --richmd-color-cat-5: #db2777;
+      --richmd-color-cat-6: #b91c1c;
 
-          /* semantic ramps — callouts, badges, stat deltas */
-          --richmd-info-100: #e7f0fe;
-          --richmd-info-300: #a9c6f5;
-          --richmd-info-500: #2563eb;
-          --richmd-info-700: #1c3f8f;
-          --richmd-warning-100: #fef3e0;
-          --richmd-warning-300: #f5cc7d;
-          --richmd-warning-500: #d97706;
-          --richmd-warning-700: #92500a;
-          --richmd-danger-100: #fde8e8;
-          --richmd-danger-300: #f2a5a5;
-          --richmd-danger-500: #dc2626;
-          --richmd-danger-700: #932020;
+      /* semantic ramps — callouts, badges, stat deltas */
+      --richmd-info-100: #e7f0fe;
+      --richmd-info-300: #a9c6f5;
+      --richmd-info-500: #2563eb;
+      --richmd-info-700: #1c3f8f;
+      --richmd-warning-100: #fef3e0;
+      --richmd-warning-300: #f5cc7d;
+      --richmd-warning-500: #d97706;
+      --richmd-warning-700: #92500a;
+      --richmd-danger-100: #fde8e8;
+      --richmd-danger-300: #f2a5a5;
+      --richmd-danger-500: #dc2626;
+      --richmd-danger-700: #932020;
 
-          /* semantic aliases — use these in components, not raw ramp steps */
-          --richmd-color-accent-tint: var(--richmd-accent-100);
-          --richmd-color-accent-solid: var(--richmd-accent-500);
-          --richmd-color-accent-solid-hover: var(--richmd-accent-700);
-          --richmd-color-accent-text: var(--richmd-accent-700);
-          --richmd-color-accent2-tint: var(--richmd-accent2-100);
-          --richmd-color-accent2-solid: var(--richmd-accent2-500);
-          --richmd-color-accent2-text: var(--richmd-accent2-700);
-          --richmd-color-info-tint: var(--richmd-info-100);
-          --richmd-color-info-border: var(--richmd-info-300);
-          --richmd-color-info-solid: var(--richmd-info-500);
-          --richmd-color-info-text: var(--richmd-info-700);
-          --richmd-color-warning-tint: var(--richmd-warning-100);
-          --richmd-color-warning-border: var(--richmd-warning-300);
-          --richmd-color-warning-solid: var(--richmd-warning-500);
-          --richmd-color-warning-text: var(--richmd-warning-700);
-          --richmd-color-danger-tint: var(--richmd-danger-100);
-          --richmd-color-danger-border: var(--richmd-danger-300);
-          --richmd-color-danger-solid: var(--richmd-danger-500);
-          --richmd-color-danger-text: var(--richmd-danger-700);
+      /* semantic aliases — use these in components, not raw ramp steps */
+      --richmd-color-accent-tint: var(--richmd-accent-100);
+      --richmd-color-accent-solid: var(--richmd-accent-500);
+      --richmd-color-accent-solid-hover: var(--richmd-accent-700);
+      --richmd-color-accent-text: var(--richmd-accent-700);
+      --richmd-color-accent2-tint: var(--richmd-accent2-100);
+      --richmd-color-accent2-solid: var(--richmd-accent2-500);
+      --richmd-color-accent2-text: var(--richmd-accent2-700);
+      --richmd-color-info-tint: var(--richmd-info-100);
+      --richmd-color-info-border: var(--richmd-info-300);
+      --richmd-color-info-solid: var(--richmd-info-500);
+      --richmd-color-info-text: var(--richmd-info-700);
+      --richmd-color-warning-tint: var(--richmd-warning-100);
+      --richmd-color-warning-border: var(--richmd-warning-300);
+      --richmd-color-warning-solid: var(--richmd-warning-500);
+      --richmd-color-warning-text: var(--richmd-warning-700);
+      --richmd-color-danger-tint: var(--richmd-danger-100);
+      --richmd-color-danger-border: var(--richmd-danger-300);
+      --richmd-color-danger-solid: var(--richmd-danger-500);
+      --richmd-color-danger-text: var(--richmd-danger-700);
 
-          /* type */
-          --richmd-font-heading:
-            "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-          --richmd-font-heading-weight: 600;
-          --richmd-font-body:
-            "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-          --richmd-font-mono:
-            "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas,
-            monospace;
+      /* type */
+      --richmd-font-heading:
+        "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+      --richmd-font-heading-weight: 600;
+      --richmd-font-body:
+        "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+      --richmd-font-mono:
+        "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas,
+        monospace;
 
-          --richmd-text-xs: 12px;
-          --richmd-text-sm: 14px;
-          --richmd-text-base: 16px;
-          --richmd-text-lg: 19px;
-          --richmd-text-xl: 24px;
-          --richmd-text-2xl: 30px;
-          --richmd-text-3xl: 39px;
-          --richmd-text-4xl: 50px;
-          --richmd-line-height: 1.6;
-          --richmd-line-height-tight: 1.15;
+      --richmd-text-xs: 12px;
+      --richmd-text-sm: 14px;
+      --richmd-text-base: 16px;
+      --richmd-text-lg: 19px;
+      --richmd-text-xl: 24px;
+      --richmd-text-2xl: 30px;
+      --richmd-text-3xl: 39px;
+      --richmd-text-4xl: 50px;
+      --richmd-line-height: 1.6;
+      --richmd-line-height-tight: 1.15;
 
-          /* scale */
-          --richmd-space-1: 4px;
-          --richmd-space-2: 8px;
-          --richmd-space-3: 12px;
-          --richmd-space-4: 16px;
-          --richmd-space-5: 24px;
-          --richmd-space-6: 32px;
-          --richmd-space-7: 48px;
-          --richmd-space-8: 64px;
+      /* scale */
+      --richmd-space-1: 4px;
+      --richmd-space-2: 8px;
+      --richmd-space-3: 12px;
+      --richmd-space-4: 16px;
+      --richmd-space-5: 24px;
+      --richmd-space-6: 32px;
+      --richmd-space-7: 48px;
+      --richmd-space-8: 64px;
 
-          --richmd-radius-sm: 6px;
-          --richmd-radius-md: 10px;
-          --richmd-radius-lg: 16px;
-          --richmd-radius-pill: 999px;
+      --richmd-radius-sm: 6px;
+      --richmd-radius-md: 10px;
+      --richmd-radius-lg: 16px;
+      --richmd-radius-pill: 999px;
 
-          --richmd-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-          --richmd-shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
-          --richmd-shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.14);
+      --richmd-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+      --richmd-shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
+      --richmd-shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.14);
 
-          --richmd-content-width: 760px;
-          --richmd-content-width-wide: 1080px;
-        }
+      --richmd-content-width: 760px;
+      --richmd-content-width-wide: 1080px;
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      1b. TOKENS — dark theme. Same variable names, new values; OS-driven by
      default, override-able with data-richmd-theme.
      ------------------------------------------------------------------------ */
-        @media (prefers-color-scheme: dark) {
-          :root:not([data-richmd-theme="light"]) {
-            --richmd-is-dark: 1;
-          }
-        }
-        @media (prefers-color-scheme: dark) {
-          :root:not([data-richmd-theme="light"]) {
-            color-scheme: dark;
-            --richmd-color-bg: #0b1020;
-            --richmd-color-bg-alt: #131a2e;
-            --richmd-color-surface: #161d34;
-            --richmd-color-surface-2: #1c2440;
-            --richmd-color-border: rgba(226, 232, 248, 0.1);
-            --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
-            --richmd-color-text: #e7ebf7;
-            --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
-            --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
-            --richmd-color-link: #a5b4fc;
-            --richmd-color-link-hover: #c7d2fe;
-            --richmd-color-selection: rgba(129, 140, 248, 0.3);
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-richmd-theme="light"]) {
+        --richmd-is-dark: 1;
+      }
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-richmd-theme="light"]) {
+        color-scheme: dark;
+        --richmd-color-bg: #0b1020;
+        --richmd-color-bg-alt: #131a2e;
+        --richmd-color-surface: #161d34;
+        --richmd-color-surface-2: #1c2440;
+        --richmd-color-border: rgba(226, 232, 248, 0.1);
+        --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
+        --richmd-color-text: #e7ebf7;
+        --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
+        --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
+        --richmd-color-link: #a5b4fc;
+        --richmd-color-link-hover: #c7d2fe;
+        --richmd-color-selection: rgba(129, 140, 248, 0.3);
 
-            --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
-            --richmd-color-accent-solid: #818cf8;
-            --richmd-color-accent-solid-hover: #a5b4fc;
-            --richmd-color-accent-text: #a9b4fa;
-            --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
-            --richmd-color-accent2-solid: #22d3ee;
-            --richmd-color-accent2-text: #67e0f2;
-            --richmd-color-cat-3: #22a355;
-            --richmd-color-cat-4: #c98500;
-            --richmd-color-cat-5: #d55181;
-            --richmd-color-cat-6: #d9483f;
-            --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
-            --richmd-color-info-border: rgba(147, 197, 253, 0.3);
-            --richmd-color-info-solid: #60a5fa;
-            --richmd-color-info-text: #93c5fd;
-            --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
-            --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
-            --richmd-color-warning-solid: #f0a828;
-            --richmd-color-warning-text: #fbc95f;
-            --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
-            --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
-            --richmd-color-danger-solid: #f87171;
-            --richmd-color-danger-text: #fca5a5;
+        --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
+        --richmd-color-accent-solid: #818cf8;
+        --richmd-color-accent-solid-hover: #a5b4fc;
+        --richmd-color-accent-text: #a9b4fa;
+        --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
+        --richmd-color-accent2-solid: #22d3ee;
+        --richmd-color-accent2-text: #67e0f2;
+        --richmd-color-cat-3: #22a355;
+        --richmd-color-cat-4: #c98500;
+        --richmd-color-cat-5: #d55181;
+        --richmd-color-cat-6: #d9483f;
+        --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
+        --richmd-color-info-border: rgba(147, 197, 253, 0.3);
+        --richmd-color-info-solid: #60a5fa;
+        --richmd-color-info-text: #93c5fd;
+        --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
+        --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
+        --richmd-color-warning-solid: #f0a828;
+        --richmd-color-warning-text: #fbc95f;
+        --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
+        --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
+        --richmd-color-danger-solid: #f87171;
+        --richmd-color-danger-text: #fca5a5;
 
-            --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-            --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-            --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
-          }
-        }
-        /* Scoped overrides — data-richmd-theme set directly on .richmd-doc (or any
+        --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+        --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+      }
+    }
+    /* Scoped overrides — data-richmd-theme set directly on .richmd-doc (or any
      ancestor) must win over the OS media query regardless of where in the
      tree it sits, not just at :root. */
-        .richmd-doc[data-richmd-theme="light"] {
-          color-scheme: light;
-          --richmd-color-bg: #f6f7fb;
-          --richmd-color-bg-alt: #edeff6;
-          --richmd-color-surface: #ffffff;
-          --richmd-color-surface-2: #eef0f7;
-          --richmd-color-border: rgba(15, 23, 42, 0.1);
-          --richmd-color-border-strong: rgba(15, 23, 42, 0.22);
-          --richmd-color-text: #12172b;
-          --richmd-color-text-muted: rgba(18, 23, 43, 0.62);
-          --richmd-color-text-faint: rgba(18, 23, 43, 0.4);
-          --richmd-color-link: #4338ca;
-          --richmd-color-link-hover: #312493;
-          --richmd-color-selection: rgba(79, 70, 229, 0.22);
-          --richmd-color-accent-tint: var(--richmd-accent-100);
-          --richmd-color-accent-solid: var(--richmd-accent-500);
-          --richmd-color-accent-solid-hover: var(--richmd-accent-700);
-          --richmd-color-accent-text: var(--richmd-accent-700);
-          --richmd-color-accent2-tint: var(--richmd-accent2-100);
-          --richmd-color-accent2-solid: var(--richmd-accent2-500);
-          --richmd-color-accent2-text: var(--richmd-accent2-700);
-          --richmd-color-cat-3: #16a34a;
-          --richmd-color-cat-4: #b45309;
-          --richmd-color-cat-5: #db2777;
-          --richmd-color-cat-6: #b91c1c;
-          --richmd-color-info-tint: var(--richmd-info-100);
-          --richmd-color-info-border: var(--richmd-info-300);
-          --richmd-color-info-solid: var(--richmd-info-500);
-          --richmd-color-info-text: var(--richmd-info-700);
-          --richmd-color-warning-tint: var(--richmd-warning-100);
-          --richmd-color-warning-border: var(--richmd-warning-300);
-          --richmd-color-warning-solid: var(--richmd-warning-500);
-          --richmd-color-warning-text: var(--richmd-warning-700);
-          --richmd-color-danger-tint: var(--richmd-danger-100);
-          --richmd-color-danger-border: var(--richmd-danger-300);
-          --richmd-color-danger-solid: var(--richmd-danger-500);
-          --richmd-color-danger-text: var(--richmd-danger-700);
-          --richmd-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-          --richmd-shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
-          --richmd-shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.14);
-        }
-        .richmd-doc[data-richmd-theme="dark"] {
-          color-scheme: dark;
-          --richmd-color-bg: #0b1020;
-          --richmd-color-bg-alt: #131a2e;
-          --richmd-color-surface: #161d34;
-          --richmd-color-surface-2: #1c2440;
-          --richmd-color-border: rgba(226, 232, 248, 0.1);
-          --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
-          --richmd-color-text: #e7ebf7;
-          --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
-          --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
-          --richmd-color-link: #a5b4fc;
-          --richmd-color-link-hover: #c7d2fe;
-          --richmd-color-selection: rgba(129, 140, 248, 0.3);
-          --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
-          --richmd-color-accent-solid: #818cf8;
-          --richmd-color-accent-solid-hover: #a5b4fc;
-          --richmd-color-accent-text: #a9b4fa;
-          --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
-          --richmd-color-accent2-solid: #22d3ee;
-          --richmd-color-accent2-text: #67e0f2;
-          --richmd-color-cat-3: #22a355;
-          --richmd-color-cat-4: #c98500;
-          --richmd-color-cat-5: #d55181;
-          --richmd-color-cat-6: #d9483f;
-          --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
-          --richmd-color-info-border: rgba(147, 197, 253, 0.3);
-          --richmd-color-info-solid: #60a5fa;
-          --richmd-color-info-text: #93c5fd;
-          --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
-          --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
-          --richmd-color-warning-solid: #f0a828;
-          --richmd-color-warning-text: #fbc95f;
-          --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
-          --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
-          --richmd-color-danger-solid: #f87171;
-          --richmd-color-danger-text: #fca5a5;
-          --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-          --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-          --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
-        }
+    .richmd-doc[data-richmd-theme="light"] {
+      color-scheme: light;
+      --richmd-color-bg: #f6f7fb;
+      --richmd-color-bg-alt: #edeff6;
+      --richmd-color-surface: #ffffff;
+      --richmd-color-surface-2: #eef0f7;
+      --richmd-color-border: rgba(15, 23, 42, 0.1);
+      --richmd-color-border-strong: rgba(15, 23, 42, 0.22);
+      --richmd-color-text: #12172b;
+      --richmd-color-text-muted: rgba(18, 23, 43, 0.62);
+      --richmd-color-text-faint: rgba(18, 23, 43, 0.4);
+      --richmd-color-link: #4338ca;
+      --richmd-color-link-hover: #312493;
+      --richmd-color-selection: rgba(79, 70, 229, 0.22);
+      --richmd-color-accent-tint: var(--richmd-accent-100);
+      --richmd-color-accent-solid: var(--richmd-accent-500);
+      --richmd-color-accent-solid-hover: var(--richmd-accent-700);
+      --richmd-color-accent-text: var(--richmd-accent-700);
+      --richmd-color-accent2-tint: var(--richmd-accent2-100);
+      --richmd-color-accent2-solid: var(--richmd-accent2-500);
+      --richmd-color-accent2-text: var(--richmd-accent2-700);
+      --richmd-color-cat-3: #16a34a;
+      --richmd-color-cat-4: #b45309;
+      --richmd-color-cat-5: #db2777;
+      --richmd-color-cat-6: #b91c1c;
+      --richmd-color-info-tint: var(--richmd-info-100);
+      --richmd-color-info-border: var(--richmd-info-300);
+      --richmd-color-info-solid: var(--richmd-info-500);
+      --richmd-color-info-text: var(--richmd-info-700);
+      --richmd-color-warning-tint: var(--richmd-warning-100);
+      --richmd-color-warning-border: var(--richmd-warning-300);
+      --richmd-color-warning-solid: var(--richmd-warning-500);
+      --richmd-color-warning-text: var(--richmd-warning-700);
+      --richmd-color-danger-tint: var(--richmd-danger-100);
+      --richmd-color-danger-border: var(--richmd-danger-300);
+      --richmd-color-danger-solid: var(--richmd-danger-500);
+      --richmd-color-danger-text: var(--richmd-danger-700);
+      --richmd-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+      --richmd-shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
+      --richmd-shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.14);
+    }
+    .richmd-doc[data-richmd-theme="dark"] {
+      color-scheme: dark;
+      --richmd-color-bg: #0b1020;
+      --richmd-color-bg-alt: #131a2e;
+      --richmd-color-surface: #161d34;
+      --richmd-color-surface-2: #1c2440;
+      --richmd-color-border: rgba(226, 232, 248, 0.1);
+      --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
+      --richmd-color-text: #e7ebf7;
+      --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
+      --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
+      --richmd-color-link: #a5b4fc;
+      --richmd-color-link-hover: #c7d2fe;
+      --richmd-color-selection: rgba(129, 140, 248, 0.3);
+      --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
+      --richmd-color-accent-solid: #818cf8;
+      --richmd-color-accent-solid-hover: #a5b4fc;
+      --richmd-color-accent-text: #a9b4fa;
+      --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
+      --richmd-color-accent2-solid: #22d3ee;
+      --richmd-color-accent2-text: #67e0f2;
+      --richmd-color-cat-3: #22a355;
+      --richmd-color-cat-4: #c98500;
+      --richmd-color-cat-5: #d55181;
+      --richmd-color-cat-6: #d9483f;
+      --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
+      --richmd-color-info-border: rgba(147, 197, 253, 0.3);
+      --richmd-color-info-solid: #60a5fa;
+      --richmd-color-info-text: #93c5fd;
+      --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
+      --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
+      --richmd-color-warning-solid: #f0a828;
+      --richmd-color-warning-text: #fbc95f;
+      --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
+      --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
+      --richmd-color-danger-solid: #f87171;
+      --richmd-color-danger-text: #fca5a5;
+      --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+    }
 
-        :root[data-richmd-theme="dark"] {
-          color-scheme: dark;
-          --richmd-color-bg: #0b1020;
-          --richmd-color-bg-alt: #131a2e;
-          --richmd-color-surface: #161d34;
-          --richmd-color-surface-2: #1c2440;
-          --richmd-color-border: rgba(226, 232, 248, 0.1);
-          --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
-          --richmd-color-text: #e7ebf7;
-          --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
-          --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
-          --richmd-color-link: #a5b4fc;
-          --richmd-color-link-hover: #c7d2fe;
-          --richmd-color-selection: rgba(129, 140, 248, 0.3);
-          --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
-          --richmd-color-accent-solid: #818cf8;
-          --richmd-color-accent-solid-hover: #a5b4fc;
-          --richmd-color-accent-text: #a9b4fa;
-          --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
-          --richmd-color-accent2-solid: #22d3ee;
-          --richmd-color-accent2-text: #67e0f2;
-          --richmd-color-cat-3: #22a355;
-          --richmd-color-cat-4: #c98500;
-          --richmd-color-cat-5: #d55181;
-          --richmd-color-cat-6: #d9483f;
-          --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
-          --richmd-color-info-border: rgba(147, 197, 253, 0.3);
-          --richmd-color-info-solid: #60a5fa;
-          --richmd-color-info-text: #93c5fd;
-          --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
-          --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
-          --richmd-color-warning-solid: #f0a828;
-          --richmd-color-warning-text: #fbc95f;
-          --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
-          --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
-          --richmd-color-danger-solid: #f87171;
-          --richmd-color-danger-text: #fca5a5;
-          --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-          --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
-          --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
-        }
+    :root[data-richmd-theme="dark"] {
+      color-scheme: dark;
+      --richmd-color-bg: #0b1020;
+      --richmd-color-bg-alt: #131a2e;
+      --richmd-color-surface: #161d34;
+      --richmd-color-surface-2: #1c2440;
+      --richmd-color-border: rgba(226, 232, 248, 0.1);
+      --richmd-color-border-strong: rgba(226, 232, 248, 0.22);
+      --richmd-color-text: #e7ebf7;
+      --richmd-color-text-muted: rgba(231, 235, 247, 0.66);
+      --richmd-color-text-faint: rgba(231, 235, 247, 0.42);
+      --richmd-color-link: #a5b4fc;
+      --richmd-color-link-hover: #c7d2fe;
+      --richmd-color-selection: rgba(129, 140, 248, 0.3);
+      --richmd-color-accent-tint: rgba(129, 140, 248, 0.16);
+      --richmd-color-accent-solid: #818cf8;
+      --richmd-color-accent-solid-hover: #a5b4fc;
+      --richmd-color-accent-text: #a9b4fa;
+      --richmd-color-accent2-tint: rgba(34, 211, 238, 0.16);
+      --richmd-color-accent2-solid: #22d3ee;
+      --richmd-color-accent2-text: #67e0f2;
+      --richmd-color-cat-3: #22a355;
+      --richmd-color-cat-4: #c98500;
+      --richmd-color-cat-5: #d55181;
+      --richmd-color-cat-6: #d9483f;
+      --richmd-color-info-tint: rgba(59, 130, 246, 0.18);
+      --richmd-color-info-border: rgba(147, 197, 253, 0.3);
+      --richmd-color-info-solid: #60a5fa;
+      --richmd-color-info-text: #93c5fd;
+      --richmd-color-warning-tint: rgba(217, 119, 6, 0.2);
+      --richmd-color-warning-border: rgba(252, 211, 133, 0.3);
+      --richmd-color-warning-solid: #f0a828;
+      --richmd-color-warning-text: #fbc95f;
+      --richmd-color-danger-tint: rgba(220, 38, 38, 0.2);
+      --richmd-color-danger-border: rgba(252, 165, 165, 0.3);
+      --richmd-color-danger-solid: #f87171;
+      --richmd-color-danger-text: #fca5a5;
+      --richmd-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+      --richmd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --richmd-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      2. BASE — the report document shell
      ------------------------------------------------------------------------ */
-        .richmd-doc,
-        .richmd-doc *,
-        .richmd-doc *::before,
-        .richmd-doc *::after {
-          box-sizing: border-box;
-        }
-        .richmd-doc {
-          background: var(--richmd-color-bg);
-          color: var(--richmd-color-text);
-          font-family: var(--richmd-font-body);
-          font-size: var(--richmd-text-base);
-          line-height: var(--richmd-line-height);
-          transition:
-            background 0.15s ease,
-            color 0.15s ease;
-        }
-        .richmd-doc ::selection {
-          background: var(--richmd-color-selection);
-        }
-        .richmd-doc :focus {
-          outline: none;
-        }
-        .richmd-doc :focus-visible {
-          outline: 2px solid var(--richmd-color-accent-solid);
-          outline-offset: 2px;
-          border-radius: 4px;
-        }
+    .richmd-doc,
+    .richmd-doc *,
+    .richmd-doc *::before,
+    .richmd-doc *::after {
+      box-sizing: border-box;
+    }
+    .richmd-doc {
+      background: var(--richmd-color-bg);
+      color: var(--richmd-color-text);
+      font-family: var(--richmd-font-body);
+      font-size: var(--richmd-text-base);
+      line-height: var(--richmd-line-height);
+      transition:
+        background 0.15s ease,
+        color 0.15s ease;
+    }
+    .richmd-doc ::selection {
+      background: var(--richmd-color-selection);
+    }
+    .richmd-doc :focus {
+      outline: none;
+    }
+    .richmd-doc :focus-visible {
+      outline: 2px solid var(--richmd-color-accent-solid);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
 
-        .richmd-container {
-          max-width: var(--richmd-content-width);
-          margin: 0 auto;
-          padding: var(--richmd-space-7) var(--richmd-space-5)
-            var(--richmd-space-8);
-        }
-        .richmd-container--wide {
-          max-width: var(--richmd-content-width-wide);
-        }
+    .richmd-container {
+      max-width: var(--richmd-content-width);
+      margin: 0 auto;
+      padding: var(--richmd-space-7) var(--richmd-space-5) var(--richmd-space-8);
+    }
+    .richmd-container--wide {
+      max-width: var(--richmd-content-width-wide);
+    }
 
-        /* headings + stable anchors */
-        .richmd-doc h1,
-        .richmd-doc h2,
-        .richmd-doc h3,
-        .richmd-doc h4,
-        .richmd-doc h5,
-        .richmd-doc h6 {
-          font-family: var(--richmd-font-heading);
-          font-weight: var(--richmd-font-heading-weight);
-          line-height: var(--richmd-line-height-tight);
-          letter-spacing: -0.01em;
-          margin: var(--richmd-space-7) 0 var(--richmd-space-3);
-          scroll-margin-top: var(--richmd-space-5);
-        }
-        .richmd-doc h1:first-child,
-        .richmd-doc h2:first-child {
-          margin-top: 0;
-        }
-        .richmd-doc h1 {
-          font-size: var(--richmd-text-4xl);
-        }
-        .richmd-doc h2 {
-          font-size: var(--richmd-text-3xl);
-          margin-top: var(--richmd-space-8);
-        }
-        .richmd-doc h3 {
-          font-size: var(--richmd-text-2xl);
-        }
-        .richmd-doc h4 {
-          font-size: var(--richmd-text-xl);
-          font-family: var(--richmd-font-body);
-          font-weight: 700;
-          letter-spacing: 0;
-        }
-        .richmd-doc h5 {
-          font-size: var(--richmd-text-lg);
-          font-family: var(--richmd-font-body);
-          font-weight: 700;
-          letter-spacing: 0;
-        }
-        .richmd-doc h6 {
-          font-size: var(--richmd-text-sm);
-          font-family: var(--richmd-font-body);
-          font-weight: 700;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: var(--richmd-color-text-muted);
-        }
+    /* headings + stable anchors */
+    .richmd-doc h1,
+    .richmd-doc h2,
+    .richmd-doc h3,
+    .richmd-doc h4,
+    .richmd-doc h5,
+    .richmd-doc h6 {
+      font-family: var(--richmd-font-heading);
+      font-weight: var(--richmd-font-heading-weight);
+      line-height: var(--richmd-line-height-tight);
+      letter-spacing: -0.01em;
+      margin: var(--richmd-space-7) 0 var(--richmd-space-3);
+      scroll-margin-top: var(--richmd-space-5);
+    }
+    .richmd-doc h1:first-child,
+    .richmd-doc h2:first-child {
+      margin-top: 0;
+    }
+    .richmd-doc h1 {
+      font-size: var(--richmd-text-4xl);
+    }
+    .richmd-doc h2 {
+      font-size: var(--richmd-text-3xl);
+      margin-top: var(--richmd-space-8);
+    }
+    .richmd-doc h3 {
+      font-size: var(--richmd-text-2xl);
+    }
+    .richmd-doc h4 {
+      font-size: var(--richmd-text-xl);
+      font-family: var(--richmd-font-body);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .richmd-doc h5 {
+      font-size: var(--richmd-text-lg);
+      font-family: var(--richmd-font-body);
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .richmd-doc h6 {
+      font-size: var(--richmd-text-sm);
+      font-family: var(--richmd-font-body);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--richmd-color-text-muted);
+    }
 
-        .richmd-heading {
-          display: flex;
-          align-items: baseline;
-          gap: var(--richmd-space-2);
-        }
-        .richmd-anchor {
-          font-family: var(--richmd-font-body);
-          font-weight: 500;
-          font-size: 0.55em;
-          color: var(--richmd-color-text-faint);
-          text-decoration: none;
-          opacity: 0;
-          transition: opacity 0.12s ease;
-        }
-        .richmd-heading:hover .richmd-anchor,
-        .richmd-anchor:focus-visible {
-          opacity: 1;
-        }
-        .richmd-anchor:hover {
-          color: var(--richmd-color-accent-text);
-        }
+    .richmd-heading {
+      display: flex;
+      align-items: baseline;
+      gap: var(--richmd-space-2);
+    }
+    .richmd-anchor {
+      font-family: var(--richmd-font-body);
+      font-weight: 500;
+      font-size: 0.55em;
+      color: var(--richmd-color-text-faint);
+      text-decoration: none;
+      opacity: 0;
+      transition: opacity 0.12s ease;
+    }
+    .richmd-heading:hover .richmd-anchor,
+    .richmd-anchor:focus-visible {
+      opacity: 1;
+    }
+    .richmd-anchor:hover {
+      color: var(--richmd-color-accent-text);
+    }
 
-        .richmd-doc p {
-          margin: 0 0 var(--richmd-space-4);
-        }
-        .richmd-doc a {
-          color: var(--richmd-color-link);
-          text-underline-offset: 3px;
-        }
-        .richmd-doc a:hover {
-          color: var(--richmd-color-link-hover);
-        }
-        .richmd-lede {
-          font-size: var(--richmd-text-lg);
-          color: var(--richmd-color-text-muted);
-          margin-bottom: var(--richmd-space-6);
-        }
+    .richmd-doc p {
+      margin: 0 0 var(--richmd-space-4);
+    }
+    .richmd-doc a {
+      color: var(--richmd-color-link);
+      text-underline-offset: 3px;
+    }
+    .richmd-doc a:hover {
+      color: var(--richmd-color-link-hover);
+    }
+    .richmd-lede {
+      font-size: var(--richmd-text-lg);
+      color: var(--richmd-color-text-muted);
+      margin-bottom: var(--richmd-space-6);
+    }
 
-        .richmd-doc ul,
-        .richmd-doc ol {
-          margin: 0 0 var(--richmd-space-4);
-          padding-left: 1.3em;
-        }
-        .richmd-doc li {
-          margin-bottom: var(--richmd-space-1);
-        }
-        .richmd-doc li::marker {
-          color: var(--richmd-color-accent-text);
-        }
+    .richmd-doc ul,
+    .richmd-doc ol {
+      margin: 0 0 var(--richmd-space-4);
+      padding-left: 1.3em;
+    }
+    .richmd-doc li {
+      margin-bottom: var(--richmd-space-1);
+    }
+    .richmd-doc li::marker {
+      color: var(--richmd-color-accent-text);
+    }
 
-        .richmd-doc blockquote {
-          margin: var(--richmd-space-5) 0;
-          padding: var(--richmd-space-3) var(--richmd-space-5);
-          border-left: 3px solid var(--richmd-color-accent-solid);
-          color: var(--richmd-color-text-muted);
-          font-style: italic;
-        }
-        .richmd-doc blockquote p:last-child {
-          margin-bottom: 0;
-        }
+    .richmd-doc blockquote {
+      margin: var(--richmd-space-5) 0;
+      padding: var(--richmd-space-3) var(--richmd-space-5);
+      border-left: 3px solid var(--richmd-color-accent-solid);
+      color: var(--richmd-color-text-muted);
+      font-style: italic;
+    }
+    .richmd-doc blockquote p:last-child {
+      margin-bottom: 0;
+    }
 
-        .richmd-doc img {
-          display: block;
-          max-width: 100%;
-          border-radius: var(--richmd-radius-md);
-        }
-        .richmd-doc figure {
-          margin: var(--richmd-space-5) 0;
-        }
-        .richmd-doc figcaption {
-          font-size: var(--richmd-text-xs);
-          margin-top: var(--richmd-space-2);
-          color: var(--richmd-color-text-faint);
-          text-align: center;
-        }
+    .richmd-doc img {
+      display: block;
+      max-width: 100%;
+      border-radius: var(--richmd-radius-md);
+    }
+    .richmd-doc figure {
+      margin: var(--richmd-space-5) 0;
+    }
+    .richmd-doc figcaption {
+      font-size: var(--richmd-text-xs);
+      margin-top: var(--richmd-space-2);
+      color: var(--richmd-color-text-faint);
+      text-align: center;
+    }
 
-        .richmd-doc code {
-          font-family: var(--richmd-font-mono);
-          font-size: 0.87em;
-          background: var(--richmd-color-bg-alt);
-          padding: 0.15em 0.4em;
-          border-radius: 5px;
-        }
-        .richmd-doc pre {
-          margin: var(--richmd-space-5) 0;
-          padding: var(--richmd-space-4);
-          background: var(--richmd-color-bg-alt);
-          border: 1px solid var(--richmd-color-border);
-          border-radius: var(--richmd-radius-md);
-          overflow-x: auto;
-        }
-        .richmd-doc pre code {
-          background: none;
-          padding: 0;
-          font-size: 0.85em;
-          line-height: 1.55;
-        }
+    .richmd-doc code {
+      font-family: var(--richmd-font-mono);
+      font-size: 0.87em;
+      background: var(--richmd-color-bg-alt);
+      padding: 0.15em 0.4em;
+      border-radius: 5px;
+    }
+    .richmd-doc pre {
+      margin: var(--richmd-space-5) 0;
+      padding: var(--richmd-space-4);
+      background: var(--richmd-color-bg-alt);
+      border: 1px solid var(--richmd-color-border);
+      border-radius: var(--richmd-radius-md);
+      overflow-x: auto;
+    }
+    .richmd-doc pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.85em;
+      line-height: 1.55;
+    }
 
-        .richmd-hr {
-          height: 1px;
-          border: 0;
-          margin: var(--richmd-space-7) 0;
-          background: var(--richmd-color-border);
-        }
+    .richmd-hr {
+      height: 1px;
+      border: 0;
+      margin: var(--richmd-space-7) 0;
+      background: var(--richmd-color-border);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      3. TABLE OF CONTENTS
      ------------------------------------------------------------------------ */
-        .richmd-toc {
-          background: var(--richmd-color-surface);
-          border: 1px solid var(--richmd-color-border);
-          border-radius: var(--richmd-radius-lg);
-          padding: var(--richmd-space-5);
-          margin-bottom: var(--richmd-space-7);
-        }
-        .richmd-toc-title {
-          font-size: var(--richmd-text-xs);
-          font-weight: 700;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: var(--richmd-color-text-muted);
-          margin-bottom: var(--richmd-space-3);
-        }
-        .richmd-toc-list {
-          list-style: none;
-          margin: 0;
-          padding: 0;
-          columns: 2;
-          column-gap: var(--richmd-space-6);
-        }
-        .richmd-toc-list li {
-          margin-bottom: var(--richmd-space-1);
-          break-inside: avoid;
-        }
-        .richmd-toc-list a {
-          display: block;
-          color: var(--richmd-color-text);
-          text-decoration: none;
-          padding: 3px 0;
-          border-radius: 6px;
-        }
-        .richmd-toc-list a:hover {
-          color: var(--richmd-color-accent-text);
-        }
-        .richmd-toc-list .richmd-toc-sub {
-          padding-left: var(--richmd-space-4);
-          font-size: var(--richmd-text-sm);
-          color: var(--richmd-color-text-muted);
-        }
+    .richmd-toc {
+      background: var(--richmd-color-surface);
+      border: 1px solid var(--richmd-color-border);
+      border-radius: var(--richmd-radius-lg);
+      padding: var(--richmd-space-5);
+      margin-bottom: var(--richmd-space-7);
+    }
+    .richmd-toc-title {
+      font-size: var(--richmd-text-xs);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--richmd-color-text-muted);
+      margin-bottom: var(--richmd-space-3);
+    }
+    .richmd-toc-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      columns: 2;
+      column-gap: var(--richmd-space-6);
+    }
+    .richmd-toc-list li {
+      margin-bottom: var(--richmd-space-1);
+      break-inside: avoid;
+    }
+    .richmd-toc-list a {
+      display: block;
+      color: var(--richmd-color-text);
+      text-decoration: none;
+      padding: 3px 0;
+      border-radius: 6px;
+    }
+    .richmd-toc-list a:hover {
+      color: var(--richmd-color-accent-text);
+    }
+    .richmd-toc-list .richmd-toc-sub {
+      padding-left: var(--richmd-space-4);
+      font-size: var(--richmd-text-sm);
+      color: var(--richmd-color-text-muted);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      4. CALLOUTS
      ------------------------------------------------------------------------ */
-        .richmd-callout {
-          display: flex;
-          gap: var(--richmd-space-3);
-          margin: var(--richmd-space-5) 0;
-          padding: var(--richmd-space-4) var(--richmd-space-5);
-          border-radius: var(--richmd-radius-md);
-          border: 1px solid;
-          font-size: var(--richmd-text-sm);
-        }
-        .richmd-callout-icon {
-          flex: none;
-          width: 20px;
-          height: 20px;
-          margin-top: 0.1em;
-        }
-        .richmd-callout-body p:last-child {
-          margin-bottom: 0;
-        }
-        .richmd-callout-title {
-          display: block;
-          font-weight: 700;
-          margin-bottom: var(--richmd-space-1);
-        }
-        .richmd-callout--info {
-          background: var(--richmd-color-info-tint);
-          border-color: var(--richmd-color-info-border);
-          color: var(--richmd-color-info-text);
-        }
-        .richmd-callout--warning {
-          background: var(--richmd-color-warning-tint);
-          border-color: var(--richmd-color-warning-border);
-          color: var(--richmd-color-warning-text);
-        }
-        .richmd-callout--danger {
-          background: var(--richmd-color-danger-tint);
-          border-color: var(--richmd-color-danger-border);
-          color: var(--richmd-color-danger-text);
-        }
-        .richmd-callout--info .richmd-callout-icon {
-          color: var(--richmd-color-info-solid);
-        }
-        .richmd-callout--warning .richmd-callout-icon {
-          color: var(--richmd-color-warning-solid);
-        }
-        .richmd-callout--danger .richmd-callout-icon {
-          color: var(--richmd-color-danger-solid);
-        }
-        .richmd-callout-body {
-          color: var(--richmd-color-text);
-        }
+    .richmd-callout {
+      display: flex;
+      gap: var(--richmd-space-3);
+      margin: var(--richmd-space-5) 0;
+      padding: var(--richmd-space-4) var(--richmd-space-5);
+      border-radius: var(--richmd-radius-md);
+      border: 1px solid;
+      font-size: var(--richmd-text-sm);
+    }
+    .richmd-callout-icon {
+      flex: none;
+      width: 20px;
+      height: 20px;
+      margin-top: 0.1em;
+    }
+    .richmd-callout-body p:last-child {
+      margin-bottom: 0;
+    }
+    .richmd-callout-title {
+      display: block;
+      font-weight: 700;
+      margin-bottom: var(--richmd-space-1);
+    }
+    .richmd-callout--info {
+      background: var(--richmd-color-info-tint);
+      border-color: var(--richmd-color-info-border);
+      color: var(--richmd-color-info-text);
+    }
+    .richmd-callout--warning {
+      background: var(--richmd-color-warning-tint);
+      border-color: var(--richmd-color-warning-border);
+      color: var(--richmd-color-warning-text);
+    }
+    .richmd-callout--danger {
+      background: var(--richmd-color-danger-tint);
+      border-color: var(--richmd-color-danger-border);
+      color: var(--richmd-color-danger-text);
+    }
+    .richmd-callout--info .richmd-callout-icon {
+      color: var(--richmd-color-info-solid);
+    }
+    .richmd-callout--warning .richmd-callout-icon {
+      color: var(--richmd-color-warning-solid);
+    }
+    .richmd-callout--danger .richmd-callout-icon {
+      color: var(--richmd-color-danger-solid);
+    }
+    .richmd-callout-body {
+      color: var(--richmd-color-text);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      5. CARD GRIDS
      ------------------------------------------------------------------------ */
-        .richmd-card-grid {
-          display: grid;
-          gap: var(--richmd-space-4);
-          grid-template-columns: repeat(var(--richmd-cols, 3), 1fr);
-          margin: var(--richmd-space-5) 0;
-        }
-        .richmd-card-grid[data-cols="2"] {
-          --richmd-cols: 2;
-        }
-        .richmd-card-grid[data-cols="3"] {
-          --richmd-cols: 3;
-        }
-        .richmd-card-grid[data-cols="4"] {
-          --richmd-cols: 4;
-        }
-        @media (max-width: 720px) {
-          .richmd-card-grid {
-            --richmd-cols: 1 !important;
-          }
-        }
-        @media (min-width: 721px) and (max-width: 980px) {
-          .richmd-card-grid[data-cols="4"],
-          .richmd-card-grid[data-cols="3"] {
-            --richmd-cols: 2;
-          }
-        }
+    .richmd-card-grid {
+      display: grid;
+      gap: var(--richmd-space-4);
+      grid-template-columns: repeat(var(--richmd-cols, 3), 1fr);
+      margin: var(--richmd-space-5) 0;
+    }
+    .richmd-card-grid[data-cols="2"] {
+      --richmd-cols: 2;
+    }
+    .richmd-card-grid[data-cols="3"] {
+      --richmd-cols: 3;
+    }
+    .richmd-card-grid[data-cols="4"] {
+      --richmd-cols: 4;
+    }
+    @media (max-width: 720px) {
+      .richmd-card-grid {
+        --richmd-cols: 1 !important;
+      }
+    }
+    @media (min-width: 721px) and (max-width: 980px) {
+      .richmd-card-grid[data-cols="4"],
+      .richmd-card-grid[data-cols="3"] {
+        --richmd-cols: 2;
+      }
+    }
 
-        .richmd-card {
-          display: flex;
-          flex-direction: column;
-          gap: var(--richmd-space-2);
-          background: var(--richmd-color-surface);
-          border: 1px solid var(--richmd-color-border);
-          border-radius: var(--richmd-radius-lg);
-          padding: var(--richmd-space-4);
-          box-shadow: var(--richmd-shadow-sm);
-        }
-        .richmd-card-kicker {
-          font-size: var(--richmd-text-xs);
-          font-weight: 700;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: var(--richmd-color-accent-text);
-        }
-        .richmd-card-title {
-          font-family: var(--richmd-font-heading);
-          font-weight: var(--richmd-font-heading-weight);
-          font-size: var(--richmd-text-lg);
-        }
-        .richmd-card-body {
-          margin: 0;
-          font-size: var(--richmd-text-sm);
-          color: var(--richmd-color-text-muted);
-          flex: 1;
-        }
-        .richmd-card-meta {
-          display: flex;
-          align-items: center;
-          gap: var(--richmd-space-2);
-          font-size: var(--richmd-text-xs);
-          color: var(--richmd-color-text-faint);
-        }
+    .richmd-card {
+      display: flex;
+      flex-direction: column;
+      gap: var(--richmd-space-2);
+      background: var(--richmd-color-surface);
+      border: 1px solid var(--richmd-color-border);
+      border-radius: var(--richmd-radius-lg);
+      padding: var(--richmd-space-4);
+      box-shadow: var(--richmd-shadow-sm);
+    }
+    .richmd-card-kicker {
+      font-size: var(--richmd-text-xs);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--richmd-color-accent-text);
+    }
+    .richmd-card-title {
+      font-family: var(--richmd-font-heading);
+      font-weight: var(--richmd-font-heading-weight);
+      font-size: var(--richmd-text-lg);
+    }
+    .richmd-card-body {
+      margin: 0;
+      font-size: var(--richmd-text-sm);
+      color: var(--richmd-color-text-muted);
+      flex: 1;
+    }
+    .richmd-card-meta {
+      display: flex;
+      align-items: center;
+      gap: var(--richmd-space-2);
+      font-size: var(--richmd-text-xs);
+      color: var(--richmd-color-text-faint);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      6. STAT / KPI TILES
      ------------------------------------------------------------------------ */
-        .richmd-stat-grid {
-          display: grid;
-          gap: var(--richmd-space-4);
-          grid-template-columns: repeat(var(--richmd-stat-cols, 4), 1fr);
-          margin: var(--richmd-space-5) 0;
-        }
-        @media (max-width: 720px) {
-          .richmd-stat-grid {
-            --richmd-stat-cols: 2 !important;
-          }
-        }
-        .richmd-stat {
-          background: var(--richmd-color-surface);
-          border: 1px solid var(--richmd-color-border);
-          border-radius: var(--richmd-radius-md);
-          padding: var(--richmd-space-4);
-        }
-        .richmd-stat-label {
-          font-size: var(--richmd-text-xs);
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          color: var(--richmd-color-text-muted);
-          margin-bottom: var(--richmd-space-2);
-        }
-        .richmd-stat-value {
-          font-family: var(--richmd-font-heading);
-          font-weight: var(--richmd-font-heading-weight);
-          font-size: var(--richmd-text-3xl);
-          line-height: 1;
-        }
-        .richmd-stat-delta {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          font-size: var(--richmd-text-xs);
-          font-weight: 600;
-          margin-top: var(--richmd-space-2);
-        }
-        .richmd-stat-delta--up {
-          color: var(--richmd-color-accent2-text);
-        }
-        .richmd-stat-delta--down {
-          color: var(--richmd-color-danger-text);
-        }
+    .richmd-stat-grid {
+      display: grid;
+      gap: var(--richmd-space-4);
+      grid-template-columns: repeat(var(--richmd-stat-cols, 4), 1fr);
+      margin: var(--richmd-space-5) 0;
+    }
+    @media (max-width: 720px) {
+      .richmd-stat-grid {
+        --richmd-stat-cols: 2 !important;
+      }
+    }
+    .richmd-stat {
+      background: var(--richmd-color-surface);
+      border: 1px solid var(--richmd-color-border);
+      border-radius: var(--richmd-radius-md);
+      padding: var(--richmd-space-4);
+    }
+    .richmd-stat-label {
+      font-size: var(--richmd-text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--richmd-color-text-muted);
+      margin-bottom: var(--richmd-space-2);
+    }
+    .richmd-stat-value {
+      font-family: var(--richmd-font-heading);
+      font-weight: var(--richmd-font-heading-weight);
+      font-size: var(--richmd-text-3xl);
+      line-height: 1;
+    }
+    .richmd-stat-delta {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: var(--richmd-text-xs);
+      font-weight: 600;
+      margin-top: var(--richmd-space-2);
+    }
+    .richmd-stat-delta--up {
+      color: var(--richmd-color-accent2-text);
+    }
+    .richmd-stat-delta--down {
+      color: var(--richmd-color-danger-text);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      7. BADGES / PILLS
      ------------------------------------------------------------------------ */
-        .richmd-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 4px;
-          font-size: var(--richmd-text-xs);
-          font-weight: 600;
-          letter-spacing: 0.02em;
-          padding: 3px 11px;
-          border-radius: var(--richmd-radius-pill);
-          white-space: nowrap;
-        }
-        .richmd-badge--accent {
-          background: var(--richmd-color-accent-tint);
-          color: var(--richmd-color-accent-text);
-        }
-        .richmd-badge--accent2 {
-          background: var(--richmd-color-accent2-tint);
-          color: var(--richmd-color-accent2-text);
-        }
-        .richmd-badge--info {
-          background: var(--richmd-color-info-tint);
-          color: var(--richmd-color-info-text);
-        }
-        .richmd-badge--warning {
-          background: var(--richmd-color-warning-tint);
-          color: var(--richmd-color-warning-text);
-        }
-        .richmd-badge--danger {
-          background: var(--richmd-color-danger-tint);
-          color: var(--richmd-color-danger-text);
-        }
-        .richmd-badge--neutral {
-          background: var(--richmd-color-bg-alt);
-          color: var(--richmd-color-text-muted);
-        }
-        .richmd-badge--outline {
-          background: transparent;
-          border: 1px solid var(--richmd-color-border-strong);
-          color: var(--richmd-color-text-muted);
-        }
+    .richmd-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: var(--richmd-text-xs);
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      padding: 3px 11px;
+      border-radius: var(--richmd-radius-pill);
+      white-space: nowrap;
+    }
+    .richmd-badge--accent {
+      background: var(--richmd-color-accent-tint);
+      color: var(--richmd-color-accent-text);
+    }
+    .richmd-badge--accent2 {
+      background: var(--richmd-color-accent2-tint);
+      color: var(--richmd-color-accent2-text);
+    }
+    .richmd-badge--info {
+      background: var(--richmd-color-info-tint);
+      color: var(--richmd-color-info-text);
+    }
+    .richmd-badge--warning {
+      background: var(--richmd-color-warning-tint);
+      color: var(--richmd-color-warning-text);
+    }
+    .richmd-badge--danger {
+      background: var(--richmd-color-danger-tint);
+      color: var(--richmd-color-danger-text);
+    }
+    .richmd-badge--neutral {
+      background: var(--richmd-color-bg-alt);
+      color: var(--richmd-color-text-muted);
+    }
+    .richmd-badge--outline {
+      background: transparent;
+      border: 1px solid var(--richmd-color-border-strong);
+      color: var(--richmd-color-text-muted);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      8. DETAILS / DISCLOSURE
      ------------------------------------------------------------------------ */
-        .richmd-details {
-          background: var(--richmd-color-surface);
-          border: 1px solid var(--richmd-color-border);
-          border-radius: var(--richmd-radius-md);
-          margin: var(--richmd-space-4) 0;
-          overflow: hidden;
-        }
-        .richmd-details > summary {
-          list-style: none;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: var(--richmd-space-2);
-          padding: var(--richmd-space-3) var(--richmd-space-4);
-          font-weight: 600;
-          font-size: var(--richmd-text-sm);
-          user-select: none;
-        }
-        .richmd-details > summary::-webkit-details-marker {
-          display: none;
-        }
-        .richmd-details > summary::before {
-          content: "";
-          flex: none;
-          width: 8px;
-          height: 8px;
-          border-right: 2px solid var(--richmd-color-accent-solid);
-          border-bottom: 2px solid var(--richmd-color-accent-solid);
-          transform: rotate(-45deg);
-          transition: transform 0.15s ease;
-          margin-right: 2px;
-        }
-        .richmd-details[open] > summary::before {
-          transform: rotate(45deg);
-        }
-        .richmd-details > summary:focus-visible {
-          outline: 2px solid var(--richmd-color-accent-solid);
-          outline-offset: -2px;
-        }
-        .richmd-details-body {
-          padding: 0 var(--richmd-space-4) var(--richmd-space-4);
-          font-size: var(--richmd-text-sm);
-          color: var(--richmd-color-text-muted);
-        }
-        .richmd-details-body p:last-child {
-          margin-bottom: 0;
-        }
+    .richmd-details {
+      background: var(--richmd-color-surface);
+      border: 1px solid var(--richmd-color-border);
+      border-radius: var(--richmd-radius-md);
+      margin: var(--richmd-space-4) 0;
+      overflow: hidden;
+    }
+    .richmd-details > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: var(--richmd-space-2);
+      padding: var(--richmd-space-3) var(--richmd-space-4);
+      font-weight: 600;
+      font-size: var(--richmd-text-sm);
+      user-select: none;
+    }
+    .richmd-details > summary::-webkit-details-marker {
+      display: none;
+    }
+    .richmd-details > summary::before {
+      content: "";
+      flex: none;
+      width: 8px;
+      height: 8px;
+      border-right: 2px solid var(--richmd-color-accent-solid);
+      border-bottom: 2px solid var(--richmd-color-accent-solid);
+      transform: rotate(-45deg);
+      transition: transform 0.15s ease;
+      margin-right: 2px;
+    }
+    .richmd-details[open] > summary::before {
+      transform: rotate(45deg);
+    }
+    .richmd-details > summary:focus-visible {
+      outline: 2px solid var(--richmd-color-accent-solid);
+      outline-offset: -2px;
+    }
+    .richmd-details-body {
+      padding: 0 var(--richmd-space-4) var(--richmd-space-4);
+      font-size: var(--richmd-text-sm);
+      color: var(--richmd-color-text-muted);
+    }
+    .richmd-details-body p:last-child {
+      margin-bottom: 0;
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      9. STATEMENT BLOCKS (goals / no-goals / invariants / principles)
      ------------------------------------------------------------------------ */
-        .richmd-statement {
-          display: grid;
-          grid-template-columns: 160px 1fr;
-          gap: var(--richmd-space-4);
-          padding: var(--richmd-space-3) 0;
-          border-top: 1px solid var(--richmd-color-border);
-        }
-        .richmd-statement:first-of-type {
-          border-top: none;
-        }
-        .richmd-statement-label {
-          font-weight: 700;
-          font-size: var(--richmd-text-sm);
-          color: var(--richmd-color-accent-text);
-        }
-        .richmd-statement-body {
-          font-size: var(--richmd-text-sm);
-          color: var(--richmd-color-text);
-          margin: 0;
-        }
-        @media (max-width: 640px) {
-          .richmd-statement {
-            grid-template-columns: 1fr;
-            gap: var(--richmd-space-1);
-          }
-        }
+    .richmd-statement {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: var(--richmd-space-4);
+      padding: var(--richmd-space-3) 0;
+      border-top: 1px solid var(--richmd-color-border);
+    }
+    .richmd-statement:first-of-type {
+      border-top: none;
+    }
+    .richmd-statement-label {
+      font-weight: 700;
+      font-size: var(--richmd-text-sm);
+      color: var(--richmd-color-accent-text);
+    }
+    .richmd-statement-body {
+      font-size: var(--richmd-text-sm);
+      color: var(--richmd-color-text);
+      margin: 0;
+    }
+    @media (max-width: 640px) {
+      .richmd-statement {
+        grid-template-columns: 1fr;
+        gap: var(--richmd-space-1);
+      }
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      10. DIAGRAMS — mermaid + vega-lite + generic svg figures
      ------------------------------------------------------------------------ */
-        .richmd-diagram {
-          background: var(--richmd-color-surface);
-          border: 1px solid var(--richmd-color-border);
-          border-radius: var(--richmd-radius-lg);
-          padding: var(--richmd-space-5);
-          margin: var(--richmd-space-5) 0;
-          overflow-x: auto;
-        }
-        .richmd-diagram-title {
-          font-size: var(--richmd-text-xs);
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          color: var(--richmd-color-text-muted);
-          margin-bottom: var(--richmd-space-3);
-        }
-        .richmd-mermaid {
-          display: flex;
-          justify-content: center;
-        }
-        .richmd-vega {
-          display: block;
-          width: 100%;
-        }
-        .richmd-mermaid svg,
-        .richmd-vega svg,
-        .richmd-vega canvas {
-          max-width: 100%;
-        }
-        .richmd-embedded-svg svg {
-          display: block;
-          width: 100%;
-          max-width: 100%;
-          height: auto;
-        }
+    .richmd-diagram {
+      background: var(--richmd-color-surface);
+      border: 1px solid var(--richmd-color-border);
+      border-radius: var(--richmd-radius-lg);
+      padding: var(--richmd-space-5);
+      margin: var(--richmd-space-5) 0;
+      overflow-x: auto;
+    }
+    .richmd-diagram-title {
+      font-size: var(--richmd-text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--richmd-color-text-muted);
+      margin-bottom: var(--richmd-space-3);
+    }
+    .richmd-mermaid {
+      display: flex;
+      justify-content: center;
+    }
+    .richmd-vega {
+      display: block;
+      width: 100%;
+    }
+    .richmd-mermaid svg,
+    .richmd-vega svg,
+    .richmd-vega canvas {
+      max-width: 100%;
+    }
+    .richmd-embedded-svg svg {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      11. TABLES
      ------------------------------------------------------------------------ */
-        .richmd-table-wrap {
-          overflow-x: auto;
-          margin: var(--richmd-space-5) 0;
-          border: 1px solid var(--richmd-color-border);
-          border-radius: var(--richmd-radius-md);
-        }
-        .richmd-doc table {
-          width: 100%;
-          border-collapse: collapse;
-          font-size: var(--richmd-text-sm);
-          min-width: 480px;
-        }
-        .richmd-doc th {
-          text-align: left;
-          font-size: var(--richmd-text-xs);
-          font-weight: 700;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-          color: var(--richmd-color-text-muted);
-          padding: var(--richmd-space-3);
-          background: var(--richmd-color-bg-alt);
-          border-bottom: 1px solid var(--richmd-color-border);
-          white-space: nowrap;
-        }
-        .richmd-doc td {
-          padding: var(--richmd-space-3);
-          border-bottom: 1px solid var(--richmd-color-border);
-        }
-        .richmd-doc tbody tr:last-child td {
-          border-bottom: none;
-        }
-        .richmd-doc tbody tr:hover {
-          background: var(--richmd-color-bg-alt);
-        }
+    .richmd-table-wrap {
+      overflow-x: auto;
+      margin: var(--richmd-space-5) 0;
+      border: 1px solid var(--richmd-color-border);
+      border-radius: var(--richmd-radius-md);
+    }
+    .richmd-doc table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--richmd-text-sm);
+      min-width: 480px;
+    }
+    .richmd-doc th {
+      text-align: left;
+      font-size: var(--richmd-text-xs);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--richmd-color-text-muted);
+      padding: var(--richmd-space-3);
+      background: var(--richmd-color-bg-alt);
+      border-bottom: 1px solid var(--richmd-color-border);
+      white-space: nowrap;
+    }
+    .richmd-doc td {
+      padding: var(--richmd-space-3);
+      border-bottom: 1px solid var(--richmd-color-border);
+    }
+    .richmd-doc tbody tr:last-child td {
+      border-bottom: none;
+    }
+    .richmd-doc tbody tr:hover {
+      background: var(--richmd-color-bg-alt);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      12. THEME TOGGLE (optional chrome a report may include)
      ------------------------------------------------------------------------ */
-        .richmd-topbar {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: var(--richmd-space-4);
-          padding: var(--richmd-space-3) var(--richmd-space-5);
-          border-bottom: 1px solid var(--richmd-color-border);
-        }
-        .richmd-brand {
-          font-family: var(--richmd-font-heading);
-          font-weight: var(--richmd-font-heading-weight);
-          font-size: var(--richmd-text-lg);
-        }
-        .richmd-theme-toggle {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          cursor: pointer;
-          font-family: var(--richmd-font-body);
-          font-size: var(--richmd-text-xs);
-          font-weight: 600;
-          background: var(--richmd-color-surface);
-          border: 1px solid var(--richmd-color-border-strong);
-          padding: 6px 12px;
-          border-radius: var(--richmd-radius-pill);
-          color: var(--richmd-color-text);
-        }
-        .richmd-theme-toggle:hover {
-          background: var(--richmd-color-bg-alt);
-        }
+    .richmd-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--richmd-space-4);
+      padding: var(--richmd-space-3) var(--richmd-space-5);
+      border-bottom: 1px solid var(--richmd-color-border);
+    }
+    .richmd-brand {
+      font-family: var(--richmd-font-heading);
+      font-weight: var(--richmd-font-heading-weight);
+      font-size: var(--richmd-text-lg);
+    }
+    .richmd-theme-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-family: var(--richmd-font-body);
+      font-size: var(--richmd-text-xs);
+      font-weight: 600;
+      background: var(--richmd-color-surface);
+      border: 1px solid var(--richmd-color-border-strong);
+      padding: 6px 12px;
+      border-radius: var(--richmd-radius-pill);
+      color: var(--richmd-color-text);
+    }
+    .richmd-theme-toggle:hover {
+      background: var(--richmd-color-bg-alt);
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      13. RESPONSIVE
      ------------------------------------------------------------------------ */
-        @media (max-width: 640px) {
-          .richmd-container {
-            padding: var(--richmd-space-5) var(--richmd-space-4)
-              var(--richmd-space-6);
-          }
-          .richmd-doc h1 {
-            font-size: var(--richmd-text-3xl);
-          }
-          .richmd-doc h2 {
-            font-size: var(--richmd-text-2xl);
-          }
-          .richmd-toc-list {
-            columns: 1;
-          }
-        }
+    @media (max-width: 640px) {
+      .richmd-container {
+        padding: var(--richmd-space-5) var(--richmd-space-4) var(--richmd-space-6);
+      }
+      .richmd-doc h1 {
+        font-size: var(--richmd-text-3xl);
+      }
+      .richmd-doc h2 {
+        font-size: var(--richmd-text-2xl);
+      }
+      .richmd-toc-list {
+        columns: 1;
+      }
+    }
 
-        /* ---------------------------------------------------------------------------
+    /* ---------------------------------------------------------------------------
      14. PRINT
      ------------------------------------------------------------------------ */
-        @media print {
-          .richmd-doc {
-            background: #fff !important;
-            color: #111 !important;
-          }
-          .richmd-theme-toggle,
-          .richmd-anchor {
-            display: none !important;
-          }
-          .richmd-container {
-            max-width: 100%;
-            padding: 0;
-          }
-          .richmd-card,
-          .richmd-stat,
-          .richmd-toc,
-          .richmd-callout,
-          .richmd-diagram,
-          .richmd-details {
-            background: #fff !important;
-            box-shadow: none !important;
-            border: 1px solid #ccc !important;
-            break-inside: avoid;
-          }
-          .richmd-card-grid,
-          .richmd-stat-grid {
-            break-inside: avoid;
-          }
-          h1,
-          h2,
-          h3 {
-            break-after: avoid;
-          }
-          .richmd-table-wrap {
-            overflow: visible;
-            border-color: #ccc !important;
-          }
-          .richmd-doc table {
-            min-width: 0;
-          }
-          .richmd-details {
-            break-inside: avoid;
-          }
-          .richmd-details:not([open]) > summary::before {
-            content: "▸ ";
-            border: none;
-            transform: none;
-          }
-          a {
-            color: #111 !important;
-            text-decoration: underline;
-          }
-        }
+    @media print {
+      .richmd-doc {
+        background: #fff !important;
+        color: #111 !important;
       }
-    </style>
-  </head>
-  <body>
-    <div class="richmd-doc">
-      <script>
-        (function () {
-          var doc = document.currentScript.parentElement;
-          function stored() {
-            try {
-              var s = localStorage.getItem("richmd-theme");
-              return s === "light" || s === "dark" ? s : null;
-            } catch (e) {
-              return null;
-            }
-          }
-          function osTheme() {
-            if (typeof window.matchMedia !== "function") return "light";
-            return window.matchMedia("(prefers-color-scheme: dark)").matches
-              ? "dark"
-              : "light";
-          }
-          function resolve() {
-            return stored() || osTheme();
-          }
-          doc.setAttribute("data-richmd-theme", resolve());
-          if (typeof window.matchMedia === "function") {
-            var mql = window.matchMedia("(prefers-color-scheme: dark)");
-            var onChange = function () {
-              // An explicit stored choice wins over the OS — leave the attribute
-              // alone in that case (matches the CSS attribute-over-media-query
-              // precedence). Otherwise track the OS and let diagrams re-render.
-              if (stored()) return;
-              doc.setAttribute("data-richmd-theme", osTheme());
-              document.dispatchEvent(new CustomEvent("richmd-theme-changed"));
-            };
-            if (typeof mql.addEventListener === "function") {
-              mql.addEventListener("change", onChange);
-            } else if (typeof mql.addListener === "function") {
-              mql.addListener(onChange);
-            }
-          }
-        })();
-      </script>
-      <script>
-        window.richmdDiagramTheme = function () {
-          var el =
-            document.querySelector(".richmd-doc") || document.documentElement;
-          var cs = getComputedStyle(el);
-          // Chrome returns oklch() unchanged from getComputedStyle, but mermaid
-          // throws on oklch (and its classDef parser chokes on rgb()'s commas)
-          // and vega throws "Unsupported color format" — so any diagram-facing
-          // token set to an oklch() value silently kills every diagram. Convert
-          // oklch() -> #rrggbb (OKLCH->OKLab->linear sRGB->gamma sRGB, CSS Color
-          // 4); pass every other value (rgb/rgba/hex/named/empty) through
-          // unchanged so existing theme values stay byte-stable. Format
-          // conversion only, not a color choice (design.md §00 P3, §09).
-          function normalizeColor(value) {
-            if (value == null) return value;
-            var s = String(value).trim();
-            if (s.slice(0, 6).toLowerCase() !== "oklch(") return value;
-            var close = s.indexOf(")");
-            var inner = s.slice(6, close === -1 ? s.length : close);
-            var slash = inner.indexOf("/");
-            if (slash !== -1) inner = inner.slice(0, slash);
-            var parts = inner
-              .trim()
-              .split(/\s+/)
-              .filter(function (p) {
-                return p.length;
-              });
-            function comp(tok) {
-              if (tok == null || tok === "none") return 0;
-              if (tok.charAt(tok.length - 1) === "%")
-                return parseFloat(tok) / 100;
-              return parseFloat(tok);
-            }
-            var L = comp(parts[0]);
-            var C = comp(parts[1]);
-            var H = comp(parts[2]);
-            if (isNaN(L)) L = 0;
-            if (isNaN(C)) C = 0;
-            if (isNaN(H)) H = 0;
-            var hr = (H * Math.PI) / 180;
-            var a = C * Math.cos(hr);
-            var b = C * Math.sin(hr);
-            var l_ = L + 0.3963377774 * a + 0.2158037573 * b;
-            var m_ = L - 0.1055613458 * a - 0.0638541728 * b;
-            var s_ = L - 0.0894841775 * a - 1.291485548 * b;
-            var l = l_ * l_ * l_;
-            var m = m_ * m_ * m_;
-            var sc = s_ * s_ * s_;
-            var r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * sc;
-            var g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * sc;
-            var bl = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * sc;
-            function enc(x) {
-              var y =
-                x <= 0.0031308
-                  ? 12.92 * x
-                  : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
-              if (y < 0) y = 0;
-              if (y > 1) y = 1;
-              var i = Math.round(y * 255);
-              var hex = i.toString(16);
-              return hex.length === 1 ? "0" + hex : hex;
-            }
-            return "#" + enc(r) + enc(g) + enc(bl);
-          }
-          function v(name, fallback) {
-            var value = cs.getPropertyValue(name);
-            value = value && value.trim();
-            return normalizeColor(value || fallback);
-          }
-          var accentSolid = v("--richmd-color-accent-solid", "#4f46e5");
-          var accent2Solid = v("--richmd-color-accent2-solid", "#0891b2");
-          return {
-            bg: v("--richmd-color-bg", "#ffffff"),
-            bgAlt: v("--richmd-color-bg-alt", "#f0f0f0"),
-            surface: v("--richmd-color-surface", "#ffffff"),
-            surface2: v("--richmd-color-surface-2", "#f0f0f0"),
-            border: v("--richmd-color-border", "rgba(0,0,0,0.1)"),
-            borderStrong: v("--richmd-color-border-strong", "rgba(0,0,0,0.22)"),
-            text: v("--richmd-color-text", "#000000"),
-            textMuted: v("--richmd-color-text-muted", "rgba(0,0,0,0.62)"),
-            textFaint: v("--richmd-color-text-faint", "rgba(0,0,0,0.4)"),
-            accentSolid: accentSolid,
-            accentText: v("--richmd-color-accent-text", "#4f46e5"),
-            accentTint: v("--richmd-color-accent-tint", "#eef0fe"),
-            accent2Solid: accent2Solid,
-            accent2Text: v("--richmd-color-accent2-text", "#0891b2"),
-            categorical: [
-              accentSolid,
-              accent2Solid,
-              v("--richmd-color-cat-3", "#16a34a"),
-              v("--richmd-color-cat-4", "#b45309"),
-              v("--richmd-color-cat-5", "#db2777"),
-              v("--richmd-color-cat-6", "#b91c1c"),
-            ],
-            fontBody: v("--richmd-font-body", "sans-serif"),
-          };
-        };
+      .richmd-theme-toggle,
+      .richmd-anchor {
+        display: none !important;
+      }
+      .richmd-container {
+        max-width: 100%;
+        padding: 0;
+      }
+      .richmd-card,
+      .richmd-stat,
+      .richmd-toc,
+      .richmd-callout,
+      .richmd-diagram,
+      .richmd-details {
+        background: #fff !important;
+        box-shadow: none !important;
+        border: 1px solid #ccc !important;
+        break-inside: avoid;
+      }
+      .richmd-card-grid,
+      .richmd-stat-grid {
+        break-inside: avoid;
+      }
+      h1,
+      h2,
+      h3 {
+        break-after: avoid;
+      }
+      .richmd-table-wrap {
+        overflow: visible;
+        border-color: #ccc !important;
+      }
+      .richmd-doc table {
+        min-width: 0;
+      }
+      .richmd-details {
+        break-inside: avoid;
+      }
+      .richmd-details:not([open]) > summary::before {
+        content: "▸ ";
+        border: none;
+        transform: none;
+      }
+      a {
+        color: #111 !important;
+        text-decoration: underline;
+      }
+    }
+  }
 
-        window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
-        window.richmdRerenderDiagrams = function () {
-          window.richmdDiagramRerenders.forEach(function (fn) {
-            try {
-              fn();
-            } catch (e) {}
-          });
-        };
+  </style>
+</head>
+<body>
+<div class="richmd-doc">
+<script>
+  (function () {
+    var doc = document.currentScript.parentElement;
+    function stored() {
+      try {
+        var s = localStorage.getItem("richmd-theme");
+        return s === "light" || s === "dark" ? s : null;
+      } catch (e) {
+        return null;
+      }
+    }
+    function osTheme() {
+      if (typeof window.matchMedia !== "function") return "light";
+      return window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+    }
+    function resolve() {
+      return stored() || osTheme();
+    }
+    doc.setAttribute("data-richmd-theme", resolve());
+    if (typeof window.matchMedia === "function") {
+      var mql = window.matchMedia("(prefers-color-scheme: dark)");
+      var onChange = function () {
+        // An explicit stored choice wins over the OS — leave the attribute
+        // alone in that case (matches the CSS attribute-over-media-query
+        // precedence). Otherwise track the OS and let diagrams re-render.
+        if (stored()) return;
+        doc.setAttribute("data-richmd-theme", osTheme());
+        document.dispatchEvent(new CustomEvent("richmd-theme-changed"));
+      };
+      if (typeof mql.addEventListener === "function") {
+        mql.addEventListener("change", onChange);
+      } else if (typeof mql.addListener === "function") {
+        mql.addListener(onChange);
+      }
+    }
+  })();
+</script>
+<script>
+  window.richmdDiagramTheme = function () {
+    var el = document.querySelector(".richmd-doc") || document.documentElement;
+    var cs = getComputedStyle(el);
+    // Chrome returns oklch() unchanged from getComputedStyle, but mermaid
+    // throws on oklch (and its classDef parser chokes on rgb()'s commas)
+    // and vega throws "Unsupported color format" — so any diagram-facing
+    // token set to an oklch() value silently kills every diagram. Convert
+    // oklch() -> #rrggbb (OKLCH->OKLab->linear sRGB->gamma sRGB, CSS Color
+    // 4); pass every other value (rgb/rgba/hex/named/empty) through
+    // unchanged so existing theme values stay byte-stable. Format
+    // conversion only, not a color choice (design.md §00 P3, §09).
+    function normalizeColor(value) {
+      if (value == null) return value;
+      var s = String(value).trim();
+      if (s.slice(0, 6).toLowerCase() !== "oklch(") return value;
+      var close = s.indexOf(")");
+      var inner = s.slice(6, close === -1 ? s.length : close);
+      var slash = inner.indexOf("/");
+      if (slash !== -1) inner = inner.slice(0, slash);
+      var parts = inner.trim().split(/\s+/).filter(function (p) {
+        return p.length;
+      });
+      function comp(tok) {
+        if (tok == null || tok === "none") return 0;
+        if (tok.charAt(tok.length - 1) === "%") return parseFloat(tok) / 100;
+        return parseFloat(tok);
+      }
+      var L = comp(parts[0]);
+      var C = comp(parts[1]);
+      var H = comp(parts[2]);
+      if (isNaN(L)) L = 0;
+      if (isNaN(C)) C = 0;
+      if (isNaN(H)) H = 0;
+      var hr = (H * Math.PI) / 180;
+      var a = C * Math.cos(hr);
+      var b = C * Math.sin(hr);
+      var l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+      var m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+      var s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+      var l = l_ * l_ * l_;
+      var m = m_ * m_ * m_;
+      var sc = s_ * s_ * s_;
+      var r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * sc;
+      var g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * sc;
+      var bl = -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * sc;
+      function enc(x) {
+        var y = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+        if (y < 0) y = 0;
+        if (y > 1) y = 1;
+        var i = Math.round(y * 255);
+        var hex = i.toString(16);
+        return hex.length === 1 ? "0" + hex : hex;
+      }
+      return "#" + enc(r) + enc(g) + enc(bl);
+    }
+    function v(name, fallback) {
+      var value = cs.getPropertyValue(name);
+      value = value && value.trim();
+      return normalizeColor(value || fallback);
+    }
+    var accentSolid = v("--richmd-color-accent-solid", "#4f46e5");
+    var accent2Solid = v("--richmd-color-accent2-solid", "#0891b2");
+    return {
+      bg: v("--richmd-color-bg", "#ffffff"),
+      bgAlt: v("--richmd-color-bg-alt", "#f0f0f0"),
+      surface: v("--richmd-color-surface", "#ffffff"),
+      surface2: v("--richmd-color-surface-2", "#f0f0f0"),
+      border: v("--richmd-color-border", "rgba(0,0,0,0.1)"),
+      borderStrong: v("--richmd-color-border-strong", "rgba(0,0,0,0.22)"),
+      text: v("--richmd-color-text", "#000000"),
+      textMuted: v("--richmd-color-text-muted", "rgba(0,0,0,0.62)"),
+      textFaint: v("--richmd-color-text-faint", "rgba(0,0,0,0.4)"),
+      accentSolid: accentSolid,
+      accentText: v("--richmd-color-accent-text", "#4f46e5"),
+      accentTint: v("--richmd-color-accent-tint", "#eef0fe"),
+      accent2Solid: accent2Solid,
+      accent2Text: v("--richmd-color-accent2-text", "#0891b2"),
+      categorical: [
+        accentSolid,
+        accent2Solid,
+        v("--richmd-color-cat-3", "#16a34a"),
+        v("--richmd-color-cat-4", "#b45309"),
+        v("--richmd-color-cat-5", "#db2777"),
+        v("--richmd-color-cat-6", "#b91c1c"),
+      ],
+      fontBody: v("--richmd-font-body", "sans-serif"),
+    };
+  };
 
-        document.addEventListener("richmd-theme-changed", function () {
-          window.richmdRerenderDiagrams();
-        });
-      </script>
-      <div class="richmd-topbar">
-        <div class="richmd-brand">richmd</div>
-        <button
-          type="button"
-          class="richmd-theme-toggle"
-          aria-label="Toggle color theme"
-        >
-          <span class="richmd-theme-toggle-icon">☀</span
-          ><span class="richmd-theme-toggle-label">Light</span>
-        </button>
-      </div>
-      <div class="richmd-container">
-        <h1 id="notebook-sync-offline-first-editing">
-          Notebook Sync: Offline-First Editing
-        </h1>
-        <p>
-          A design proposal for letting notebook edits made offline reconcile
-          safely once the client reconnects, without a central lock or a rewrite
-          of the sync protocol.
-        </p>
-        <p>
-          Sections below are tagged with the lens they serve —
-          <code class="richmd-token" data-vocabulary="lens" data-member="state"
-            >state</code
-          >,
-          <code
-            class="richmd-token"
-            data-vocabulary="lens"
-            data-member="robustness"
-            >robustness</code
-          >, and friends. Those are token references: this document declares its
-          own <code>lens</code> vocabulary in
-          <code>examples/.richmd/tokens/lens.json</code>, and richmd checks
-          every citation against that closed set, so a misspelled lens fails the
-          document instead of rendering as ordinary prose. richmd ships no
-          vocabulary of its own — the set, and the properties on each member,
-          are this document’s.
-        </p>
-        <div class="richmd-toc">
-          <div class="richmd-toc-title">Contents</div>
-          <ul class="richmd-toc-list">
-            <li>
-              <a href="#notebook-sync-offline-first-editing"
-                >Notebook Sync: Offline-First Editing</a
-              >
-            </li>
-            <li class="richmd-toc-sub"><a href="#goals">Goals</a></li>
-            <li class="richmd-toc-sub"><a href="#non-goals">Non-goals</a></li>
-            <li class="richmd-toc-sub">
-              <a href="#invariants-lensinvariants-lensrobustness"
-                >Invariants lens:invariants lens:robustness</a
-              >
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#principles-lenscomposition"
-                >Principles lens:composition</a
-              >
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#component-breakdown-lensmodeling"
-                >Component breakdown lens:modeling</a
-              >
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#sync-engine">Sync engine</a>
-            </li>
-            <li class="richmd-toc-sub">
-              <a href="#conflict-resolver">Conflict resolver</a>
-            </li>
-            <li class="richmd-toc-sub"><a href="#open-risks">Open risks</a></li>
-            <li class="richmd-toc-sub">
-              <a href="#rollout-plan">Rollout plan</a>
-            </li>
-          </ul>
-        </div>
-        <h2 id="goals">Goals</h2>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Offline durability</strong>
-          </div>
-          <p class="richmd-statement-body">
-            Edits made with no connection are never lost, and become visible to
-            other clients within one sync cycle of reconnecting.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>No central lock</strong>
-          </div>
-          <p class="richmd-statement-body">
-            No notebook is ever exclusively checked out to one client — two
-            people editing offline is a supported, non-error case.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Bounded merge cost</strong>
-          </div>
-          <p class="richmd-statement-body">
-            Reconciling a week of offline edits costs roughly the same as
-            reconciling one hour of them.
-          </p>
-        </div>
-        <h2 id="non-goals">Non-goals</h2>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Live cursors</strong>
-          </div>
-          <p class="richmd-statement-body">
-            Real-time presence and collaborative cursors are a separate effort
-            layered on top of sync, not part of this proposal.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Cross-notebook moves</strong>
-          </div>
-          <p class="richmd-statement-body">
-            Moving a block between two notebooks while both are edited offline
-            is out of scope; it degrades to a manual re-paste today and will
-            stay that way.
-          </p>
-        </div>
-        <div class="richmd-callout richmd-callout--warning">
-          <div class="richmd-callout-body">
-            <span class="richmd-callout-title">Scope check</span>
-            <p>
-              Real-time collaborative cursors are out of scope for this
-              iteration — see non-goals above. Revisit once offline sync has
-              shipped and stabilized.
-            </p>
-          </div>
-        </div>
-        <h2 id="invariants">
-          Invariants
-          <code
-            class="richmd-token"
-            data-vocabulary="lens"
-            data-member="invariants"
-            >invariants</code
-          >
-          <code
-            class="richmd-token"
-            data-vocabulary="lens"
-            data-member="robustness"
-            >robustness</code
-          >
-        </h2>
-        <p>
-          Two lenses, two references — a reference is singular, so citing two
-          lenses means writing two spans. richmd never splits one reference into
-          parts.
-        </p>
-        <div class="richmd-statement">
-          <p class="richmd-statement-body">
-            <strong>No silent drops</strong>
-            <code
-              class="richmd-token"
-              data-vocabulary="lens"
-              data-member="robustness"
-              >robustness</code
-            >
-            A committed edit is never discarded without leaving a recoverable
-            history entry — see conflict resolver.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <p class="richmd-statement-body">
-            <strong>Monotonic clocks</strong>
-            <code
-              class="richmd-token"
-              data-vocabulary="lens"
-              data-member="state"
-              >state</code
-            >
-            A client’s Lamport clock only moves forward; any regression is
-            treated as corruption, not a valid state.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <p class="richmd-statement-body">
-            <strong>Idempotent replay</strong>
-            <code
-              class="richmd-token"
-              data-vocabulary="lens"
-              data-member="state"
-              >state</code
-            >
-            Re-applying the same op twice is a no-op — required for
-            at-least-once delivery over flaky connections.
-          </p>
-        </div>
-        <div class="richmd-callout richmd-callout--danger">
-          <div class="richmd-callout-body">
-            <span class="richmd-callout-title">Hard constraint</span>
-            <p>
-              Any resolver change that can silently drop a committed edit is a
-              launch blocker, full stop — see
-              <a href="#conflict-resolver">Conflict resolver</a>.
-            </p>
-          </div>
-        </div>
-        <h2 id="principles">
-          Principles
-          <code
-            class="richmd-token"
-            data-vocabulary="lens"
-            data-member="composition"
-            >composition</code
-          >
-        </h2>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Boring resolution</strong>
-          </div>
-          <p class="richmd-statement-body">
-            Prefer last-writer-wins with recoverable history over cleverness
-            that’s hard to reason about in an incident.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <p class="richmd-statement-body">
-            <strong>Field, not document</strong>
-            <code
-              class="richmd-token"
-              data-vocabulary="lens"
-              data-member="composition"
-              >composition</code
-            >
-            Resolve conflicts at the smallest unit that has independent meaning
-            to a user — a field, not the whole note.
-          </p>
-        </div>
-        <div class="richmd-statement">
-          <div class="richmd-statement-label">
-            <strong>Fail loud, recover soft</strong>
-          </div>
-          <p class="richmd-statement-body">
-            Corruption is rejected outright; ordinary conflicts always resolve
-            to something, never an error state a user has to unblock.
-          </p>
-        </div>
-        <h2 id="component-breakdown">
-          Component breakdown
-          <code
-            class="richmd-token"
-            data-vocabulary="lens"
-            data-member="modeling"
-            >modeling</code
-          >
-        </h2>
-        <p>Three cooperating pieces, each independently testable:</p>
-        <div class="richmd-card-grid" data-cols="3">
-          <div class="richmd-card">
-            <div class="richmd-card-title">Op-log writer</div>
-            <div class="richmd-card-body">
-              <p>
-                Batches local mutations, assigns Lamport clocks, and persists
-                them durably before attempting to send.
-              </p>
-            </div>
-          </div>
-          <div class="richmd-card">
-            <div class="richmd-card-title">Sync engine</div>
-            <div class="richmd-card-body">
-              <p>
-                Streams queued ops when connectivity returns and applies
-                incoming ops from other clients in causal order.
-              </p>
-            </div>
-          </div>
-          <div class="richmd-card">
-            <div class="richmd-card-title">Conflict resolver</div>
-            <div class="richmd-card-body">
-              <p>
-                Applies the per-field resolution table and writes a history
-                entry for every overwritten value.
-              </p>
-            </div>
-          </div>
-        </div>
-        <h3 id="sync-engine">Sync engine</h3>
-        <p>
-          The sync engine batches local mutations into an append-only op-log and
-          ships them as soon as connectivity returns. Each op carries a Lamport
-          clock and the id of the last op it was based on:
-        </p>
-        <div class="sourceCode" id="cb1">
-          <pre
-            class="sourceCode json"
-          ><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+  window.richmdDiagramRerenders = window.richmdDiagramRerenders || [];
+  window.richmdRerenderDiagrams = function () {
+    window.richmdDiagramRerenders.forEach(function (fn) {
+      try {
+        fn();
+      } catch (e) {}
+    });
+  };
+
+  document.addEventListener("richmd-theme-changed", function () {
+    window.richmdRerenderDiagrams();
+  });
+</script>
+<div class="richmd-topbar"><div class="richmd-brand">richmd</div><button type="button" class="richmd-theme-toggle" aria-label="Toggle color theme"><span class="richmd-theme-toggle-icon">☀</span><span class="richmd-theme-toggle-label">Light</span></button></div>
+<div class="richmd-container">
+
+<h1 id="notebook-sync-offline-first-editing">Notebook Sync:
+Offline-First Editing</h1>
+<p>A design proposal for letting notebook edits made offline reconcile
+safely once the client reconnects, without a central lock or a rewrite
+of the sync protocol.</p>
+<p>Sections below are tagged with the lens they serve — <code
+class="richmd-token" data-vocabulary="lens"
+data-member="state">state</code>, <code class="richmd-token"
+data-vocabulary="lens" data-member="robustness">robustness</code>, and
+friends. Those are token references: this document declares its own
+<code>lens</code> vocabulary in
+<code>examples/.richmd/tokens/lens.json</code>, and richmd checks every
+citation against that closed set, so a misspelled lens fails the
+document instead of rendering as ordinary prose. richmd ships no
+vocabulary of its own — the set, and the properties on each member, are
+this document’s.</p>
+<div class="richmd-toc">
+<div class="richmd-toc-title">Contents</div>
+<ul class="richmd-toc-list"><li><a href="#notebook-sync-offline-first-editing">Notebook Sync: Offline-First Editing</a></li><li class="richmd-toc-sub"><a href="#goals">Goals</a></li><li class="richmd-toc-sub"><a href="#non-goals">Non-goals</a></li><li class="richmd-toc-sub"><a href="#invariants-lensinvariants-lensrobustness">Invariants lens:invariants lens:robustness</a></li><li class="richmd-toc-sub"><a href="#principles-lenscomposition">Principles lens:composition</a></li><li class="richmd-toc-sub"><a href="#component-breakdown-lensmodeling">Component breakdown lens:modeling</a></li><li class="richmd-toc-sub"><a href="#sync-engine">Sync engine</a></li><li class="richmd-toc-sub"><a href="#conflict-resolver">Conflict resolver</a></li><li class="richmd-toc-sub"><a href="#open-risks">Open risks</a></li><li class="richmd-toc-sub"><a href="#rollout-plan">Rollout plan</a></li></ul>
+</div>
+<h2 id="goals">Goals</h2>
+<div class="richmd-statement">
+<div class="richmd-statement-label">
+<strong>Offline durability</strong>
+</div>
+<p class="richmd-statement-body">
+Edits made with no connection are never lost, and become visible to
+other clients within one sync cycle of reconnecting.
+</p>
+</div>
+<div class="richmd-statement">
+<div class="richmd-statement-label">
+<strong>No central lock</strong>
+</div>
+<p class="richmd-statement-body">
+No notebook is ever exclusively checked out to one client — two people
+editing offline is a supported, non-error case.
+</p>
+</div>
+<div class="richmd-statement">
+<div class="richmd-statement-label">
+<strong>Bounded merge cost</strong>
+</div>
+<p class="richmd-statement-body">
+Reconciling a week of offline edits costs roughly the same as
+reconciling one hour of them.
+</p>
+</div>
+<h2 id="non-goals">Non-goals</h2>
+<div class="richmd-statement">
+<div class="richmd-statement-label">
+<strong>Live cursors</strong>
+</div>
+<p class="richmd-statement-body">
+Real-time presence and collaborative cursors are a separate effort
+layered on top of sync, not part of this proposal.
+</p>
+</div>
+<div class="richmd-statement">
+<div class="richmd-statement-label">
+<strong>Cross-notebook moves</strong>
+</div>
+<p class="richmd-statement-body">
+Moving a block between two notebooks while both are edited offline is
+out of scope; it degrades to a manual re-paste today and will stay that
+way.
+</p>
+</div>
+<div class="richmd-callout richmd-callout--warning">
+<div class="richmd-callout-body">
+<span class="richmd-callout-title">Scope check</span>
+<p>Real-time collaborative cursors are out of scope for this iteration —
+see non-goals above. Revisit once offline sync has shipped and
+stabilized.</p>
+</div>
+</div>
+<h2 id="invariants">Invariants <code class="richmd-token"
+data-vocabulary="lens" data-member="invariants">invariants</code> <code
+class="richmd-token" data-vocabulary="lens"
+data-member="robustness">robustness</code></h2>
+<p>Two lenses, two references — a reference is singular, so citing two
+lenses means writing two spans. richmd never splits one reference into
+parts.</p>
+<div class="richmd-statement">
+<p class="richmd-statement-body">
+<strong>No silent drops</strong> <code class="richmd-token"
+data-vocabulary="lens" data-member="robustness">robustness</code> A
+committed edit is never discarded without leaving a recoverable history
+entry — see conflict resolver.
+</p>
+</div>
+<div class="richmd-statement">
+<p class="richmd-statement-body">
+<strong>Monotonic clocks</strong> <code class="richmd-token"
+data-vocabulary="lens" data-member="state">state</code> A client’s
+Lamport clock only moves forward; any regression is treated as
+corruption, not a valid state.
+</p>
+</div>
+<div class="richmd-statement">
+<p class="richmd-statement-body">
+<strong>Idempotent replay</strong> <code class="richmd-token"
+data-vocabulary="lens" data-member="state">state</code> Re-applying the
+same op twice is a no-op — required for at-least-once delivery over
+flaky connections.
+</p>
+</div>
+<div class="richmd-callout richmd-callout--danger">
+<div class="richmd-callout-body">
+<span class="richmd-callout-title">Hard constraint</span>
+<p>Any resolver change that can silently drop a committed edit is a
+launch blocker, full stop — see <a href="#conflict-resolver">Conflict
+resolver</a>.</p>
+</div>
+</div>
+<h2 id="principles">Principles <code class="richmd-token"
+data-vocabulary="lens" data-member="composition">composition</code></h2>
+<div class="richmd-statement">
+<div class="richmd-statement-label">
+<strong>Boring resolution</strong>
+</div>
+<p class="richmd-statement-body">
+Prefer last-writer-wins with recoverable history over cleverness that’s
+hard to reason about in an incident.
+</p>
+</div>
+<div class="richmd-statement">
+<p class="richmd-statement-body">
+<strong>Field, not document</strong> <code class="richmd-token"
+data-vocabulary="lens" data-member="composition">composition</code>
+Resolve conflicts at the smallest unit that has independent meaning to a
+user — a field, not the whole note.
+</p>
+</div>
+<div class="richmd-statement">
+<div class="richmd-statement-label">
+<strong>Fail loud, recover soft</strong>
+</div>
+<p class="richmd-statement-body">
+Corruption is rejected outright; ordinary conflicts always resolve to
+something, never an error state a user has to unblock.
+</p>
+</div>
+<h2 id="component-breakdown">Component breakdown <code
+class="richmd-token" data-vocabulary="lens"
+data-member="modeling">modeling</code></h2>
+<p>Three cooperating pieces, each independently testable:</p>
+<div class="richmd-card-grid" data-cols="3">
+<div class="richmd-card">
+<div class="richmd-card-title">
+Op-log writer
+</div>
+<div class="richmd-card-body">
+<p>Batches local mutations, assigns Lamport clocks, and persists them
+durably before attempting to send.</p>
+</div>
+</div>
+<div class="richmd-card">
+<div class="richmd-card-title">
+Sync engine
+</div>
+<div class="richmd-card-body">
+<p>Streams queued ops when connectivity returns and applies incoming ops
+from other clients in causal order.</p>
+</div>
+</div>
+<div class="richmd-card">
+<div class="richmd-card-title">
+Conflict resolver
+</div>
+<div class="richmd-card-body">
+<p>Applies the per-field resolution table and writes a history entry for
+every overwritten value.</p>
+</div>
+</div>
+</div>
+<h3 id="sync-engine">Sync engine</h3>
+<p>The sync engine batches local mutations into an append-only op-log
+and ships them as soon as connectivity returns. Each op carries a
+Lamport clock and the id of the last op it was based on:</p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;op&quot;</span><span class="fu">:</span> <span class="st">&quot;set&quot;</span><span class="fu">,</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;field&quot;</span><span class="fu">:</span> <span class="st">&quot;title&quot;</span><span class="fu">,</span></span>
 <span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;value&quot;</span><span class="fu">:</span> <span class="st">&quot;Q3 planning&quot;</span><span class="fu">,</span></span>
 <span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;clock&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">7</span><span class="ot">,</span> <span class="st">&quot;client-9f2&quot;</span><span class="ot">]</span><span class="fu">,</span></span>
 <span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;basedOn&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="dv">6</span><span class="ot">,</span> <span class="st">&quot;client-9f2&quot;</span><span class="ot">]</span></span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre>
-        </div>
-        <details class="richmd-details">
-          <summary>Why an op-log instead of a CRDT document</summary>
-          <section class="richmd-details-body">
-            <p>
-              A full CRDT gives stronger automatic merging, but every field in
-              the schema would need a CRDT-compatible encoding, and the team has
-              no operational experience running one at this scale. An op-log
-              with a narrow conflict resolver ships sooner and is easier to
-              reason about in an incident.
-            </p>
-          </section>
-        </details>
-        <h3 id="conflict-resolver">Conflict resolver</h3>
-        <p>
-          Conflicts are resolved per-field, not per-document — two edits to
-          different fields of the same note never contend. Same-field conflicts
-          fall back to last-writer-wins by Lamport clock, with the loser
-          preserved in a recoverable history entry.
-        </p>
-        <blockquote>
-          <p>
-            “Last-writer-wins is the boring choice, and boring is correct here —
-            the alternative is a merge UI nobody asked for.” — from the design
-            review
-          </p>
-        </blockquote>
-        <details class="richmd-details">
-          <summary>Field-level resolution table</summary>
-          <section class="richmd-details-body">
-            <table>
-              <colgroup>
-                <col style="width: 20%" />
-                <col style="width: 20%" />
-                <col style="width: 60%" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Field</th>
-                  <th>Strategy</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>title, tags</td>
-                  <td>Last-writer-wins</td>
-                  <td>Loser kept in history, recoverable for 30 days</td>
-                </tr>
-                <tr>
-                  <td>body blocks</td>
-                  <td>Per-block LWW</td>
-                  <td>
-                    Block insertion order merges via position key, not timestamp
-                  </td>
-                </tr>
-                <tr>
-                  <td>checklist item state</td>
-                  <td>OR-Set union</td>
-                  <td>
-                    Checking and unchecking never lose the other client’s toggle
-                  </td>
-                </tr>
-                <tr>
-                  <td>sharing permissions</td>
-                  <td>Server-authoritative</td>
-                  <td>
-                    Never resolved client-side; requires a live round-trip
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-        </details>
-        <h2 id="open-risks">Open risks</h2>
-        <div class="richmd-callout richmd-callout--info">
-          <div class="richmd-callout-body">
-            <span class="richmd-callout-title">Clock drift</span>
-            <p>
-              Lamport clocks assume monotonic local counters; a client with a
-              corrupted counter could reorder history. Mitigation: counter is
-              persisted with a checksum and rejected on mismatch.
-            </p>
-          </div>
-        </div>
-        <h2 id="rollout-plan">Rollout plan</h2>
-        <p>
-          Staged behind a flag: internal dogfood → 5% of free-tier notebooks →
-          full rollout, with the op-log kept dual-written to the legacy sync
-          path for two weeks as a rollback path.
-        </p>
-      </div>
-      <script>
-        (function () {
-          // Reflects the theme CURRENTLY ACTIVE, not the theme a click would
-          // switch to: sun icon + "Light" label when light is active, moon icon +
-          // "Dark" label when dark is active (acceptance criteria's exact
-          // contract) — never the inverse "what you'd switch to" convention some
-          // toggle designs use instead.
-          function applyToggleLabel(button, activeTheme) {
-            var icon = button.querySelector(".richmd-theme-toggle-icon");
-            var label = button.querySelector(".richmd-theme-toggle-label");
-            if (activeTheme === "dark") {
-              if (icon) icon.textContent = "☽";
-              if (label) label.textContent = "Dark";
-            } else {
-              if (icon) icon.textContent = "☀";
-              if (label) label.textContent = "Light";
-            }
-          }
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<details class="richmd-details">
+<summary>
+Why an op-log instead of a CRDT document
+</summary>
+<section class="richmd-details-body">
+<p>A full CRDT gives stronger automatic merging, but every field in the
+schema would need a CRDT-compatible encoding, and the team has no
+operational experience running one at this scale. An op-log with a
+narrow conflict resolver ships sooner and is easier to reason about in
+an incident.</p>
+</section>
+</details>
+<h3 id="conflict-resolver">Conflict resolver</h3>
+<p>Conflicts are resolved per-field, not per-document — two edits to
+different fields of the same note never contend. Same-field conflicts
+fall back to last-writer-wins by Lamport clock, with the loser preserved
+in a recoverable history entry.</p>
+<blockquote>
+<p>“Last-writer-wins is the boring choice, and boring is correct here —
+the alternative is a merge UI nobody asked for.” — from the design
+review</p>
+</blockquote>
+<details class="richmd-details">
+<summary>
+Field-level resolution table
+</summary>
+<section class="richmd-details-body">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 60%" />
+</colgroup>
+<thead>
+<tr>
+<th>Field</th>
+<th>Strategy</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>title, tags</td>
+<td>Last-writer-wins</td>
+<td>Loser kept in history, recoverable for 30 days</td>
+</tr>
+<tr>
+<td>body blocks</td>
+<td>Per-block LWW</td>
+<td>Block insertion order merges via position key, not timestamp</td>
+</tr>
+<tr>
+<td>checklist item state</td>
+<td>OR-Set union</td>
+<td>Checking and unchecking never lose the other client’s toggle</td>
+</tr>
+<tr>
+<td>sharing permissions</td>
+<td>Server-authoritative</td>
+<td>Never resolved client-side; requires a live round-trip</td>
+</tr>
+</tbody>
+</table>
+</section>
+</details>
+<h2 id="open-risks">Open risks</h2>
+<div class="richmd-callout richmd-callout--info">
+<div class="richmd-callout-body">
+<span class="richmd-callout-title">Clock drift</span>
+<p>Lamport clocks assume monotonic local counters; a client with a
+corrupted counter could reorder history. Mitigation: counter is
+persisted with a checksum and rejected on mismatch.</p>
+</div>
+</div>
+<h2 id="rollout-plan">Rollout plan</h2>
+<p>Staged behind a flag: internal dogfood → 5% of free-tier notebooks →
+full rollout, with the op-log kept dual-written to the legacy sync path
+for two weeks as a rollback path.</p>
+</div>
+<script>
+  (function () {
+    // Reflects the theme CURRENTLY ACTIVE, not the theme a click would
+    // switch to: sun icon + "Light" label when light is active, moon icon +
+    // "Dark" label when dark is active (acceptance criteria's exact
+    // contract) — never the inverse "what you'd switch to" convention some
+    // toggle designs use instead.
+    function applyToggleLabel(button, activeTheme) {
+      var icon = button.querySelector(".richmd-theme-toggle-icon");
+      var label = button.querySelector(".richmd-theme-toggle-label");
+      if (activeTheme === "dark") {
+        if (icon) icon.textContent = "☽";
+        if (label) label.textContent = "Dark";
+      } else {
+        if (icon) icon.textContent = "☀";
+        if (label) label.textContent = "Light";
+      }
+    }
 
-          function currentTheme(docEl) {
-            var attr = docEl.getAttribute("data-richmd-theme");
-            if (attr === "light" || attr === "dark") {
-              return attr;
-            }
-            var prefersDark =
-              typeof window.matchMedia === "function" &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches;
-            return prefersDark ? "dark" : "light";
-          }
+    function currentTheme(docEl) {
+      var attr = docEl.getAttribute("data-richmd-theme");
+      if (attr === "light" || attr === "dark") {
+        return attr;
+      }
+      var prefersDark =
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches;
+      return prefersDark ? "dark" : "light";
+    }
 
-          function init() {
-            var docEl = document.querySelector(".richmd-doc");
-            var button = document.querySelector(".richmd-theme-toggle");
-            if (!docEl || !button) return;
+    function init() {
+      var docEl = document.querySelector(".richmd-doc");
+      var button = document.querySelector(".richmd-theme-toggle");
+      if (!docEl || !button) return;
 
-            applyToggleLabel(button, currentTheme(docEl));
+      applyToggleLabel(button, currentTheme(docEl));
 
-            button.addEventListener("click", function () {
-              var next = currentTheme(docEl) === "dark" ? "light" : "dark";
-              docEl.setAttribute("data-richmd-theme", next);
-              try {
-                localStorage.setItem("richmd-theme", next);
-              } catch (e) {}
-              applyToggleLabel(button, next);
-              document.dispatchEvent(new CustomEvent("richmd-theme-changed"));
-            });
-          }
+      button.addEventListener("click", function () {
+        var next = currentTheme(docEl) === "dark" ? "light" : "dark";
+        docEl.setAttribute("data-richmd-theme", next);
+        try {
+          localStorage.setItem("richmd-theme", next);
+        } catch (e) {}
+        applyToggleLabel(button, next);
+        document.dispatchEvent(new CustomEvent("richmd-theme-changed"));
+      });
+    }
 
-          if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", init);
-          } else {
-            init();
-          }
-        })();
-      </script>
-    </div>
-  </body>
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", init);
+    } else {
+      init();
+    }
+  })();
+</script>
+</div>
+</body>
 </html>
