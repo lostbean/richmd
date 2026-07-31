@@ -1,13 +1,14 @@
 <!-- agent-skills:begin -->
+<!-- framework-commit: 23cbf209092cf72b4cc2e3f6e76a9e6ec43e1e23 origin: git@github.com:lostbean/skills.git -->
 
 (machine-owned; do not edit inside this fence — re-run setup to refresh)
 
 ## Agent skills
 
-**Design layer** — `CONTEXT-MAP.md` indexes the design documents
-(`design.md`, rendered `design.html`); terms are defined in each context's
-`CONTEXT.md`; decisions are recorded in `docs/adr/`. Pending — the design
-layer has not been created yet.
+**Design layer** — the design document is `docs/design/design.md` (rendered
+`docs/design/design.html`); terms are defined in `docs/design/CONTEXT.md`;
+decisions are recorded in `docs/adr/`. Single-context layout, so there is no
+`CONTEXT-MAP.md`.
 
 **Tracker** — GitHub issues on `lostbean/richmd` via `gh issue list --repo
 lostbean/richmd` / `gh issue create --repo lostbean/richmd` / `gh issue view
